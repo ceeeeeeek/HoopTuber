@@ -34,8 +34,4 @@
 git clone https://github.com/your-username/HoopTuber.git
 cd HoopTuber
 
----
 
-## 🚀 Getting Started
-
-### 1. Clone the Repository
