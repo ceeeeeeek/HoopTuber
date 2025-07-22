@@ -36,4 +36,5 @@ cd HoopTuber
 
 ---
 
-## **💻 2. Install Frontend Dependencies**
+## 🚀 Getting Started
+
