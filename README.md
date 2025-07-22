@@ -1,4 +1,4 @@
-# 🏀 HoopTuber
+# 🏀 HoopTuber 
 
 **HoopTuber** is a web-based application that allows users to upload basketball game videos and uses AI (YOLOv8) to detect basketballs, players, and made shots. The frontend is built with **Next.js** and deployed via **Vercel**, while the backend runs **FastAPI** with **YOLOv8 object detection**, hosted on **Railway**.
 
@@ -28,13 +28,43 @@
 
 ## 🚀 Getting Started
 
-### 1. Clone the Repository
+### 1. Clone the Repository 
 
-```bash
 git clone https://github.com/ceeeeeeek/HoopTuber.git
 cd HoopTuber
 
+### 2. Install Frontend Dependencies
+
+npm install
+
+### 3. Run Frontend Locally (Open browser at: http://localhost:3000)
+
+npm run dev
+
 ---
 
-## 🚀 Getting Started
+## 🔗 Connect Frontend to Backend
 
+---
+
+## 🧠 Backend API (FastAPI + YOLOv8)
+
+---
+
+## 🌐 Deploy Frontend on Vercel
+
+---
+
+## 📂 Folder Structure
+
+---
+
+## ✅ Example Usage
+
+---
+
+## 🧠 Credits
+
+---
+
+## 📄 License
