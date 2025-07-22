@@ -33,3 +33,11 @@
 ```bash
 git clone https://github.com/your-username/HoopTuber.git
 cd HoopTuber
+
+### 2.  Install Frontend Dependencies
+
+npm install
+
+### 3. Run Frontend Locally
+
+npm run dev
