@@ -91,36 +91,40 @@ export default function UploadPage() {
   }, [])
 
   const handleUpload = async () => {
-    if (!selectedFile) return
+    if (!selectedFile) return;
 
     console.log("Starting basketball video analysis for:", selectedFile.name)
     setUploadState("uploading")
-    setProgress(0)
+    setProgress(15)
 
-    // Simulate realistic upload progress
-    const progressSteps = [
-      { progress: 15, message: "Uploading video...", delay: 800 },
-      { progress: 35, message: "Processing video format...", delay: 600 },
-      { progress: 55, message: "Initializing AI models...", delay: 700 },
-      { progress: 75, message: "Detecting basketball elements...", delay: 900 },
-      { progress: 90, message: "Analyzing shots and movements...", delay: 800 },
-      { progress: 100, message: "Analysis complete!", delay: 500 },
-    ]
+    const formData = new FormData()
+    formData.append("file", selectedFile)
 
-    for (const step of progressSteps) {
-      await new Promise((resolve) => setTimeout(resolve, step.delay))
-      setProgress(step.progress)
+    try {
+      const response = await fetch("http://localhost:8000/upload", {
+        method: "POST",
+        body: formData
+      })
+
+      if (!response.ok){
+        throw new Error("Failed to upload and process video")
+      }
+      const result = await response.json(); // this should be your analysis result
+    setUploadResult({
+      success: true,
+      videoUrl: "", // optional
+      fileName: selectedFile.name,
+      fileSize: selectedFile.size,
+      method: "fastapi",
+      verified: true,
+      mockData: result, // this is your actual result
+    })
+
+    setUploadState("complete");
+    } catch (error){
+      console.error("Upload error:", error)
+      setUploadState("idle")
     }
-
-    // Create comprehensive basketball analysis
-    const analysisResult = createBasketballAnalysis()
-    setUploadResult(analysisResult)
-    setUploadState("processing")
-
-    // Simulate AI processing time
-    setTimeout(() => {
-      setUploadState("complete")
-    }, 2500)
   }
 
   const createBasketballAnalysis = (): UploadResult => {

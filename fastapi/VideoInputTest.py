@@ -2,7 +2,6 @@ import os
 import google.genai as genai
 from dotenv import load_dotenv
 import time
-from moviepy.editor import VideoFileClip, vfx
 load_dotenv()
 
 api_key = os.getenv("GEMINI_API_KEY")
@@ -118,7 +117,7 @@ def process_video_and_summarize(file_path):
                 """
         response = client.models.generate_content(
             model="gemini-2.5-pro",
-            contents=[uploaded_file, prompt6],
+            contents=[uploaded_file, prompt4],
         )
         print("Response received:")
         print(response.text)
@@ -132,7 +131,7 @@ def process_video_and_summarize(file_path):
 
 
 if __name__ == "__main__":
-    file_name = "Game1SideA.mp4"
+    file_name = "meshooting2.mp4"
     file_path = f"videoDataset/{file_name}"
     #slowed_file_path = f"videoDataset/{file_name.split('.')[0]}_slowed.mp4"
     #slow_down_video(file_path, slowed_file_path, speed_factor=0.5)
