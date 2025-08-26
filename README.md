@@ -3,6 +3,16 @@
 **HoopTuber** is a web-based application that allows users to upload basketball game videos and uses AI (YOLOv8) to detect basketballs, players, and made shots. The frontend is built with **Next.js** and deployed via **Vercel**, while the backend runs **FastAPI** with **YOLOv8 object detection**, hosted on **Railway**.
 
 ---
+## How to Run
+- create env folder (python3 -m venv env on Mac, pyton -m venv env Windows)
+- run source env/bin/activate
+- pip install -r requirements.txt
+- cd fastapi
+- uvicorn main:app --reload
+- run cd .. and deactivate
+- npm install
+- npm run dev
+
 
 ## 📸 Features
 
