@@ -26,3 +26,6 @@ env/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# py cache folder
+fastapi/__pycache__/
