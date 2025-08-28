@@ -7,11 +7,8 @@
 - create env folder (python3 -m venv env on Mac, pyton -m venv env Windows)
 - run source env/bin/activate
 - pip install -r requirements.txt
-- cd fastapi
-- uvicorn main:app --reload
-- run cd .. and deactivate
 - npm install
-- npm run dev
+- npm run dev (will start next.js server on port:3000 and FastAPI server on port:8000 simoutaneously)
 
 
 ## 📸 Features
