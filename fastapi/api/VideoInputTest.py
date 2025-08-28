@@ -149,10 +149,10 @@ def process_video_and_summarize(file_path):
                 "analysis": {
                     "shots": [
                     {
+                        "timestamp": "00:00:43",
                         "subject": "Player in black hoodie and black shorts",
                         "location": "Top of the key",
                         "shotType": "jump_shot",
-                        "timestamp": "00:00:43",
                         "outcome": "made",
                         "confidence": 0.92,
                         "playerPosition": { "x": 35, "y": 60 }
@@ -195,7 +195,7 @@ def process_video_and_summarize(file_path):
                 }
                 """
         response = client.models.generate_content(
-            model="gemini-2.5-pro",
+            model="gemini-2.5-flash",
             contents=[uploaded_file, prompt7],
         )
         print("Response received:")
