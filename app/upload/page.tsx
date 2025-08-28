@@ -98,7 +98,7 @@ export default function UploadPage() {
     setProgress(15)
 
     const formData = new FormData()
-    formData.append("file", selectedFile)
+    formData.append("video", selectedFile)
 
     try {
       const response = await fetch("http://localhost:8000/upload", {
@@ -117,7 +117,7 @@ export default function UploadPage() {
       fileSize: selectedFile.size,
       method: "fastapi",
       verified: true,
-      mockData: result, // this is your actual result
+      mockData: result.results, // this is your actual result
     })
 
     setUploadState("complete");
