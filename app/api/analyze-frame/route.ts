@@ -1,7 +1,9 @@
+// app/api/analyze-frame/route.ts
+export const runtime = "nodejs";
+
 import { type NextRequest, NextResponse } from "next/server"
-import { generateObject } from "ai"
-import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
+import { getModel } from "@/lib/gemini";
 
 const FrameAnalysisSchema = z.object({
   basketball: z.object({
@@ -67,10 +69,13 @@ export async function POST(request: NextRequest) {
     // 4. Identify basketball-specific actions
 
     // For demonstration, we'll use AI to simulate frame analysis
-    const { object: analysis } = await generateObject({
-      model: openai("gpt-4o"),
-      schema: FrameAnalysisSchema,
-      prompt: `Analyze this basketball game frame at timestamp ${timestamp} seconds. 
+    // We’ll ask Gemini to return STRICT JSON that matches the schema, then validate with zod.
+    const model = getModel();
+    const prompt = `Return ONLY valid JSON for the following schema (no markdown, no explanation):
+    
+    ${FrameAnalysisSchema.toString()}
+
+    Context: Analyze this basketball game frame at timestamp ${timestamp} seconds. 
       
       Simulate realistic computer vision detection results for:
       - Basketball detection and position
@@ -80,16 +85,23 @@ export async function POST(request: NextRequest) {
       - Current action being performed
       
       Generate realistic coordinates (0-1000 range) and confidence scores.
-      Make the analysis consistent with a basketball game scenario.`,
-    })
-
-    return NextResponse.json({
-      success: true,
-      timestamp,
-      analysis,
-    })
-  } catch (error) {
-    console.error("Frame analysis error:", error)
-    return NextResponse.json({ error: "Frame analysis failed" }, { status: 500 })
+      Make the analysis consistent with a basketball game scenario.`;
+    
+      const result = await model.generateContent([{ text: prompt }]);
+      const text = result.response.text().trim();
+  
+      // Try to parse and validate
+      const parsed = FrameAnalysisSchema.safeParse(JSON.parse(text));
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: "Model output failed schema validation", issues: parsed.error.format() },
+          { status: 502 }
+        );
+      }
+  
+      return NextResponse.json({ success: true, timestamp, analysis: parsed.data });
+    } catch (error) {
+      console.error("Frame analysis error:", error);
+      return NextResponse.json({ error: "Frame analysis failed" }, { status: 500 });
+    }
   }
-}

@@ -1,7 +1,10 @@
+// app/api/analyze-video-gemini/route.ts
+export const runtime = "nodejs";
+export const maxDuration = 120;
+
 import { type NextRequest, NextResponse } from "next/server"
-import { generateObject } from "ai"
-import { google } from "@ai-sdk/google"
 import { z } from "zod"
+import { getModel } from "@/lib/gemini";
 
 const BasketballAnalysisSchema = z.object({
   videoAnalysis: z.object({
@@ -109,6 +112,239 @@ const BasketballAnalysisSchema = z.object({
   }),
 })
 
+type BasketballAnalysis = z.infer<typeof BasketballAnalysisSchema>;
+
+function generateEnhancedMockAnalysis(fileName: string, fileSize: number): BasketballAnalysis {
+    // Return enhanced mock analysis if no API key
+    const mockAnalysis = {
+      videoAnalysis: {
+        duration: 240,
+        gameType: "practice" as const,
+        courtType: "indoor" as const,
+        playerCount: 3,
+        cameraAngle: "sideline" as const,
+        videoQuality: "good" as const,
+      },
+      basketDetection: {
+        basketsVisible: 1,
+        basketPositions: [
+          {
+            id: "basket_1",
+            position: { x: 0.65, y: 0.25 },
+            confidence: 0.95,
+            type: "regulation" as const,
+            height: "10ft" as const,
+          },
+        ],
+      },
+      shotAnalysis: {
+        totalShots: 12,
+        shots: Array.from({ length: 12 }, (_, i) => {
+          const shotTypes = ["layup", "jump_shot", "three_pointer", "dunk", "free_throw"] as const
+          const outcomes = ["made", "missed"] as const
+          const isSuccessful = Math.random() > 0.4 // 60% success rate
+
+          return {
+            id: `shot_${i + 1}`,
+            timestamp: 15 + i * 18,
+            shotType: shotTypes[i % shotTypes.length],
+            outcome: isSuccessful ? outcomes[0] : outcomes[1],
+            confidence: 0.75 + Math.random() * 0.25,
+            description: `${shotTypes[i % shotTypes.length].replace("_", " ")} attempt by player ${(i % 3) + 1}`,
+            playerPosition: {
+              x: 0.2 + Math.random() * 0.6,
+              y: 0.5 + Math.random() * 0.3,
+            },
+            basketTargeted: "basket_1",
+            shotArc: ["high", "medium", "low"][Math.floor(Math.random() * 3)] as any,
+            releasePoint: {
+              timestamp: 15 + i * 18 + 0.5,
+              height: "medium" as const,
+            },
+            clipBounds: {
+              startTime: 10 + i * 18,
+              endTime: 20 + i * 18,
+            },
+          }
+        }),
+      },
+      playerTracking: {
+        playersDetected: 3,
+        players: [
+          {
+            id: "player_1",
+            jersey: "23",
+            team: "team_a" as const,
+            position: "guard" as const,
+            shotsAttempted: 5,
+            shotsMade: 3,
+            dominantHand: "right" as const,
+          },
+          {
+            id: "player_2",
+            jersey: "15",
+            team: "team_a" as const,
+            position: "forward" as const,
+            shotsAttempted: 4,
+            shotsMade: 2,
+            dominantHand: "left" as const,
+          },
+          {
+            id: "player_3",
+            jersey: "7",
+            team: "team_b" as const,
+            position: "center" as const,
+            shotsAttempted: 3,
+            shotsMade: 2,
+            dominantHand: "right" as const,
+          },
+        ],
+      },
+      gameFlow: {
+        quarters: [
+          {
+            quarter: 1,
+            startTime: 0,
+            endTime: 120,
+            shots: 6,
+            pace: "medium" as const,
+          },
+          {
+            quarter: 2,
+            startTime: 120,
+            endTime: 240,
+            shots: 6,
+            pace: "fast" as const,
+          },
+        ],
+        keyMoments: [
+          {
+            timestamp: 45,
+            type: "great_shot" as const,
+            description: "Amazing three-pointer from the corner",
+            importance: 9,
+          },
+          {
+            timestamp: 120,
+            type: "great_shot" as const,
+            description: "Spectacular dunk finish",
+            importance: 8,
+          },
+          {
+            timestamp: 180,
+            type: "missed_opportunity" as const,
+            description: "Wide open layup missed",
+            importance: 6,
+          },
+        ],
+      },
+      highlights: {
+        bestShots: [
+          {
+            shotId: "shot_3",
+            reason: "Perfect shooting form and high difficulty",
+            highlightScore: 9,
+          },
+          {
+            shotId: "shot_7",
+            reason: "Clutch shot under pressure",
+            highlightScore: 8,
+          },
+          {
+            shotId: "shot_10",
+            reason: "Athletic finish at the rim",
+            highlightScore: 8,
+          },
+        ],
+        recommendedClips: [
+          {
+            id: "clip_1",
+            startTime: 40,
+            endTime: 50,
+            title: "Corner Three-Pointer",
+            description: "Perfect form three-pointer from the corner",
+            type: "best_plays" as const,
+            duration: 10,
+          },
+          {
+            id: "clip_2",
+            startTime: 115,
+            endTime: 125,
+            title: "Powerful Dunk",
+            description: "Explosive dunk finish",
+            type: "best_plays" as const,
+            duration: 10,
+          },
+          {
+            id: "clip_3",
+            startTime: 190,
+            endTime: 200,
+            title: "Smooth Layup",
+            description: "Textbook layup technique",
+            type: "shot_compilation" as const,
+            duration: 10,
+          },
+        ],
+      },
+    };
+
+    return mockAnalysis;
+}
+
+function toResponse(
+  processingId: string,
+  fileName: string,
+  analysis: BasketballAnalysis,
+  method: "gemini_2_5_pro" | "enhanced_mock_analysis" = "enhanced_mock_analysis",
+  videoUrl?: string,
+) {
+  const transformedResult = {
+    processingId,
+    status: "completed",
+    ...(videoUrl ? { videoUrl } : {}),
+    fileName,
+    analysis: {
+      shots: analysis.shotAnalysis.shots.map((shot) => ({
+        timestamp: shot.timestamp,
+        confidence: shot.confidence,
+        shotType: shot.shotType,
+        description: shot.description,
+        outcome: shot.outcome,
+        clipStart: shot.clipBounds.startTime,
+        clipEnd: shot.clipBounds.endTime,
+        player: { position: shot.playerPosition, jersey: analysis.playerTracking.players[0]?.jersey },
+        basket: { position: analysis.basketDetection.basketPositions[0]?.position || { x: 0.5, y: 0.3 }, made: shot.outcome === "made" },
+      })),
+      videoMetadata: {
+        duration: analysis.videoAnalysis.duration,
+        resolution: { width: 1920, height: 1080 },
+        fps: 30,
+        gameType: analysis.videoAnalysis.gameType,
+        courtType: analysis.videoAnalysis.courtType,
+        playerCount: analysis.videoAnalysis.playerCount,
+      },
+      basketDetection: analysis.basketDetection,
+      playerTracking: analysis.playerTracking,
+      gameFlow: analysis.gameFlow,
+      highlightClips: analysis.highlights.recommendedClips.map((clip) => ({
+        id: clip.id,
+        startTime: clip.startTime,
+        endTime: clip.endTime,
+        description: clip.description,
+        shotType: "highlight",
+        isSuccessful: true,
+        timestamp: clip.startTime,
+        confidence: 0.9,
+      })),
+      processingMethod: method,
+      aiModel: method === "gemini_2_5_pro" ? "gemini-2.5-pro" : "mock_data_v2",
+      analysisQuality: analysis.videoAnalysis.videoQuality,
+    },
+    createdAt: new Date().toISOString(),
+  };
+  return transformedResult;
+}
+
 async function convertVideoToBase64(videoUrl: string): Promise<string> {
   try {
     console.log("🔄 Converting video to base64...")
@@ -132,329 +368,100 @@ async function convertVideoToBase64(videoUrl: string): Promise<string> {
 
 export async function POST(request: NextRequest) {
   try {
-    const { videoUrl, fileName, processingId } = await request.json()
+    // Read form data
+    const formData = await request.formData();
+    const videoFile = formData.get("video") as File | null;
+    const videoUrl = formData.get("videoUrl") as string | null;
+    let fileName = (formData.get("fileName") as string) || "upload.mp4";
+    const processingId = (formData.get("processingId") as string) || crypto.randomUUID();
 
-    if (!videoUrl) {
+    if (!videoFile && !videoUrl) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "No video URL provided",
-        },
+        { success: false, error: "No video file or URL of video provided" },
         { status: 400 },
-      )
+      );
     }
 
-    console.log("🎥 Starting Gemini 2.0 Flash video analysis")
-    console.log("📹 Video:", fileName)
-    console.log("🔗 URL:", videoUrl)
-
-    // Check if we have Google API key
-    if (!process.env.GOOGLE_API_KEY) {
-      console.warn("⚠️ No GOOGLE_API_KEY found, using enhanced mock analysis")
-
-      // Return enhanced mock analysis if no API key
-      const mockAnalysis = {
-        videoAnalysis: {
-          duration: 240,
-          gameType: "practice" as const,
-          courtType: "indoor" as const,
-          playerCount: 3,
-          cameraAngle: "sideline" as const,
-          videoQuality: "good" as const,
-        },
-        basketDetection: {
-          basketsVisible: 1,
-          basketPositions: [
-            {
-              id: "basket_1",
-              position: { x: 0.65, y: 0.25 },
-              confidence: 0.95,
-              type: "regulation" as const,
-              height: "10ft" as const,
-            },
-          ],
-        },
-        shotAnalysis: {
-          totalShots: 12,
-          shots: Array.from({ length: 12 }, (_, i) => {
-            const shotTypes = ["layup", "jump_shot", "three_pointer", "dunk", "free_throw"] as const
-            const outcomes = ["made", "missed"] as const
-            const isSuccessful = Math.random() > 0.4 // 60% success rate
-
-            return {
-              id: `shot_${i + 1}`,
-              timestamp: 15 + i * 18,
-              shotType: shotTypes[i % shotTypes.length],
-              outcome: isSuccessful ? outcomes[0] : outcomes[1],
-              confidence: 0.75 + Math.random() * 0.25,
-              description: `${shotTypes[i % shotTypes.length].replace("_", " ")} attempt by player ${(i % 3) + 1}`,
-              playerPosition: {
-                x: 0.2 + Math.random() * 0.6,
-                y: 0.5 + Math.random() * 0.3,
-              },
-              basketTargeted: "basket_1",
-              shotArc: ["high", "medium", "low"][Math.floor(Math.random() * 3)] as any,
-              releasePoint: {
-                timestamp: 15 + i * 18 + 0.5,
-                height: "medium" as const,
-              },
-              clipBounds: {
-                startTime: 10 + i * 18,
-                endTime: 20 + i * 18,
-              },
-            }
-          }),
-        },
-        playerTracking: {
-          playersDetected: 3,
-          players: [
-            {
-              id: "player_1",
-              jersey: "23",
-              team: "team_a" as const,
-              position: "guard" as const,
-              shotsAttempted: 5,
-              shotsMade: 3,
-              dominantHand: "right" as const,
-            },
-            {
-              id: "player_2",
-              jersey: "15",
-              team: "team_a" as const,
-              position: "forward" as const,
-              shotsAttempted: 4,
-              shotsMade: 2,
-              dominantHand: "left" as const,
-            },
-            {
-              id: "player_3",
-              jersey: "7",
-              team: "team_b" as const,
-              position: "center" as const,
-              shotsAttempted: 3,
-              shotsMade: 2,
-              dominantHand: "right" as const,
-            },
-          ],
-        },
-        gameFlow: {
-          quarters: [
-            {
-              quarter: 1,
-              startTime: 0,
-              endTime: 120,
-              shots: 6,
-              pace: "medium" as const,
-            },
-            {
-              quarter: 2,
-              startTime: 120,
-              endTime: 240,
-              shots: 6,
-              pace: "fast" as const,
-            },
-          ],
-          keyMoments: [
-            {
-              timestamp: 45,
-              type: "great_shot" as const,
-              description: "Amazing three-pointer from the corner",
-              importance: 9,
-            },
-            {
-              timestamp: 120,
-              type: "great_shot" as const,
-              description: "Spectacular dunk finish",
-              importance: 8,
-            },
-            {
-              timestamp: 180,
-              type: "missed_opportunity" as const,
-              description: "Wide open layup missed",
-              importance: 6,
-            },
-          ],
-        },
-        highlights: {
-          bestShots: [
-            {
-              shotId: "shot_3",
-              reason: "Perfect shooting form and high difficulty",
-              highlightScore: 9,
-            },
-            {
-              shotId: "shot_7",
-              reason: "Clutch shot under pressure",
-              highlightScore: 8,
-            },
-            {
-              shotId: "shot_10",
-              reason: "Athletic finish at the rim",
-              highlightScore: 8,
-            },
-          ],
-          recommendedClips: [
-            {
-              id: "clip_1",
-              startTime: 40,
-              endTime: 50,
-              title: "Corner Three-Pointer",
-              description: "Perfect form three-pointer from the corner",
-              type: "best_plays" as const,
-              duration: 10,
-            },
-            {
-              id: "clip_2",
-              startTime: 115,
-              endTime: 125,
-              title: "Powerful Dunk",
-              description: "Explosive dunk finish",
-              type: "best_plays" as const,
-              duration: 10,
-            },
-            {
-              id: "clip_3",
-              startTime: 190,
-              endTime: 200,
-              title: "Smooth Layup",
-              description: "Textbook layup technique",
-              type: "shot_compilation" as const,
-              duration: 10,
-            },
-          ],
-        },
-      }
-
-      const transformedResult = {
-        processingId,
-        status: "completed",
-        videoUrl,
-        fileName,
-        analysis: {
-          shots: mockAnalysis.shotAnalysis.shots.map((shot) => ({
-            timestamp: shot.timestamp,
-            confidence: shot.confidence,
-            shotType: shot.shotType,
-            description: shot.description,
-            outcome: shot.outcome,
-            clipStart: shot.clipBounds.startTime,
-            clipEnd: shot.clipBounds.endTime,
-            player: {
-              position: shot.playerPosition,
-              jersey: mockAnalysis.playerTracking.players[0]?.jersey,
-            },
-            basket: {
-              position: mockAnalysis.basketDetection.basketPositions[0]?.position || { x: 0.5, y: 0.3 },
-              made: shot.outcome === "made",
-            },
-          })),
-          videoMetadata: {
-            duration: mockAnalysis.videoAnalysis.duration,
-            resolution: { width: 1920, height: 1080 },
-            fps: 30,
-            gameType: mockAnalysis.videoAnalysis.gameType,
-            courtType: mockAnalysis.videoAnalysis.courtType,
-            playerCount: mockAnalysis.videoAnalysis.playerCount,
-          },
-          basketDetection: mockAnalysis.basketDetection,
-          playerTracking: mockAnalysis.playerTracking,
-          gameFlow: mockAnalysis.gameFlow,
-          highlightClips: mockAnalysis.highlights.recommendedClips.map((clip) => ({
-            id: clip.id,
-            startTime: clip.startTime,
-            endTime: clip.endTime,
-            description: clip.description,
-            shotType: "highlight",
-            isSuccessful: true,
-            timestamp: clip.startTime,
-            confidence: 0.9,
-          })),
-          processingMethod: "enhanced_mock_analysis",
-          aiModel: "mock_data_v2",
-          analysisQuality: mockAnalysis.videoAnalysis.videoQuality,
-        },
-        createdAt: new Date().toISOString(),
-      }
-
-      return NextResponse.json({
-        success: true,
-        result: transformedResult,
-      })
+    // Use file's name if present
+    if (videoFile && (!fileName || fileName === "upload.mp4")) {
+      fileName = videoFile.name || fileName;
     }
 
-    // Try to fetch and convert video to base64 for Gemini
-    let videoBase64: string
+    // API key presence check
+    const googleApiKey =
+      process.env.GOOGLE_API_KEY ||
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+      process.env.GOOGLE_AI_API_KEY ||
+      process.env.GEMINI_API_KEY;
+
+    console.log("🎥 Starting Gemini 2.5 Pro video analysis");
+    console.log("📹 Video:", fileName);
+    if (videoUrl) console.log("🔗 URL:", videoUrl);
+
+    // No API key → enhanced mock
+    if (!googleApiKey) {
+      console.warn("⚠️ No GOOGLE_API_KEY found, using enhanced mock analysis");
+      const approxSize = videoFile?.size ?? 5 * 1024 * 1024;
+      const mock = generateEnhancedMockAnalysis(fileName, approxSize);
+
+      console.log("✅ Mock analysis complete!");
+      console.log(`🏀 Found ${mock.shotAnalysis.totalShots} shots`);
+      console.log(`🎯 Detected ${mock.basketDetection.basketsVisible} baskets`);
+
+      const transformed = toResponse(processingId, fileName, mock, "enhanced_mock_analysis");
+      return NextResponse.json({ success: true, result: transformed });
+    }
+
+    // Prepare base64 payload (file OR URL)
+    let videoBase64: string;
+    let mimeType = "video/mp4";
+
+    if (videoFile) {
+      const buffer = await videoFile.arrayBuffer();
+      videoBase64 = Buffer.from(buffer).toString("base64");
+      mimeType = videoFile.type || mimeType;
+      console.log(`📦 Read uploaded file (${(videoFile.size / 1024 / 1024).toFixed(2)}MB)`);
+    } else {
+      // Validate URL and convert
+      try {
+        console.log("🔍 Checking video accessibility...");
+        const head = await fetch(videoUrl!, { method: "HEAD" });
+        if (!head.ok) {
+          return NextResponse.json(
+            { success: false, error: "Video not accessible", statusCode: head.status, statusText: head.statusText },
+            { status: 400 }
+          );
+        }
+        console.log("✅ Video is accessible");
+      } catch (e) {
+        return NextResponse.json(
+          { success: false, error: "Video URL check failed", details: String(e) },
+          { status: 400 }
+        );
+      }
+
+      try {
+        videoBase64 = await convertVideoToBase64(videoUrl!);
+        mimeType = "video/mp4"; // Assume mp4 for URL fetch
+      } catch (e) {
+        return NextResponse.json(
+          { success: false, error: "Failed to fetch/convert video", details: String(e) },
+          { status: 400 }
+        );
+      }
+    } 
+
+    // Use Gemini 2.5 Pro to analyze the basketball video
+    // ----- Gemini 2.5 Pro call via getModel() -----
     try {
-      console.log("🔍 Checking video accessibility...")
-      const videoResponse = await fetch(videoUrl, { method: "HEAD" })
-      if (!videoResponse.ok) {
-        throw new Error(`Video not accessible: ${videoResponse.status}`)
-      }
-      console.log("✅ Video is accessible")
+      console.log("🤖 Calling Gemini 2.5 Pro API with API key...");
+      const model = getModel(); // env GAI_MODEL or "gemini-2.5-pro"
 
-      // Convert video to base64 for Gemini
-      videoBase64 = await convertVideoToBase64(videoUrl)
-    } catch (fetchError) {
-      console.error("❌ Video processing error:", fetchError)
+      const prompt = `
+Return ONLY JSON that matches this schema (no markdown, no prose):
+${BasketballAnalysisSchema.toString()}
 
-      // Fall back to enhanced mock analysis
-      console.log("🔄 Falling back to enhanced mock analysis...")
-
-      const mockResult = {
-        processingId,
-        status: "completed",
-        videoUrl,
-        fileName,
-        analysis: {
-          shots: Array.from({ length: 10 }, (_, i) => ({
-            timestamp: 20 + i * 22,
-            confidence: 0.8 + Math.random() * 0.2,
-            shotType: ["layup", "jump_shot", "three_pointer"][i % 3],
-            description: `Basketball shot ${i + 1} - ${["layup", "jump shot", "three-pointer"][i % 3]}`,
-            outcome: i % 3 === 0 ? "made" : "missed",
-            clipStart: 15 + i * 22,
-            clipEnd: 25 + i * 22,
-            player: {
-              position: { x: 0.3 + Math.random() * 0.4, y: 0.6 + Math.random() * 0.2 },
-              jersey: "23",
-            },
-            basket: {
-              position: { x: 0.65, y: 0.25 },
-              made: i % 3 === 0,
-            },
-          })),
-          videoMetadata: {
-            duration: 240,
-            resolution: { width: 1920, height: 1080 },
-            fps: 30,
-            gameType: "practice",
-            courtType: "indoor",
-            playerCount: 2,
-          },
-          processingMethod: "fallback_mock_analysis",
-          aiModel: "mock_fallback",
-        },
-        createdAt: new Date().toISOString(),
-      }
-
-      return NextResponse.json({
-        success: true,
-        result: mockResult,
-      })
-    }
-
-    // Use Gemini 2.0 Flash to analyze the basketball video
-    try {
-      const { object: analysis } = await generateObject({
-        model: google("gemini-2.0-flash-exp"),
-        schema: BasketballAnalysisSchema,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `Analyze this basketball video in detail. I need you to:
+Analyze this basketball video in detail. I need you to:
 
 1. **BASKET DETECTION**: Identify and locate all basketball hoops/baskets in the video
    - Mark their positions in the frame (normalized 0-1 coordinates)
@@ -487,50 +494,54 @@ export async function POST(request: NextRequest) {
 
 Please provide detailed, accurate analysis with precise timestamps and coordinates. Pay special attention to basket locations and shot outcomes.
 
-Video file: ${fileName}`,
-              },
-              {
-                type: "file",
-                data: videoBase64,
-                mimeType: "video/mp4",
-              },
-            ],
-          },
-        ],
-      })
+Video file: ${fileName}
+`.trim();
 
-      console.log("✅ Gemini analysis complete!")
-      console.log(`🏀 Found ${analysis.shotAnalysis.totalShots} shots`)
-      console.log(`🎯 Detected ${analysis.basketDetection.basketsVisible} baskets`)
+      const gen = await model.generateContent([
+        { text: prompt },
+        { inlineData: { data: videoBase64, mimeType } },
+      ]);
 
-      // Transform Gemini results to match our expected format
+      const raw = gen.response.text().trim();
+
+      const analysis: BasketballAnalysis = BasketballAnalysisSchema.parse(JSON.parse(raw));
+
+      console.log("✅ Gemini analysis complete!");
+      console.log(`🏀 Found ${analysis.shotAnalysis.totalShots} shots`);
+      console.log(`🎯 Detected ${analysis.basketDetection.basketsVisible} baskets`);
+
+      // Original mapping
       const transformedResult = {
         processingId,
         status: "completed",
         videoUrl,
         fileName,
         analysis: {
-          shots: analysis.shotAnalysis.shots.map((shot) => ({
-            timestamp: shot.timestamp,
-            confidence: shot.confidence,
-            shotType: shot.shotType,
-            description: shot.description,
-            outcome: shot.outcome,
-            clipStart: shot.clipBounds.startTime,
-            clipEnd: shot.clipBounds.endTime,
-            player: {
-              position: shot.playerPosition,
-              jersey: analysis.playerTracking.players.find((p) => p.shotsAttempted > 0)?.jersey,
-            },
-            basket: {
-              position: analysis.basketDetection.basketPositions.find((b) => b.id === shot.basketTargeted)
-                ?.position || {
-                x: 0.5,
-                y: 0.3,
+          shots: analysis.shotAnalysis.shots.map(
+            (shot: BasketballAnalysis["shotAnalysis"]["shots"][number]) => ({
+              timestamp: shot.timestamp,
+              confidence: shot.confidence,
+              shotType: shot.shotType,
+              description: shot.description,
+              outcome: shot.outcome,
+              clipStart: shot.clipBounds.startTime,
+              clipEnd: shot.clipBounds.endTime,
+              player: {
+                position: shot.playerPosition,
+                jersey: analysis.playerTracking.players.find(
+                  (p: BasketballAnalysis["playerTracking"]["players"][number]) => p.shotsAttempted > 0
+                )?.jersey,
               },
-              made: shot.outcome === "made",
-            },
-          })),
+              basket: {
+                position:
+                  analysis.basketDetection.basketPositions.find(
+                    (b: BasketballAnalysis["basketDetection"]["basketPositions"][number]) =>
+                      b.id === shot.basketTargeted
+                  )?.position || { x: 0.5, y: 0.3 },
+                made: shot.outcome === "made",
+              },
+            })
+          ),
           videoMetadata: {
             duration: analysis.videoAnalysis.duration,
             resolution: { width: 1920, height: 1080 },
@@ -542,32 +553,31 @@ Video file: ${fileName}`,
           basketDetection: analysis.basketDetection,
           playerTracking: analysis.playerTracking,
           gameFlow: analysis.gameFlow,
-          highlightClips: analysis.highlights.recommendedClips.map((clip) => ({
-            id: clip.id,
-            startTime: clip.startTime,
-            endTime: clip.endTime,
-            description: clip.description,
-            shotType: "highlight",
-            isSuccessful: true,
-            timestamp: clip.startTime,
-            confidence: 0.9,
-          })),
-          processingMethod: "gemini_2_0_flash",
-          aiModel: "gemini-2.0-flash-exp",
+          highlightClips: analysis.highlights.recommendedClips.map(
+            (clip: BasketballAnalysis["highlights"]["recommendedClips"][number]) => ({
+              id: clip.id,
+              startTime: clip.startTime,
+              endTime: clip.endTime,
+              description: clip.description,
+              shotType: "highlight",
+              isSuccessful: true,
+              timestamp: clip.startTime,
+              confidence: 0.9,
+            })
+          ),
+          processingMethod: "gemini_2_5_pro",
+          aiModel: "gemini-2.5-pro",
           analysisQuality: analysis.videoAnalysis.videoQuality,
         },
         createdAt: new Date().toISOString(),
-      }
+      };
 
-      return NextResponse.json({
-        success: true,
-        result: transformedResult,
-      })
+      return NextResponse.json({ success: true, result: transformedResult });
     } catch (geminiError) {
-      console.error("❌ Gemini API error:", geminiError)
+      console.error("❌ Gemini API error:", geminiError);
 
-      // Fall back to enhanced mock analysis if Gemini fails
-      console.log("🔄 Gemini failed, using enhanced mock analysis...")
+      // Your chosen mock fallback if Gemini fails
+      console.log("🔄 Gemini failed, using enhanced mock analysis...");
 
       const fallbackResult = {
         processingId,
@@ -587,10 +597,7 @@ Video file: ${fileName}`,
               position: { x: 0.25 + Math.random() * 0.5, y: 0.55 + Math.random() * 0.25 },
               jersey: ["23", "15", "7"][i % 3],
             },
-            basket: {
-              position: { x: 0.65, y: 0.25 },
-              made: Math.random() > 0.35,
-            },
+            basket: { position: { x: 0.65, y: 0.25 }, made: Math.random() > 0.35 },
           })),
           videoMetadata: {
             duration: 220,
@@ -604,57 +611,20 @@ Video file: ${fileName}`,
           aiModel: "enhanced_mock",
         },
         createdAt: new Date().toISOString(),
-      }
+      };
 
-      return NextResponse.json({
-        success: true,
-        result: fallbackResult,
-      })
+      console.log("✅ Final fallback analysis complete!");
+      console.log(`🏀 Found ${fallbackResult.analysis.shots.length} shots`);
+      console.log(`🎯 Detected ${"unknown"} baskets`);
+
+      return NextResponse.json({ success: true, result: fallbackResult });
     }
-  } catch (error) {
-    console.error("❌ General analysis error:", error)
-
-    // Final fallback - always return something useful
-    const finalFallbackResult = {
-      processingId: "fallback",
-      status: "completed",
-      videoUrl: "",
-      fileName: "demo-video.mp4",
-      analysis: {
-        shots: Array.from({ length: 6 }, (_, i) => ({
-          timestamp: 30 + i * 30,
-          confidence: 0.8,
-          shotType: ["layup", "jump_shot", "three_pointer"][i % 3],
-          description: `Demo shot ${i + 1}`,
-          outcome: i % 2 === 0 ? "made" : "missed",
-          clipStart: 25 + i * 30,
-          clipEnd: 35 + i * 30,
-          player: {
-            position: { x: 0.4, y: 0.6 },
-            jersey: "23",
-          },
-          basket: {
-            position: { x: 0.6, y: 0.3 },
-            made: i % 2 === 0,
-          },
-        })),
-        videoMetadata: {
-          duration: 180,
-          resolution: { width: 1920, height: 1080 },
-          fps: 30,
-          gameType: "demo",
-          courtType: "indoor",
-          playerCount: 1,
-        },
-        processingMethod: "final_fallback",
-        aiModel: "demo_mode",
-      },
-      createdAt: new Date().toISOString(),
-    }
-
-    return NextResponse.json({
-      success: true,
-      result: finalFallbackResult,
-    })
+  } catch (err) {
+    console.error("❌ General analysis error:", err);
+    return NextResponse.json(
+      { success: false, error: "Analysis failed", details: String(err) },
+      { status: 500 }
+    );
   }
 }
+
