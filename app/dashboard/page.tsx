@@ -41,6 +41,28 @@ export default function DashboardPage() {
       setLoading(false)
     }
   }
+  const handleVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  const formData = new FormData()
+  formData.append("video", file)
+  formData.append("userId", "demo-user") // optionally pass userId
+
+  try {
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+    })
+    const data = await res.json()
+    if (data.success) {
+      fetchUserVideos() // Refresh video list
+    }
+  } catch (err) {
+    console.error("Upload failed", err)
+  }
+}
+
 
   const formatFileSize = (bytes: number) => {
     const sizes = ["Bytes", "KB", "MB", "GB"]
@@ -68,12 +90,17 @@ export default function DashboardPage() {
               <span className="text-xl font-bold text-gray-900">HoopTuber</span>
             </Link>
             <div className="flex items-center space-x-4">
-              <Button asChild>
-                <Link href="/upload/enhanced">
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Video
-                </Link>
-              </Button>
+              <label className="flex items-center space-x-2 cursor-pointer">
+            <Upload className="w-5 h-5 text-gray-700" />
+            <span className="text-sm text-gray-700 font-medium">Upload Video</span>
+            <input
+              type="file"
+              accept="video/mp4,video/mov"
+              className="hidden"
+              onChange={handleVideoUpload}
+            />
+          </label>
+
             </div>
           </div>
         </div>
