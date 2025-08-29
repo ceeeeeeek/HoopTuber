@@ -113,7 +113,7 @@ export default function ClientDirectUploadPage() {
           console.log("Attempting client-side upload to Vercel Blob...")
 
           // Use Vercel Blob client-side SDK
-          const { upload } = await import("@vercel/blob/client")
+          //const { upload } = await import("@vercel/blob/client")
 
           const blob = await upload(selectedFile.name, selectedFile, {
             access: "public",

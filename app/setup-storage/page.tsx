@@ -21,7 +21,7 @@ export default function SetupStoragePage() {
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-4">🔧 Find Your Vercel Blob Token</h1>
-          <p className="text-gray-600">Step-by-step guide to locate and configure your BLOB_READ_WRITE_TOKEN</p>
+          <p className="text-gray-600">Step-by-step guide to locate and configure your //BLOB_READ_WRITE_TOKEN</p>
         </div>
 
         {/* Current Status */}
@@ -178,7 +178,7 @@ export default function SetupStoragePage() {
                 <div className="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm">
                   <div className="text-gray-400 mb-2"># Environment Variables for your project</div>
                   <div className="flex items-center justify-between">
-                    <span>BLOB_READ_WRITE_TOKEN=</span>
+                    <span>//BLOB_READ_WRITE_TOKEN=</span>
                     <Button size="sm" variant="outline" onClick={() => setShowToken(!showToken)} className="ml-2">
                       {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </Button>
@@ -241,7 +241,7 @@ export default function SetupStoragePage() {
                     <li>3. Name it "hooptuber-videos" or similar</li>
                     <li>4. After creation, click on the store name</li>
                     <li>5. Look for "Connect" or ".env.local" tab</li>
-                    <li>6. Copy the BLOB_READ_WRITE_TOKEN</li>
+                    <li>6. Copy the //BLOB_READ_WRITE_TOKEN</li>
                   </ol>
                 </div>
 
@@ -283,12 +283,12 @@ export default function SetupStoragePage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => copyToClipboard("BLOB_READ_WRITE_TOKEN=paste_your_token_here")}
+                        onClick={() => copyToClipboard("//BLOB_READ_WRITE_TOKEN=paste_your_token_here")}
                       >
                         {copied ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                       </Button>
                     </div>
-                    <div>BLOB_READ_WRITE_TOKEN=paste_your_token_here</div>
+                    <div>//BLOB_READ_WRITE_TOKEN=paste_your_token_here</div>
                   </div>
                 </div>
 

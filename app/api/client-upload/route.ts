@@ -1,64 +1,43 @@
-import { type NextRequest, NextResponse } from "next/server"
+// app/api/client-upload/route.ts
+export const runtime = "nodejs";
+
+import { type NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
-  console.log("=== CLIENT UPLOAD API CALLED ===")
+  console.log("=== CLIENT UPLOAD API CALLED ===");
 
   try {
-    const body = await request.json()
-    const { fileName, fileSize, fileType } = body
+    const body = await request.json();
+    const { fileName, fileSize, fileType } = body as {
+      fileName?: string;
+      fileSize?: number;
+      fileType?: string;
+    };
 
     console.log("Client upload request:", {
       fileName,
       fileSize: fileSize ? `${(fileSize / 1024 / 1024).toFixed(2)}MB` : "unknown",
       fileType,
-    })
+    });
 
-    // Environment check
-    const token = process.env.BLOB_READ_WRITE_TOKEN
-    if (!token || !token.startsWith("vercel_blob_rw_")) {
-      console.log("🎭 No valid blob token, using mock mode")
-      return createMockUploadResponse(fileName, fileSize)
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now()
-    const fileExtension = fileName?.split(".").pop() || "mp4"
-    const uniqueFileName = `basketball-videos/${timestamp}-${Math.random().toString(36).substr(2, 9)}.${fileExtension}`
-
-    try {
-      // For client-side uploads, we just return the configuration
-      // The actual upload happens directly from the client to Vercel Blob
-      const processingId = `upload_${timestamp}_${Math.random().toString(36).substr(2, 9)}`
-
-      return NextResponse.json({
-        success: true,
-        method: "client_upload",
-        fileName: uniqueFileName,
-        processingId,
-        uploadedAt: new Date().toISOString(),
-        note: "File will be uploaded directly from client to Vercel Blob",
-      })
-    } catch (error: any) {
-      console.error("❌ Client upload setup failed:", error)
-      return createMockUploadResponse(fileName, fileSize)
-    }
+    // No object storage configured → always use mock path (keeps UI working)
+    return createMockUploadResponse(fileName, fileSize);
   } catch (error) {
-    console.error("❌ Client upload error:", error)
-    const timestamp = Date.now()
-    return createMockUploadResponse("unknown-file.mp4", 0)
+    console.error("❌ Client upload error:", error);
+    return createMockUploadResponse("unknown-file.mp4", 0);
   }
 }
 
-function createMockUploadResponse(fileName: string | undefined, fileSize: number | undefined) {
-  const timestamp = Date.now()
+function createMockUploadResponse(fileName: string | undefined, fileSize: number | undefined) { 
+  const timestamp = Date.now();
   const mockVideoUrl = `/api/mock-video/${timestamp}/${encodeURIComponent(fileName || "basketball-game.mp4")}`
 
   const mockResult = {
     success: true,
     videoUrl: mockVideoUrl,
-    processingId: `mock_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
+    processingId: `mock_${timestamp}_${Math.random().toString(36).slice(2, 11)}`,
     fileName: fileName || "basketball-game.mp4",
-    fileSize: fileSize || 25000000,
+    fileSize: fileSize || 25_000_000,
     uploadedAt: new Date().toISOString(),
     method: "mock_fallback",
     verified: true,
@@ -134,6 +113,6 @@ function createMockUploadResponse(fileName: string | undefined, fileSize: number
     },
   }
 
-  console.log("🎭 Mock upload result created for client upload")
-  return NextResponse.json(mockResult)
+  console.log("🎭 Mock upload result created for client upload");
+  return NextResponse.json(mockResult);
 }

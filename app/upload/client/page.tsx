@@ -124,8 +124,8 @@ export default function ClientUploadPage() {
 
       try {
         // Upload directly to Vercel Blob using the client
-        addDebugInfo("Importing @vercel/blob/client...")
-        const blobModule = await import("@vercel/blob/client")
+        //addDebugInfo("Importing @vercel/blob/client...")
+        //const blobModule = await import("@vercel/blob/client")
 
         if (!blobModule || !blobModule.put) {
           throw new Error("Failed to load Vercel Blob client")
@@ -174,7 +174,7 @@ export default function ClientUploadPage() {
       // Check if it's a configuration issue
       if (
         err instanceof Error &&
-        (err.message.includes("BLOB_READ_WRITE_TOKEN") ||
+        (err.message.includes("//BLOB_READ_WRITE_TOKEN") ||
           err.message.includes("not configured") ||
           err.message.includes("Failed to load"))
       ) {
@@ -232,7 +232,7 @@ export default function ClientUploadPage() {
                     <h3 className="font-semibold text-orange-900 mb-2">🔧 Blob Storage Setup Required</h3>
                     <p className="text-orange-800 text-sm mb-3">
                       To upload real videos, you need to configure Vercel Blob storage. This requires setting up a
-                      BLOB_READ_WRITE_TOKEN.
+                      //BLOB_READ_WRITE_TOKEN.
                     </p>
                     <div className="flex gap-3">
                       <Button size="sm" asChild>

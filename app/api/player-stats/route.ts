@@ -1,7 +1,9 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { generateObject } from "ai"
-import { openai } from "@ai-sdk/openai"
-import { z } from "zod"
+// app/api/player-stats/route.ts
+export const runtime = "nodejs";
+
+import { type NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { getModel } from "@/lib/gemini"
 
 const PlayerStatsSchema = z.object({
   players: z.array(
@@ -48,19 +50,26 @@ const PlayerStatsSchema = z.object({
   }),
 })
 
+type PlayerStats = z.infer<typeof PlayerStatsSchema>;
+
 export async function POST(request: NextRequest) {
   try {
-    const { shots, videoMetadata } = await request.json()
+    const { shots, videoMetadata } = await request.json();
 
     if (!shots || !Array.isArray(shots)) {
-      return NextResponse.json({ error: "Invalid shots data" }, { status: 400 })
+      return NextResponse.json({ error: "Invalid shots data" }, { status: 400 });
     }
 
-    // Generate comprehensive player statistics
-    const { object: stats } = await generateObject({
-      model: openai("gpt-4o"),
-      schema: PlayerStatsSchema,
-      prompt: `Generate detailed basketball player statistics from this shot data:
+    const durationSec = Number(videoMetadata?.duration) || 600;
+
+    // --- Gemini 2.5 Pro call ---
+    const model = getModel(); // defaults to "gemini-2.5-pro"
+
+    const prompt = `
+    Return ONLY JSON that matches this schema (no markdown fences, no prose):
+    ${PlayerStatsSchema.toString()} 
+
+      Generate detailed basketball player statistics from this shot data:
       
       ${JSON.stringify(shots, null, 2)}
       
@@ -73,15 +82,26 @@ export async function POST(request: NextRequest) {
       - Key highlights and moments
       - Team overall performance
       
-      Make the stats realistic for a pickup basketball game.`,
-    })
+      Make the stats realistic for a pickup basketball game.
+      `.trim();
 
-    return NextResponse.json({
-      success: true,
-      stats,
-    })
-  } catch (error) {
-    console.error("Stats generation error:", error)
-    return NextResponse.json({ error: "Failed to generate player stats" }, { status: 500 })
+      const gen = await model.generateContent([{ text: prompt }]);
+      const raw = gen.response.text().trim();
+
+      // Tolerate accidental ```json fences
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+      
+      const parsed = JSON.parse(cleaned);
+      const stats: PlayerStats = PlayerStatsSchema.parse(parsed);
+
+
+      return NextResponse.json({ success: true, aiModel: "gemini-2.5-pro", stats });
+    } catch (error) {
+      console.error("Stats generation error:", error);
+      return NextResponse.json(
+        { error: "Failed to generate player stats", details: String(error) },
+        { status: 500 },
+      );
+    }
   }
-}
+  

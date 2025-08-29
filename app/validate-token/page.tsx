@@ -31,7 +31,7 @@ export default function ValidateTokenPage() {
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold mb-4">Validate Blob Token</h1>
-          <p className="text-gray-600">Check if your BLOB_READ_WRITE_TOKEN is working correctly</p>
+          <p className="text-gray-600">Check if your //BLOB_READ_WRITE_TOKEN is working correctly</p>
         </div>
 
         <Card className="mb-6">

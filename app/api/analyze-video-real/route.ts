@@ -1,7 +1,10 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { generateObject } from "ai"
-import { openai } from "@ai-sdk/openai"
-import { z } from "zod"
+// app/api/analyze-video-real/route.ts
+export const runtime = "nodejs";
+export const maxDuration = 120;
+
+import { type NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { getModel } from "@/lib/gemini"; // must return a GenerativeModel for "gemini-2.5-pro"
 
 // Schema for real basketball analysis
 const BasketballAnalysisSchema = z.object({
@@ -50,27 +53,30 @@ const BasketballAnalysisSchema = z.object({
   }),
 })
 
+type BasketballAnalysis = z.infer<typeof BasketballAnalysisSchema>;
+
 export async function POST(request: NextRequest) {
   try {
-    const { videoUrl, fileName, processingId } = await request.json()
+    const { videoUrl, fileName, processingId } = await request.json();
 
     if (!videoUrl) {
-      return NextResponse.json({ error: "No video URL provided" }, { status: 400 })
+      return NextResponse.json({ error: "No video URL provided" }, { status: 400 });
     }
 
-    console.log("🏀 Starting REAL AI video analysis for:", fileName)
-    console.log("📹 Video URL:", videoUrl)
+    console.log("🏀 Starting REAL AI video analysis for:", fileName);
+    console.log("📹 Video URL:", videoUrl);
 
     // Step 1: Analyze video metadata
-    const videoMetadata = await analyzeVideoMetadata(videoUrl)
-    console.log("📊 Video metadata:", videoMetadata)
+    const videoMetadata = await analyzeVideoMetadata(videoUrl);
+    console.log("📊 Video metadata:", videoMetadata);
 
     // Step 2: Extract and analyze video content with AI
-    const analysisResult = await analyzeVideoWithAI(videoUrl, fileName, videoMetadata)
-    console.log("🎯 AI Analysis complete:", analysisResult.shots.length, "shots detected")
+    const analysisResult = await analyzeVideoWithAI(videoUrl, fileName, videoMetadata);
+    console.log("🎯 AI Analysis complete:", analysisResult.shots.length, "shots detected");
 
     // Step 3: Create highlight clips data
-    const highlightClips = analysisResult.shots.map((shot, index) => ({
+    const highlightClips = analysisResult.shots.map(
+      (shot: BasketballAnalysis["shots"][number], index: number) => ({
       id: `clip_${index + 1}`,
       startTime: shot.clipStart,
       endTime: shot.clipEnd,
@@ -79,7 +85,7 @@ export async function POST(request: NextRequest) {
       isSuccessful: shot.basket.made,
       timestamp: shot.timestamp,
       confidence: shot.confidence,
-    }))
+    }));
 
     const result = {
       processingId,
@@ -91,20 +97,21 @@ export async function POST(request: NextRequest) {
         videoMetadata: analysisResult.videoMetadata,
         gameStats: analysisResult.gameStats,
         processingMethod: "real_ai_analysis",
-        aiModel: "gpt-4o",
+        aiModel: "gemini-2.5-pro",
       },
       highlightClips,
       createdAt: new Date().toISOString(),
       highlightReel: {
-        duration: highlightClips.reduce((total, clip) => total + (clip.endTime - clip.startTime), 0),
+        duration: highlightClips.reduce((total: number, clip: { startTime: number; endTime: number }) =>
+          total + (clip.endTime - clip.startTime), 0),
         clipCount: highlightClips.length,
         totalShots: analysisResult.gameStats.totalShots,
         successfulShots: analysisResult.gameStats.madeShots,
         shootingPercentage: analysisResult.gameStats.shootingPercentage,
       },
-    }
+    };
 
-    console.log("✅ Analysis complete! Generated", result.highlightClips.length, "highlight clips")
+    console.log("✅ Analysis complete! Generated", result.highlightClips.length, "highlight clips");
 
     return NextResponse.json({
       success: true,
@@ -125,18 +132,18 @@ export async function POST(request: NextRequest) {
 async function analyzeVideoMetadata(videoUrl: string) {
   try {
     // Get basic video info
-    const response = await fetch(videoUrl, { method: "HEAD" })
-    const contentLength = response.headers.get("content-length")
+    const response = await fetch(videoUrl, { method: "HEAD" });
+    const contentLength = response.headers.get("content-length");
 
     // Estimate duration based on file size (rough approximation)
-    const fileSizeMB = contentLength ? Number.parseInt(contentLength) / (1024 * 1024) : 50
-    const estimatedDuration = Math.min(Math.max(fileSizeMB * 8, 120), 3600) // 8 seconds per MB, min 2 min, max 1 hour
+    const fileSizeMB = contentLength ? Number.parseInt(contentLength) / (1024 * 1024) : 50;
+    const estimatedDuration = Math.min(Math.max(fileSizeMB * 8, 120), 3600); // 8 seconds per MB, min 2 min, max 1 hour
 
     return {
       duration: estimatedDuration,
       fileSize: fileSizeMB,
       estimatedQuality: fileSizeMB > 100 ? "high" : fileSizeMB > 50 ? "medium" : "standard",
-    }
+    };
   } catch (error) {
     console.warn("Could not fetch video metadata, using defaults")
     return {
@@ -147,14 +154,17 @@ async function analyzeVideoMetadata(videoUrl: string) {
   }
 }
 
-async function analyzeVideoWithAI(videoUrl: string, fileName: string, metadata: any) {
-  console.log("🤖 Analyzing video content with AI...")
+async function analyzeVideoWithAI(videoUrl: string, fileName: string, metadata: { duration: number; estimatedQuality: string },
+): Promise<BasketballAnalysis> {
+  console.log("🤖 Analyzing video content with Gemini 2.5 Pro...");
 
-  // Use AI to generate realistic basketball analysis based on video context
-  const { object: analysis } = await generateObject({
-    model: openai("gpt-4o"),
-    schema: BasketballAnalysisSchema,
-    prompt: `You are an expert basketball video analyst. Analyze this basketball game video and provide detailed shot detection and analysis.
+  const model = getModel(); // should default to "gemini-2.5-pro"
+
+  const prompt = `
+Return ONLY JSON that matches this schema (no markdown, no prose):
+${BasketballAnalysisSchema.toString()} 
+  
+You are an expert basketball video analyst. Analyze this basketball game video and provide detailed shot detection and analysis.
 
 Video Details:
 - File: ${fileName}
@@ -182,27 +192,65 @@ Based on the video filename and duration, generate a realistic basketball game a
 
 Make the analysis feel authentic and match what you'd expect from a ${Math.round(metadata.duration / 60)}-minute basketball video.
 
-Generate realistic coordinates for player and basket positions (assume 1920x1080 video).`,
-  })
+Generate realistic coordinates for player and basket positions (assume 1920x1080 video).
+
+Again, output ONLY valid JSON that matches the schema EXACTLY.
+`.trim();
+
+const gen = await model.generateContent([{ text: prompt }]);
+const raw = gen.response.text().trim();
+
+// const gen = await model.generateContent({
+//   contents: [
+//     {
+//       role: "user",
+//       parts: [{ text: prompt }],
+//     },
+//   ],
+//   generationConfig: {
+//     responseMimeType: "application/json",
+//   },
+// });
+
+
+// // Handle occasional fenced code blocks defensively
+// const raw = gen.response.text().trim();
+// const cleaned = raw
+//   .replace(/^```(?:json)?\s*/i, "")
+//   .replace(/\s*```$/i, "");
+
+  //let analysis = BasketballAnalysisSchema.parse(JSON.parse(cleaned));
+
+  // Optional: quick sanity log
+  //console.log(`🏀 Parsed ${analysis.shots.length} shots from Gemini JSON`);
+  
+  //let analysis = BasketballAnalysisSchema.parse(JSON.parse(cleaned));
+
+  // Validate against Zod schema for safety/shape
+  let analysis = BasketballAnalysisSchema.parse(JSON.parse(raw));
 
   // Enhance the analysis with additional processing
-  const enhancedShots = analysis.shots.map((shot, index) => ({
+  const enhancedShots = analysis.shots.map(
+    (shot: BasketballAnalysis["shots"][number], index: number) => ({
     ...shot,
     clipStart: Math.max(0, shot.timestamp - 5),
     clipEnd: Math.min(metadata.duration, shot.timestamp + 3),
     description: generateShotDescription(shot, index + 1),
-  }))
+    }), 
+  );
 
-  return {
-    ...analysis,
-    shots: enhancedShots,
-  }
+  analysis = { ...analysis, shots: enhancedShots };
+
+  return analysis;
 }
 
-function generateShotDescription(shot: any, shotNumber: number): string {
-  const shotTypeText = shot.shotType.replace("_", " ").toLowerCase()
-  const outcome = shot.basket.made ? "makes" : "misses"
-  const jerseyText = shot.player.jersey ? ` (#${shot.player.jersey})` : ""
+function generateShotDescription(shot: BasketballAnalysis["shots"][number],
+shotNumber: number,
+): string {
+  const shotTypeText = shot.shotType.replace("_", " ").toLowerCase();
+  const outcome = shot.basket.made ? "makes" : "misses";
+  const jerseyText = shot.player.jersey ? ` (#${shot.player.jersey})` : "";
 
-  return `Shot ${shotNumber}: Player${jerseyText} ${outcome} a ${shotTypeText} at ${Math.round(shot.timestamp)}s`
-}
+  return `Shot ${shotNumber}: Player${jerseyText} ${outcome} a ${shotTypeText} at ${Math.round(
+    shot.timestamp,
+  )}s`;}

@@ -1,114 +1,159 @@
-import { type NextRequest, NextResponse } from "next/server"
+// app/api/test-blob-upload/route.ts
+export const runtime = "nodejs";
+
+import { type NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("=== BLOB UPLOAD TEST ===")
+    console.log("=== BLOB UPLOAD TEST (no-storage mode) ===");
 
-    // Check environment
-    const token = process.env.BLOB_READ_WRITE_TOKEN
-    console.log("Token exists:", !!token)
-    console.log("Token length:", token?.length || 0)
-    console.log("Token prefix:", token?.substring(0, 20) || "none")
-    console.log("Node env:", process.env.NODE_ENV)
-    console.log("Vercel env:", process.env.VERCEL_ENV)
+    // Environment (kept minimal; no Vercel-specific checks)
+    console.log("Node env:", process.env.NODE_ENV);
 
-    if (!token) {
-      return NextResponse.json({
-        success: false,
-        error: "No BLOB_READ_WRITE_TOKEN found",
-        debug: { tokenExists: false },
-      })
-    }
+    // Create test data (preserved)
+    const testData = `Test upload at ${new Date().toISOString()}`;
+    const testFileName = `test-uploads/test-${Date.now()}.txt`;
+    console.log("Attempting test upload...");
+    console.log("Filename:", testFileName);
+    console.log("Data size:", testData.length);
+
+    // if (!token) {
+    //   return NextResponse.json({
+    //     success: false,
+    //     //error: "No //BLOB_READ_WRITE_TOKEN found",
+    //     debug: { tokenExists: false },
+    //   })
+    // }
 
     // Try to import blob
-    console.log("Importing @vercel/blob...")
-    const { put } = await import("@vercel/blob")
-    console.log("Blob module imported successfully")
+    //console.log("Importing @vercel/blob...")
+    //const { put } = await import("@vercel/blob")
+    //console.log("Blob module imported successfully")
+
+    // ---- No storage: simulate an "upload" with a data URL ----
+    const uploadedUrl = `data:text/plain;base64,${Buffer.from(testData).toString("base64")}`;
+    const uploadedSize = Buffer.byteLength(testData);
+    //Replace when you add real storage later
+    //with your provider upload call (e.g., S3 PutObjectCommand), then set:
+    //const uploadedUrl = <providerReturnedUrl>;
+    //const uploadedSize = <contentLengthReturnedOrKnown>;
+
 
     // Create test data
-    const testData = `Test upload at ${new Date().toISOString()}`
-    const testFileName = `test-uploads/test-${Date.now()}.txt`
+    //const testData = `Test upload at ${new Date().toISOString()}`
+    //const testFileName = `test-uploads/test-${Date.now()}.txt`
 
-    console.log("Attempting test upload...")
-    console.log("Filename:", testFileName)
-    console.log("Data size:", testData.length)
+    //console.log("Attempting test upload...")
+    //console.log("Filename:", testFileName)
+    //console.log("Data size:", testData.length)
 
-    // Try the upload with detailed error catching
-    const blob = await put(testFileName, testData, {
-      access: "public",
-      addRandomSuffix: false,
-    })
-
-    console.log("Upload successful!")
-    console.log("Blob URL:", blob.url)
-    console.log("Blob size:", blob.size)
-
-    // Try to clean up
+    // Cleanup step kept (but skipped since there’s no remote object)
     try {
-      const { del } = await import("@vercel/blob")
-      await del(blob.url)
-      console.log("Cleanup successful")
+      // (no-op) — when you add real storage later, delete the temp object here
+      console.log("Cleanup skipped (no remote storage in use)");
     } catch (cleanupError) {
-      console.warn("Cleanup failed:", cleanupError)
+      console.warn("Cleanup step reported:", cleanupError);
     }
+
+    // // Try the upload with detailed error catching
+    // const blob = await put(testFileName, testData, {
+    //   access: "public",
+    //   addRandomSuffix: false,
+    // })
+
+    // console.log("Upload successful!")
+    // console.log("Blob URL:", blob.url)
+    // console.log("Blob size:", blob.size)
+
+    // // Try to clean up
+    // try {
+    //   //const { del } = await import("@vercel/blob")
+    //   await del(blob.url)
+    //   console.log("Cleanup successful")
+    // } catch (cleanupError) {
+    //   console.warn("Cleanup failed:", cleanupError)
+    // }
+
+    // return NextResponse.json({
+    //   success: true,
+    //   message: "Blob upload test successful",
+    //   blobUrl: blob.url,
+    //   blobSize: blob.size,
+    // })
 
     return NextResponse.json({
       success: true,
-      message: "Blob upload test successful",
-      blobUrl: blob.url,
-      blobSize: blob.size,
-    })
-  } catch (error: any) {
-    console.error("=== BLOB TEST ERROR ===")
-    console.error("Error message:", error.message)
-    console.error("Error name:", error.name)
-    console.error("Error status:", error.status)
-    console.error("Error response:", error.response)
-    console.error("Full error:", error)
+      message: "Mock upload test successful (data URL returned)",
+      // mirrors your old shape, just renamed to clarify it's not a blob:
+      blobUrl: uploadedUrl,
+      blobSize: uploadedSize,
+      fileName: testFileName,
+      mock: true,
+    });
+  } catch (error: unknown) {
+    // Keep your detailed error logging
+    const err = error as
+      | (Error & { status?: unknown; statusText?: unknown; response?: unknown })
+      | undefined;
 
-    // Try to get more details from the error
-    let errorDetails = {
-      message: error.message,
-      name: error.name,
-      status: error.status,
-      statusText: error.statusText,
-      type: typeof error,
-      toString: error.toString(),
-    }
+    console.error("=== BLOB TEST ERROR ===");
+    console.error("Error message:", err?.message);
+    console.error("Error name:", err?.name);
+    console.error("Error status:", (err as any)?.status);
+    console.error("Error response:", (err as any)?.response);
+    console.error("Full error:", err);
 
-    // Check if it's a fetch error
-    if (error.message?.includes("fetch")) {
+    // Make errorDetails flexible so extra flags like fetchError/jsonError don’t cause TS errors
+    let errorDetails: Record<string, unknown> = {
+      message: err?.message,
+      name: err?.name,
+      status: (err as any)?.status,
+      statusText: (err as any)?.statusText,
+      type: typeof err,
+      toString: String(err),
+    };
+
+    // Keep your helpful flags; types are now permissive
+    if (err?.message?.includes("fetch")) {
       errorDetails = {
         ...errorDetails,
         fetchError: true,
         possibleCause: "Network or CORS issue",
-      }
+      };
     }
 
-    // Check if it's a JSON parsing error
-    if (error.message?.includes("JSON") || error.message?.includes("Unexpected token")) {
+    if (err?.message?.includes("JSON") || err?.message?.includes("Unexpected token")) {
       errorDetails = {
         ...errorDetails,
         jsonError: true,
         possibleCause: "API returned HTML instead of JSON - likely auth issue",
-      }
+      };
     }
 
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
+        error: err?.message ?? "Unknown error",
         errorDetails,
         troubleshooting: {
           steps: [
-            "1. Check if BLOB_READ_WRITE_TOKEN is correct",
-            "2. Verify blob store exists in Vercel dashboard",
-            "3. Try regenerating the token",
-            "4. Make sure you're using the right Vercel account",
+            "1. Verify the API route is reachable from your client",
+            "2. Check server logs for network/CORS failures",
+            "3. If using a proxy locally, confirm it isn’t rewriting requests",
+            "4. When you add real storage, ensure credentials and bucket/container exist",
           ],
         },
       },
       { status: 500 },
-    )
+    );
   }
 }
+
+//NOTE:
+//---- No storage: simulate an "upload" with a data URL ----
+//const uploadedUrl = `data:text/plain;base64,${Buffer.from(testData).toString("base64")}`;
+//const uploadedSize = Buffer.byteLength(testData);
+//REPLACE THESE 2 LINES when you add real storage later
+//with your provider upload call (e.g., S3 PutObjectCommand), then set:
+//const uploadedUrl = <providerReturnedUrl>;
+//const uploadedSize = <contentLengthReturnedOrKnown>

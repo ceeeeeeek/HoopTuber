@@ -14,7 +14,7 @@ export default function BlobDiagnosticsPage() {
   const runDiagnostics = async () => {
     setLoading(true)
     try {
-      const response = await fetch("/api/blob-diagnostics")
+      //const response = await fetch("/api/blob-diagnostics")
       const data = await response.json()
       setDiagnostics(data)
     } catch (error) {
@@ -71,7 +71,7 @@ export default function BlobDiagnosticsPage() {
                 <CardContent>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span>BLOB_READ_WRITE_TOKEN exists</span>
+                      <span>//BLOB_READ_WRITE_TOKEN exists</span>
                       {diagnostics.env?.tokenExists ? (
                         <CheckCircle className="w-5 h-5 text-green-500" />
                       ) : (

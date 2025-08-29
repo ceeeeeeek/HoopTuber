@@ -139,7 +139,7 @@ export default function TestClientUploadPage() {
                     {!results?.blobConfigured && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
                         <p className="text-yellow-800 mb-2">
-                          <strong>Blob Storage Not Configured:</strong> You need to set up the BLOB_READ_WRITE_TOKEN.
+                          <strong>Blob Storage Not Configured:</strong> You need to set up the //BLOB_READ_WRITE_TOKEN.
                         </p>
                         <Button asChild>
                           <Link href="/setup-storage">Setup Blob Storage</Link>
