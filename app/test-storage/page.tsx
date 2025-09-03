@@ -15,6 +15,8 @@ interface TestResult {
   environment?: string
   hasToken?: boolean
   tokenLength?: number
+  testName?: string       
+  timestamp?: string      
 }
 
 export default function TestStoragePage() {

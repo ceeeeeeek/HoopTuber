@@ -15,7 +15,10 @@ export default function BlobDiagnosticsPage() {
     setLoading(true)
     try {
       //const response = await fetch("/api/blob-diagnostics")
-      const data = await response.json()
+      //const data = await response.json()
+      const response = await fetch("/api/blob-diagnostics")
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const data = await response.json()
       setDiagnostics(data)
     } catch (error) {
       setDiagnostics({
