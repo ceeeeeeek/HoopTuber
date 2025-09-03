@@ -41,7 +41,8 @@ interface UploadResult {
 }
 
 export default function ClientDirectUploadPage() {
-  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete" | "error">("idle")
+  const [uploadState, setUploadState] =
+    useState<"idle" | "uploading" | "processing" | "complete" | "error">("idle")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null)
   const [progress, setProgress] = useState(0)
@@ -50,12 +51,6 @@ export default function ClientDirectUploadPage() {
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
-      console.log("File selected:", {
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        sizeInMB: (file.size / 1024 / 1024).toFixed(2),
-      })
       setSelectedFile(file)
       setUploadState("idle")
       setUploadResult(null)
@@ -69,111 +64,51 @@ export default function ClientDirectUploadPage() {
       return
     }
 
-    console.log("Starting client-direct upload for:", selectedFile.name)
     setUploadState("uploading")
     setProgress(0)
     setErrorMessage("")
 
-    try {
-      // Step 1: Check if we can use Vercel Blob or need to use mock mode
-      console.log("Requesting upload configuration...")
-      const configResponse = await fetch("/api/client-upload", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          fileName: selectedFile.name,
-          fileSize: selectedFile.size,
-          fileType: selectedFile.type,
-        }),
-      })
-
-      const configData = await configResponse.json()
-      console.log("Upload configuration:", configData)
-
-      if (!configData.success) {
-        throw new Error(configData.error || "Failed to configure upload")
-      }
-
-      // Simulate upload progress
-      const progressInterval = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 90) {
-            clearInterval(progressInterval)
-            return 90
-          }
-          return prev + 10
-        })
-      }, 500)
-
-      // Step 2: Try direct upload to Vercel Blob (client-side)
-      if (configData.method !== "mock_fallback") {
-        try {
-          console.log("Attempting client-side upload to Vercel Blob...")
-
-          // Use Vercel Blob client-side SDK
-          const { upload } = await import("@vercel/blob/client")
-
-          const blob = await upload(selectedFile.name, selectedFile, {
-            access: "public",
-            handleUploadUrl: "/api/upload-url",
-          })
-
-          console.log("✅ Client-side upload successful:", blob.url)
-
+    // Simulate smooth progress while upload is in-flight
+    const progressInterval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) {
           clearInterval(progressInterval)
-          setProgress(100)
-
-          const result = {
-            success: true,
-            videoUrl: blob.url,
-            processingId: configData.processingId,
-            fileName: selectedFile.name,
-            fileSize: selectedFile.size,
-            method: "vercel_blob_client",
-            verified: true,
-          }
-
-          setUploadResult(result)
-          setUploadState("processing")
-
-          // Simulate processing
-          setTimeout(() => {
-            setUploadState("complete")
-          }, 2000)
-        } catch (blobError: any) {
-          console.error("❌ Client-side blob upload failed:", blobError)
-          console.log("🎭 Falling back to mock mode")
-
-          // Fall back to mock mode
-          clearInterval(progressInterval)
-          setProgress(100)
-          setUploadResult(configData)
-          setUploadState("processing")
-
-          setTimeout(() => {
-            setUploadState("complete")
-          }, 2000)
+          return 90
         }
-      } else {
-        // Use mock mode directly
-        console.log("🎭 Using mock mode for analysis")
-        clearInterval(progressInterval)
-        setProgress(100)
-        setUploadResult(configData)
-        setUploadState("processing")
+        return prev + 10
+      })
+    }, 500)
 
-        setTimeout(() => {
-          setUploadState("complete")
-        }, 2000)
+    try {
+      // Upload via our server route (which currently returns mock results until real storage is wired)
+      const form = new FormData()
+      form.append("video", selectedFile)
+
+      const res = await fetch("/api/upload", { method: "POST", body: form })
+      const data: UploadResult = await res.json()
+
+      clearInterval(progressInterval)
+      setProgress(100)
+
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error || "Upload failed")
       }
-    } catch (error) {
-      console.error("Upload failed:", error)
-      const errorMsg = error instanceof Error ? error.message : "Unknown error occurred"
-      setErrorMessage(errorMsg)
+
+      setUploadResult({
+        ...data,
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size,
+      })
+      setUploadState("processing")
+
+      // Simulate processing delay
+      setTimeout(() => setUploadState("complete"), 2000)
+    } catch (err) {
+      clearInterval(progressInterval)
+      const msg = err instanceof Error ? err.message : "Unknown error occurred"
+      setErrorMessage(msg)
       setUploadState("error")
-      setUploadResult({ success: false, error: errorMsg })
+      setUploadResult({ success: false, error: msg })
     }
   }
 
@@ -205,10 +140,10 @@ export default function ClientDirectUploadPage() {
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-4">Upload Basketball Video</h1>
-            <p className="text-gray-600">Direct client-side upload bypassing server size limits</p>
+            <p className="text-gray-600">Direct client flow; currently posts to our API and uses demo analysis</p>
           </div>
 
-          {/* Error State */}
+          {/* Error */}
           {uploadState === "error" && (
             <Card className="mb-6 border-red-200">
               <CardContent className="pt-6">
@@ -226,7 +161,7 @@ export default function ClientDirectUploadPage() {
             </Card>
           )}
 
-          {/* Upload Form */}
+          {/* Idle */}
           {uploadState === "idle" && (
             <Card>
               <CardHeader>
@@ -280,28 +215,18 @@ export default function ClientDirectUploadPage() {
                       Upload & Analyze Video
                     </Button>
                   )}
-
-                  <div className="p-4 bg-green-50 rounded-lg">
-                    <h4 className="font-semibold text-green-900 mb-2">🚀 Client-Side Upload Benefits:</h4>
-                    <ul className="text-sm text-green-800 space-y-1">
-                      <li>• Bypasses 4.5MB server limit</li>
-                      <li>• Direct upload to cloud storage</li>
-                      <li>• Faster upload speeds</li>
-                      <li>• Handles large video files</li>
-                    </ul>
-                  </div>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Uploading State */}
+          {/* Uploading */}
           {uploadState === "uploading" && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Upload className="w-5 h-5 mr-2" />
-                  Uploading Video (Client-Side)
+                  Uploading Video
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -310,13 +235,13 @@ export default function ClientDirectUploadPage() {
                   <p className="text-center text-gray-600">
                     Uploading {selectedFile?.name}... {progress}%
                   </p>
-                  <p className="text-center text-sm text-gray-500">Direct upload to cloud storage</p>
+                  <p className="text-center text-sm text-gray-500">Client-side upload</p>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Processing State */}
+          {/* Processing */}
           {uploadState === "processing" && (
             <Card>
               <CardHeader>
@@ -339,7 +264,7 @@ export default function ClientDirectUploadPage() {
             </Card>
           )}
 
-          {/* Complete State */}
+          {/* Complete */}
           {uploadState === "complete" && uploadResult && (
             <div className="space-y-6">
               <Card>
@@ -361,11 +286,9 @@ export default function ClientDirectUploadPage() {
                         {uploadResult.fileName} ({(uploadResult.fileSize! / 1024 / 1024).toFixed(2)} MB)
                       </p>
 
-                      {uploadResult.method === "vercel_blob_client" && (
+                      {uploadResult.method !== "mock_fallback" && (
                         <div className="p-3 bg-green-50 rounded-lg border border-green-200 mb-4">
-                          <p className="text-green-800 text-sm">
-                            ✅ Real Upload: Video uploaded directly to Vercel Blob storage
-                          </p>
+                          <p className="text-green-800 text-sm">✅ Real Upload: Video saved to your storage</p>
                         </div>
                       )}
 

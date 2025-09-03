@@ -36,7 +36,7 @@ export default function StorageDiagnosticsPage() {
       const envData = await envResponse.json()
 
       if (envData.hasToken) {
-        addLog(`✅ BLOB_READ_WRITE_TOKEN found (${envData.tokenLength} characters)`)
+        addLog(`✅ //BLOB_READ_WRITE_TOKEN found (${envData.tokenLength} characters)`)
         setTokenInfo({
           exists: true,
           length: envData.tokenLength,
@@ -44,7 +44,7 @@ export default function StorageDiagnosticsPage() {
           isValid: envData.tokenLength > 20 && envData.tokenPrefix === "vercel_blob_rw_",
         })
       } else {
-        addLog("❌ BLOB_READ_WRITE_TOKEN not found")
+        addLog("❌ //BLOB_READ_WRITE_TOKEN not found")
         setTokenInfo({
           exists: false,
           isValid: false,
@@ -130,9 +130,9 @@ export default function StorageDiagnosticsPage() {
                         >
                           {tokenInfo?.exists
                             ? tokenInfo?.isValid
-                              ? "✅ BLOB_READ_WRITE_TOKEN Found"
-                              : "⚠️ BLOB_READ_WRITE_TOKEN May Be Invalid"
-                            : "❌ BLOB_READ_WRITE_TOKEN Missing"}
+                              ? "✅ //BLOB_READ_WRITE_TOKEN Found"
+                              : "⚠️ //BLOB_READ_WRITE_TOKEN May Be Invalid"
+                            : "❌ //BLOB_READ_WRITE_TOKEN Missing"}
                         </h3>
                         {tokenInfo?.exists ? (
                           <p className={`text-sm ${tokenInfo?.isValid ? "text-green-700" : "text-yellow-700"}`}>
@@ -260,7 +260,7 @@ export default function StorageDiagnosticsPage() {
                     <li className="flex items-start">
                       <span className="font-bold mr-2">1.</span>
                       <span>
-                        <strong>Missing Token:</strong> Ensure BLOB_READ_WRITE_TOKEN is set in your environment
+                        <strong>Missing Token:</strong> Ensure //BLOB_READ_WRITE_TOKEN is set in your environment
                         variables
                       </span>
                     </li>

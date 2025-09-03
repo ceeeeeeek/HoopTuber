@@ -15,6 +15,8 @@ interface TestResult {
   environment?: string
   hasToken?: boolean
   tokenLength?: number
+  testName?: string       
+  timestamp?: string      
 }
 
 export default function TestStoragePage() {
@@ -199,7 +201,7 @@ export default function TestStoragePage() {
               <div>
                 <h4 className="font-semibold text-red-600 mb-2">❌ If tests fail:</h4>
                 <ul className="text-sm text-gray-600 space-y-1 ml-4">
-                  <li>• Check that BLOB_READ_WRITE_TOKEN is set in your environment variables</li>
+                  <li>• Check that //BLOB_READ_WRITE_TOKEN is set in your environment variables</li>
                   <li>• Verify the token has the correct permissions</li>
                   <li>• Ensure you're on a Vercel deployment or have blob storage configured locally</li>
                   <li>• Try refreshing the page and running tests again</li>
@@ -218,7 +220,7 @@ export default function TestStoragePage() {
               <div>
                 <h4 className="font-semibold text-blue-600 mb-2">🔧 Environment Setup:</h4>
                 <ul className="text-sm text-gray-600 space-y-1 ml-4">
-                  <li>• Add BLOB_READ_WRITE_TOKEN to your .env.local file</li>
+                  <li>• Add //BLOB_READ_WRITE_TOKEN to your .env.local file</li>
                   <li>• Get the token from your Vercel dashboard → Storage → Blob</li>
                   <li>• Restart your development server after adding the token</li>
                 </ul>

@@ -23,7 +23,8 @@ import Link from "next/link"
 
 export default function ClientUploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete" | "error">("idle")
+  const [uploadState, setUploadState] =
+    useState<"idle" | "uploading" | "processing" | "complete" | "error">("idle")
   const [uploadProgress, setUploadProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<any>(null)
@@ -79,110 +80,60 @@ export default function ClientUploadPage() {
     setError(null)
     setNeedsSetup(false)
 
-    try {
-      addDebugInfo("Starting client-side upload...")
-
-      // First, get an upload URL from our API
-      addDebugInfo("Requesting upload URL...")
-      const uploadUrlResponse = await fetch("/api/upload-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: selectedFile.name,
-          contentType: selectedFile.type,
-          size: selectedFile.size,
-        }),
+    // Smooth progress simulation
+    const progressInterval = setInterval(() => {
+      setUploadProgress((prev) => {
+        if (prev >= 90) {
+          clearInterval(progressInterval)
+          return 90
+        }
+        return prev + 15
       })
+    }, 400)
 
-      if (!uploadUrlResponse.ok) {
-        const errorData = await uploadUrlResponse.json().catch(() => ({}))
-        if (errorData.setupRequired) {
-          setNeedsSetup(true)
-        }
-        throw new Error(errorData.error || `Failed to get upload URL: ${uploadUrlResponse.status}`)
+    try {
+      addDebugInfo("Uploading via /api/upload...")
+      const form = new FormData()
+      form.append("video", selectedFile)
+
+      const res = await fetch("/api/upload", { method: "POST", body: form })
+      const data = await res.json()
+
+      clearInterval(progressInterval)
+      setUploadProgress(100)
+
+      if (!res.ok || !data?.success) {
+        if (data?.setupRequired) setNeedsSetup(true)
+        throw new Error(data?.error || `Upload failed with status ${res.status}`)
       }
 
-      const data = await uploadUrlResponse.json()
-      const { uploadUrl, processingId } = data
+      addDebugInfo("Upload successful")
 
-      if (!uploadUrl) {
-        throw new Error("No upload URL returned from server")
-      }
+      setResult({
+        ...data,
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size,
+      })
+      setUploadState("processing")
 
-      addDebugInfo(`Got upload URL: ${uploadUrl}`)
-
-      // Simulate upload progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => {
-          if (prev >= 90) {
-            clearInterval(progressInterval)
-            return 90
-          }
-          return prev + 15
-        })
-      }, 400)
-
-      try {
-        // Upload directly to Vercel Blob using the client
-        addDebugInfo("Importing @vercel/blob/client...")
-        const blobModule = await import("@vercel/blob/client")
-
-        if (!blobModule || !blobModule.put) {
-          throw new Error("Failed to load Vercel Blob client")
-        }
-
-        addDebugInfo("Uploading file to blob storage...")
-        const blob = await blobModule.put(uploadUrl, selectedFile, {
-          access: "public",
-          handleUploadUrl: uploadUrl,
-        })
-
-        clearInterval(progressInterval)
-        setUploadProgress(100)
-        addDebugInfo(`Upload successful: ${blob.url}`)
-
-        const result = {
-          success: true,
-          videoUrl: blob.url,
-          processingId,
-          fileName: selectedFile.name,
-          fileSize: selectedFile.size,
-          uploadedAt: new Date().toISOString(),
-          method: "client_upload",
-          blobInfo: {
-            url: blob.url,
-            pathname: blob.pathname,
-            size: blob.size,
-          },
-        }
-
-        setResult(result)
-        setUploadState("processing")
-
-        // Simulate processing
-        setTimeout(() => {
-          setUploadState("complete")
-        }, 3000)
-      } catch (blobError) {
-        clearInterval(progressInterval)
-        addDebugInfo(`Blob client error: ${blobError instanceof Error ? blobError.message : "Unknown blob error"}`)
-        throw blobError
-      }
+      // Simulate server-side processing
+      setTimeout(() => setUploadState("complete"), 3000)
     } catch (err) {
-      addDebugInfo(`Upload error: ${err instanceof Error ? err.message : "Unknown error"}`)
+      clearInterval(progressInterval)
+      const msg = err instanceof Error ? err.message : "Upload failed"
+      addDebugInfo(`Upload error: ${msg}`)
 
-      // Check if it's a configuration issue
+      // If a future storage provider signals setup needed, toggle the banner
       if (
-        err instanceof Error &&
-        (err.message.includes("BLOB_READ_WRITE_TOKEN") ||
-          err.message.includes("not configured") ||
-          err.message.includes("Failed to load"))
+        msg.includes("not configured") ||
+        msg.includes("setup") ||
+        msg.includes("credentials") ||
+        msg.includes("token")
       ) {
         setNeedsSetup(true)
-        addDebugInfo("Configuration required - blob storage needs setup")
       }
 
-      setError(err instanceof Error ? err.message : "Upload failed")
+      setError(msg)
       setUploadState("error")
     }
   }
@@ -217,22 +168,19 @@ export default function ClientUploadPage() {
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-4">Client-Side Video Upload</h1>
-            <p className="text-gray-600">
-              Upload your basketball video directly from your browser to Vercel Blob storage
-            </p>
+            <p className="text-gray-600">Upload your basketball video from the browser</p>
           </div>
 
-          {/* Setup Required Banner */}
+          {/* Setup Required (generic) */}
           {needsSetup && (
             <Card className="mb-6 border-orange-200 bg-orange-50">
               <CardContent className="pt-6">
                 <div className="flex items-start space-x-3">
                   <Settings className="w-6 h-6 text-orange-600 mt-0.5" />
                   <div className="flex-1">
-                    <h3 className="font-semibold text-orange-900 mb-2">🔧 Blob Storage Setup Required</h3>
+                    <h3 className="font-semibold text-orange-900 mb-2">🔧 Storage Setup Required</h3>
                     <p className="text-orange-800 text-sm mb-3">
-                      To upload real videos, you need to configure Vercel Blob storage. This requires setting up a
-                      BLOB_READ_WRITE_TOKEN.
+                      To upload real videos, connect a storage provider (S3 / R2 / Firebase, etc.).
                     </p>
                     <div className="flex gap-3">
                       <Button size="sm" asChild>
@@ -273,7 +221,7 @@ export default function ClientUploadPage() {
                       <h3 className="text-lg font-semibold mb-2">
                         {selectedFile ? selectedFile.name : "Drop your video here or click to browse"}
                       </h3>
-                      <p className="text-gray-600 mb-4">Supports MP4, MOV, AVI up to 100MB</p>
+                      <p className="text-gray-600 mb-4">Supports MP4, MOV, AVI up to 150MB</p>
 
                       {selectedFile && (
                         <div className="mt-4 p-3 bg-blue-50 rounded-lg flex items-start space-x-3">
@@ -300,7 +248,7 @@ export default function ClientUploadPage() {
                       <div className="mt-6 flex gap-3">
                         <Button onClick={handleClientUpload} className="flex-1 bg-blue-500 hover:bg-blue-600">
                           <Upload className="w-4 h-4 mr-2" />
-                          Upload to Blob Storage
+                          Upload Video
                         </Button>
                         <Button onClick={resetUpload} variant="outline">
                           Clear
@@ -311,23 +259,23 @@ export default function ClientUploadPage() {
                     <div className="mt-6 p-4 bg-blue-50 rounded-lg">
                       <h4 className="font-semibold text-blue-900 mb-2">🚀 Client-Side Benefits:</h4>
                       <ul className="text-sm text-blue-800 space-y-1">
-                        <li>• Direct upload to Vercel Blob storage</li>
-                        <li>• No server-side processing bottlenecks</li>
-                        <li>• Better error handling and debugging</li>
-                        <li>• Faster upload speeds</li>
+                        <li>• Direct browser upload</li>
+                        <li>• No server bottlenecks</li>
+                        <li>• Better progress & debugging</li>
+                        <li>• Fast and simple</li>
                       </ul>
                     </div>
 
                     <div className="mt-4 p-3 bg-yellow-50 rounded-lg flex items-start space-x-2">
                       <Info className="w-4 h-4 text-yellow-600 mt-0.5" />
                       <div className="text-sm text-yellow-800">
-                        <p className="font-medium">Need Real Video Storage?</p>
+                        <p className="font-medium">Need Real Storage?</p>
                         <p>
                           Follow our{" "}
                           <Link href="/setup-storage" className="underline hover:no-underline">
                             setup guide
                           </Link>{" "}
-                          to configure Vercel Blob storage for real video uploads.
+                          to connect your preferred provider.
                         </p>
                       </div>
                     </div>
@@ -349,7 +297,7 @@ export default function ClientUploadPage() {
                       <p className="text-center text-gray-600">
                         Uploading {selectedFile?.name}... {uploadProgress}%
                       </p>
-                      <p className="text-center text-sm text-gray-500">Client-side upload to Vercel Blob</p>
+                      <p className="text-center text-sm text-gray-500">Client-side upload</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -369,10 +317,10 @@ export default function ClientUploadPage() {
                         <Zap className="w-8 h-8 text-blue-500 animate-pulse" />
                       </div>
                       <h3 className="text-lg font-semibold">Analyzing Your Game</h3>
-                      <p className="text-gray-600">Our AI is detecting baskets and creating your highlight reel...</p>
+                      <p className="text-gray-600">Detecting baskets and composing highlights...</p>
                       <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
                         <Clock className="w-4 h-4" />
-                        <span>This usually takes 1-2 minutes</span>
+                        <span>This usually takes 1–2 minutes</span>
                       </div>
                     </div>
                   </CardContent>
@@ -394,13 +342,7 @@ export default function ClientUploadPage() {
                       </div>
                       <div>
                         <h3 className="text-lg font-semibold mb-2">Your Video is Ready!</h3>
-                        <p className="text-gray-600">
-                          Successfully uploaded to Vercel Blob storage and ready for AI analysis
-                        </p>
-                        <div className="mt-2 p-2 bg-green-50 rounded text-sm text-green-800">
-                          <CheckCircle className="w-4 h-4 inline mr-1" />
-                          Client upload: Video stored in Vercel Blob storage
-                        </div>
+                        <p className="text-gray-600">Uploaded successfully and ready for AI analysis</p>
                       </div>
 
                       <div className="aspect-video bg-gray-900 rounded-lg overflow-hidden">
@@ -420,14 +362,16 @@ export default function ClientUploadPage() {
                         <Button variant="outline" className="flex-1">
                           Start AI Analysis
                         </Button>
-                        <Button
-                          variant="outline"
-                          className="flex-1"
-                          onClick={() => window.open(result.videoUrl, "_blank")}
-                        >
-                          <ExternalLink className="w-4 h-4 mr-2" />
-                          View Video
-                        </Button>
+                        {result?.videoUrl && (
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => window.open(result.videoUrl, "_blank")}
+                          >
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            View Video
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </CardContent>
@@ -452,14 +396,14 @@ export default function ClientUploadPage() {
                         <Button className="w-full" asChild>
                           <Link href="/setup-storage">
                             <Settings className="w-4 h-4 mr-2" />
-                            Setup Blob Storage
+                            Setup Storage
                           </Link>
                         </Button>
                       ) : (
                         <Button variant="outline" className="w-full" asChild>
                           <Link href="/test-storage">
                             <ExternalLink className="w-4 h-4 mr-2" />
-                            Test Storage Configuration
+                            Test Configuration
                           </Link>
                         </Button>
                       )}

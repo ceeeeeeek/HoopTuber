@@ -50,7 +50,7 @@ export default function ApiSetupPage() {
       required: true,
     },
     {
-      name: "BLOB_READ_WRITE_TOKEN",
+      name: "//BLOB_READ_WRITE_TOKEN",
       description: "Required for video file storage and uploads",
       howToGet: "Get from Vercel Dashboard > Storage > Blob",
       example: "vercel_blob_rw_...",
@@ -272,11 +272,11 @@ export default function ApiSetupPage() {
                       <h4 className="font-semibold mb-2">Step 2: Add Environment Variable</h4>
                       <div className="p-3 bg-gray-100 rounded-lg">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="font-mono text-sm">BLOB_READ_WRITE_TOKEN=your_token_here</span>
+                          <span className="font-mono text-sm">//BLOB_READ_WRITE_TOKEN=your_token_here</span>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => copyToClipboard("BLOB_READ_WRITE_TOKEN=your_token_here", "blob")}
+                            onClick={() => copyToClipboard("//BLOB_READ_WRITE_TOKEN=your_token_here", "blob")}
                           >
                             {copied === "blob" ? "Copied!" : <Copy className="w-4 h-4" />}
                           </Button>
