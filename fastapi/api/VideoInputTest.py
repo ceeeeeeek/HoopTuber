@@ -150,11 +150,10 @@ def process_video_and_summarize(file_path):
                     "shots": [
                     {
                         "timestamp": "00:00:43",
-                        "subject": "Player in black hoodie and black shorts",
-                        "location": "Top of the key",
                         "shotType": "jump_shot",
                         "outcome": "made",
                         "confidence": 0.92,
+                        "description": "A high-arc jump shot from the top of the key",
                         "playerPosition": { "x": 35, "y": 60 }
                     }
                     // additional shots here...
@@ -175,7 +174,7 @@ def process_video_and_summarize(file_path):
                     ]
                     },
                     "basketDetection": {
-                    "basketsVisible": 1,
+                    "basketsVisible": <int>,
                     "courtDimensions": { "width": 28, "height": 15 }
                     },
                     "playerTracking": {

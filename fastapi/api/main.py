@@ -73,7 +73,6 @@ def normalize_events(events: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
             "highlights": [],
         }
     }
-
 @app.post("/upload")
 async def upload_video(video: UploadFile = File(...)):
     
@@ -89,4 +88,3 @@ async def upload_video(video: UploadFile = File(...)):
             "analysis": parsed
         }
     }
-    
