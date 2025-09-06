@@ -89,6 +89,68 @@ export default function UploadPage() {
       setProgress(0)
     }
   }, [])
+  // Inside UploadPage component scope (above handleUpload)
+const toSeconds = (ts: string) => {
+  if (!ts) return 0;
+  const parts = ts.split(":").map(Number);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return Number(ts) || 0;
+};
+
+const normalizeShotType = (s: string) => {
+  const t = (s || "").toLowerCase();
+  if (t.includes("three")) return "three_pointer";
+  if (t.includes("layup")) return "layup";
+  if (t.includes("dunk")) return "dunk";
+  return "jump_shot";
+};
+
+const adaptShotEventsToAnalysis = (events: any[]) => {
+  const shots = events.map(e => ({
+    timestamp: toSeconds(e.TimeStamp),
+    shotType: normalizeShotType(e.ShotType),
+    outcome: (e.outcome || "undetermined").toLowerCase().startsWith("make") ? "made" : "missed",
+    confidence: 0.95,
+    description: e.subject || "",
+    playerPosition: { x: 0, y: 0 },
+    shotLocation: e.location || ""
+  }));
+
+  const totalShots = shots.length;
+  const madeShots = shots.filter(s => s.outcome === "made").length;
+  const shootingPercentage = totalShots ? Math.round((madeShots / totalShots) * 100) : 0;
+
+  const shotTypes: Record<string, number> = {};
+  for (const s of shots) shotTypes[s.shotType] = (shotTypes[s.shotType] || 0) + 1;
+
+  return {
+    analysis: {
+      shots,
+      gameStats: {
+        totalShots,
+        madeShots,
+        shootingPercentage,
+        shotTypes,
+        quarterBreakdown: [
+          { quarter: 1, shots: totalShots, made: madeShots },
+          { quarter: 2, shots: 0, made: 0 },
+          { quarter: 3, shots: 0, made: 0 },
+          { quarter: 4, shots: 0, made: 0 },
+        ],
+      },
+      basketDetection: {
+        basketsVisible: 1,
+        courtDimensions: { width: 28, height: 15 }
+      },
+      playerTracking: {
+        playersDetected: 1,
+        movementAnalysis: []
+      },
+      highlights: []
+    }
+  };
+};
 
   const handleUpload = async () => {
     if (!selectedFile) return;
@@ -110,6 +172,8 @@ export default function UploadPage() {
         throw new Error("Failed to upload and process video")
       }
       const result = await response.json(); // this should be your analysis result
+      const rawShotEvents = result.shot_events ?? result.results?.shot_events ?? [];
+      const analysisBundle = adaptShotEventsToAnalysis(rawShotEvents);
     setUploadResult({
       success: true,
       videoUrl: "", // optional
@@ -117,7 +181,7 @@ export default function UploadPage() {
       fileSize: selectedFile.size,
       method: "fastapi",
       verified: true,
-      mockData: result.results, // this is your actual result
+      mockData: analysisBundle, // this is your actual result
     })
 
     setUploadState("complete");

@@ -2,6 +2,7 @@ import os
 import google.genai as genai
 from dotenv import load_dotenv
 import time
+import json, re
 load_dotenv()
 
 api_key = os.getenv("GEMINI_API_KEY")
@@ -15,6 +16,10 @@ def slow_down_video(input_path, output_path, speed_factor=0.5):
     slowed_clip.write_videofile(output_path, audio=True)
     clip.close()
     slowed_clip.close()
+
+def strip_code_fences(s):
+    # removes json fences if present
+    return re.sub(r"^```[a-zA-Z]*\n|\n```$", "", s.strip())
 
 def process_video_and_summarize(file_path):
     """
@@ -31,7 +36,7 @@ def process_video_and_summarize(file_path):
             print("File is still processing, waiting for 5 seconds...")
             time.sleep(5)
         if client.files.get(name=uploaded_file.name).state == "FAILED":
-            raise ValueError("File processing failed.")
+            return {"ok" : False, "error": "File processing failed."}
         print("File processing complete.")
 
         print("Generating summary...")
@@ -41,8 +46,8 @@ def process_video_and_summarize(file_path):
         context2 = "This video is a video of a basketball player shooting around. Can you count how many shots he makes, as well as misses, as well as field goal percentage? A shot is defined as the player shooting the ball towards the hoop, and a make is defined as the ball going through the hoop. A miss is defined as the ball not going through the hoop. Please provide bullet points of each made and missed shot by timestamp."
         context3 = "This video is a video of a full court basketball game, but only one half court of it. During the game, can you count how many shots are made in the video, as well as give the timestamps of each made shot in the video? A shot is defined as the player shooting the ball towards the hoop, and a make is defined as the ball going through the hoop. A miss is defined as the ball not going through the hoop. Please provide bullet points of each made and missed shot by timestamp."
         prompt4 = """Act as a world-class basketball analyst with a deep understanding of shot mechanics, court geography, and statistical analysis. Your task is to meticulously analyze the entire video to identify every distinct shot attempt. The analysis should be comprehensive and structured for clarity. For the video provided, please provide a detailed report on every shot attempt, including the following analysis for each one:
-                    Subject Recognition (subject): Identify the player who is either shooting the ball or in the immediate process of a layup.
-                    Shot Location (location): Based on the player's position on the court, categorize the shot location from the following list:
+                    Subject Recognition (Subject): Identify the player who is either shooting the ball or in the immediate process of a layup, and describe in depth who they are and what they look like / what they are wearing.
+                    Shot Location (Location): Based on the player's position on the court, categorize the shot location from the following list:
                     Right corner/Right baseline
                     Left corner/Left baseline
                     Right wing
@@ -55,10 +60,10 @@ def process_video_and_summarize(file_path):
                     Mid-range (if not an exact match to the above)
                     In the paint (if not an exact match to the above)
                     Other (if none of the above apply)
-                    Shot Type (ST): Determine if the shot is a 'Jumpshot' or a 'Layup'.
-                    Time Stamp of Shot (TS): Identify the exact timestamp of the shot, formatted as HH:MM:SS.
-                    Make/Miss (outcome): Analyze the position of the ball relative to the hoop, the player's follow-through, and the surrounding context (e.g., net movement) to determine the outcome. Conclude whether the shot is a 'Make' or a 'Miss'. If the outcome is not determinable, state 'Undetermined'.
-                    Your response should be formatted as a structured JSON object containing a list of shot events, with each event represented as a separate object."""
+                    Shot Type (ShotType): Determine if the shot is a 'Jumpshot' or a 'Layup'.
+                    Time Stamp of Shot (TimeStamp): Identify the exact timestamp of the shot, formatted as HH:MM:SS.
+                    Make/Miss (Outcome): Analyze the position of the ball relative to the hoop, the player's follow-through, and the surrounding context (e.g., net movement) to determine the outcome. Conclude whether the shot is a 'Make' or a 'Miss'. If the outcome is not determinable, state 'Undetermined'.
+                    Your response should be formatted as a structured JSON object containing a list of shot events, with each event represented as a separate object (do not include any formatting or extra texts sucn as code fences etc.)."""
         prompt5 = """
                     Act as an elite basketball coach and analyst. Analyze every shot attempt in this video with the following structure:
 
@@ -193,19 +198,36 @@ def process_video_and_summarize(file_path):
                 }
                 }
                 """
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[uploaded_file, prompt7],
+        resp = client.models.generate_content(
+            model="gemini-2.5-pro",
+            contents=[uploaded_file, prompt4]
+            #,generation_config={"response_mime_type": "application/json,"}
         )
-        print("Response received:")
-        print(response.text)
-        return response.text
+        text_respone = resp.text
+        raw_text = getattr(resp, "text", None)
+        if not raw_text:
+            try:
+                raw_text = resp.candidates[0].content.parts[0].text
+            except Exception as e:
+                return {"ok": False, "error": f"No text in Gemini response: {e}"}
 
+        print("RAW GEMINI OUTPUT:", strip_code_fences(raw_text))
+
+        return strip_code_fences(raw_text) # return output as a string for now
+        
+        parsed = None
+        try:
+            parsed = json.loads(strip_code_fences(raw_text))
+        except json.JSONDecodeError:
+            return {"ok": False, "error": "Gemini returned non-JSON output"}
+
+        return {"ok": True, "results": parsed}
+        
     except FileNotFoundError:
-        print(f"Error: The file '{file_path}' was not found.")
+        return {"ok": False, "error": f"File not found: {file_path}"}
     except Exception as e:
-        print(f"An error occurred: {e}")
-        return None
+        return {"ok": False, "error": str(e)}
+
 
 def reformat_gemini(events):
     return [{
