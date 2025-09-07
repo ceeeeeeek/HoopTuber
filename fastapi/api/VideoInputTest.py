@@ -229,6 +229,29 @@ def process_video_and_summarize(file_path):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+def highlight_output(gem_output):
+    
+    parsed = json.loads(gem_output)
+    if isinstance(gem_output, list):
+        return "Gemini output is a list"
+    if isinstance(gem_output, str):
+        try:
+            parsed = json.loads(gem_output)
+        except json.JSONDecodeError:
+            return("Gemini output is a str but not valid JSON")
+            
+    else:
+        parsed = gem_output
+    if isinstance(parsed, list):
+        timestamps = [shot["TimeStamp"] for shot in parsed if "TimeStamp" in shot]
+        
+    elif isinstance(parsed, dict):
+        return("Gemini output is a dict, not a list")
+        
+    else:
+        return("Gemini is returning neither list or dict")
+    
+    return timestamps
 
 
 if __name__ == "__main__":
@@ -236,4 +259,6 @@ if __name__ == "__main__":
     file_path = f"videoDataset/{file_name}"
     #slowed_file_path = f"videoDataset/{file_name.split('.')[0]}_slowed.mp4"
     #slow_down_video(file_path, slowed_file_path, speed_factor=0.5)
-    process_video_and_summarize(file_path)
+    res = process_video_and_summarize(file_path)
+    res2 = highlight_output(res)
+    print(res2)
