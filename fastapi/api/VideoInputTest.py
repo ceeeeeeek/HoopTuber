@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import time
 import json, re
 load_dotenv()
+from moviepy.editor import VideoFileClip, vfx
 
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
@@ -229,16 +230,7 @@ def process_video_and_summarize(file_path):
         return {"ok": False, "error": str(e)}
 
 
-def reformat_gemini(events):
-    return [{
-        "subject": e.get("SR", ""),
-        "location": e.get("SL", ""),
-        "shotType": e.get("ST", ""),
-        "timeStamp": e.get("TS", ""),
-        "makeOrMiss": e.get("MM", "")
-    }
-    for e in events
-    ]
+
 if __name__ == "__main__":
     file_name = "meshooting2.mp4"
     file_path = f"videoDataset/{file_name}"
