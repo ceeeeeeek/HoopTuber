@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import time
 import json, re
 load_dotenv()
-from moviepy.editor import VideoFileClip, vfx
+from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
 
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
@@ -238,27 +238,39 @@ def highlight_output(gem_output):
         try:
             parsed = json.loads(gem_output)
         except json.JSONDecodeError:
-            return("Gemini output is a str but not valid JSON")
-            
+            return("Gemini output is a str but not valid JSON")  
     else:
         parsed = gem_output
     if isinstance(parsed, list):
-        timestamps = [shot["TimeStamp"] for shot in parsed if "TimeStamp" in shot]
+        timestamps = [shot["TimeStamp"] for shot in parsed if "TimeStamp" in shot] # ALL TIMESTAMPS
+        makes_timestamps = [] # ONLY MAKES TIMESTAMPS
         
+        for shot in parsed:
+            if "TimeStamp" in shot and "Outcome" in shot:
+                if shot["Outcome"].lower() == "make":
+                    makes_timestamps.append(shot["TimeStamp"])
     elif isinstance(parsed, dict):
         return("Gemini output is a dict, not a list")
-        
     else:
         return("Gemini is returning neither list or dict")
-    
-    return timestamps
-
-
+    return timestamps, makes_timestamps
+def create_highlights(timestamps, file_path, highlight_path="VideoDatset/test_highlights.mp4"):
+    clip_duration = 5
+    clips = []
+    video = VideoFileClip(file_path)
+    for ts in timestamps:
+        parts = list(map(int, ts.split(":")))
+        start = parts[0]*3600 + parts[1]*60 + parts[2]
+        end = start + clip_duration
+        clips.append(video.subclip(start,end))
+    final = concatenate_videoclips(clips)
+    final.write_videofile(highlight_path, codec="libx264", audio_codec="aac")
+    print("Highlights saved")
 if __name__ == "__main__":
     file_name = "meshooting2.mp4"
     file_path = f"videoDataset/{file_name}"
     #slowed_file_path = f"videoDataset/{file_name.split('.')[0]}_slowed.mp4"
     #slow_down_video(file_path, slowed_file_path, speed_factor=0.5)
     res = process_video_and_summarize(file_path)
-    res2 = highlight_output(res)
-    print(res2)
+    reg_timestamps, make_timestamps = highlight_output(res)
+    create_highlights(make_timestamps, file_path)

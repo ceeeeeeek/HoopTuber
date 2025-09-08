@@ -17,8 +17,19 @@ import {
   Brain,
   Target,
   TrendingUp,
+  Clock,
+  MapPin,
+  User,
 } from "lucide-react"
 import Link from "next/link"
+
+interface GeminiShotEvent {
+  Subject: string
+  Location: string
+  ShotType: string
+  TimeStamp: string
+  Outcome: string
+}
 
 interface UploadResult {
   success: boolean
@@ -28,43 +39,13 @@ interface UploadResult {
   fileSize?: number
   method?: string
   verified?: boolean
-  mockData?: {
-    analysis: {
-      shots: Array<{
-        timestamp: number
-        shotType: string
-        outcome: string
-        confidence: number
-        description: string
-        playerPosition: { x: number; y: number }
-      }>
-      gameStats: {
-        totalShots: number
-        madeShots: number
-        shootingPercentage: number
-        shotTypes: Record<string, number>
-        quarterBreakdown: Array<{ quarter: number; shots: number; made: number }>
-      }
-      basketDetection: {
-        basketsVisible: number
-        courtDimensions: { width: number; height: number }
-      }
-      playerTracking: {
-        playersDetected: number
-        movementAnalysis: Array<{
-          playerId: number
-          avgSpeed: number
-          distanceCovered: number
-          timeOnCourt: number
-        }>
-      }
-      highlights: Array<{
-        timestamp: number
-        type: string
-        description: string
-        importance: number
-      }>
-    }
+  shotEvents?: GeminiShotEvent[]
+  gameStats?: {
+    totalShots: number
+    madeShots: number
+    shootingPercentage: number
+    shotTypes: Record<string, number>
+    locations: Record<string, number>
   }
 }
 
@@ -89,71 +70,52 @@ export default function UploadPage() {
       setProgress(0)
     }
   }, [])
-  // Inside UploadPage component scope (above handleUpload)
-const toSeconds = (ts: string) => {
-  if (!ts) return 0;
-  const parts = ts.split(":").map(Number);
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  if (parts.length === 2) return parts[0] * 60 + parts[1];
-  return Number(ts) || 0;
-};
 
-const normalizeShotType = (s: string) => {
-  const t = (s || "").toLowerCase();
-  if (t.includes("three")) return "three_pointer";
-  if (t.includes("layup")) return "layup";
-  if (t.includes("dunk")) return "dunk";
-  return "jump_shot";
-};
+  // Helper function to format timestamp for display
+  const formatTimestamp = (timestamp: string): string => {
+    return timestamp || "0:00"
+  }
 
-const adaptShotEventsToAnalysis = (events: any[]) => {
-  const shots = events.map(e => ({
-    timestamp: toSeconds(e.TimeStamp),
-    shotType: normalizeShotType(e.ShotType),
-    outcome: (e.outcome || "undetermined").toLowerCase().startsWith("make") ? "made" : "missed",
-    confidence: 0.95,
-    description: e.subject || "",
-    playerPosition: { x: 0, y: 0 },
-    shotLocation: e.location || ""
-  }));
+  // Helper function to get shot outcome color
+  const getShotOutcomeColor = (outcome: string): string => {
+    return outcome.toLowerCase().includes('make') ? "bg-green-500" : "bg-red-500"
+  }
 
-  const totalShots = shots.length;
-  const madeShots = shots.filter(s => s.outcome === "made").length;
-  const shootingPercentage = totalShots ? Math.round((madeShots / totalShots) * 100) : 0;
+  // Helper function to get shot outcome badge variant
+  const getShotOutcomeBadge = (outcome: string): "default" | "secondary" => {
+    return outcome.toLowerCase().includes('make') ? "default" : "secondary"
+  }
 
-  const shotTypes: Record<string, number> = {};
-  for (const s of shots) shotTypes[s.shotType] = (shotTypes[s.shotType] || 0) + 1;
+  // Helper function to format shot type
+  const formatShotType = (shotType: string): string => {
+    return shotType.replace(/([A-Z])/g, ' $1').trim()
+  }
 
-  return {
-    analysis: {
-      shots,
-      gameStats: {
-        totalShots,
-        madeShots,
-        shootingPercentage,
-        shotTypes,
-        quarterBreakdown: [
-          { quarter: 1, shots: totalShots, made: madeShots },
-          { quarter: 2, shots: 0, made: 0 },
-          { quarter: 3, shots: 0, made: 0 },
-          { quarter: 4, shots: 0, made: 0 },
-        ],
-      },
-      basketDetection: {
-        basketsVisible: 1,
-        courtDimensions: { width: 28, height: 15 }
-      },
-      playerTracking: {
-        playersDetected: 1,
-        movementAnalysis: []
-      },
-      highlights: []
+  // Helper function to calculate game statistics
+  const calculateGameStats = (shotEvents: GeminiShotEvent[]) => {
+    const totalShots = shotEvents.length
+    const madeShots = shotEvents.filter(shot => shot.Outcome.toLowerCase().includes('make')).length
+    const shootingPercentage = totalShots > 0 ? Math.round((madeShots / totalShots) * 100) : 0
+
+    const shotTypes: Record<string, number> = {}
+    const locations: Record<string, number> = {}
+
+    shotEvents.forEach(shot => {
+      shotTypes[shot.ShotType] = (shotTypes[shot.ShotType] || 0) + 1
+      locations[shot.Location] = (locations[shot.Location] || 0) + 1
+    })
+
+    return {
+      totalShots,
+      madeShots,
+      shootingPercentage,
+      shotTypes,
+      locations
     }
-  };
-};
+  }
 
   const handleUpload = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile) return
 
     console.log("Starting basketball video analysis for:", selectedFile.name)
     setUploadState("uploading")
@@ -163,171 +125,61 @@ const adaptShotEventsToAnalysis = (events: any[]) => {
     formData.append("video", selectedFile)
 
     try {
+      // Simulate upload progress
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval)
+            return 90
+          }
+          return prev + 10
+        })
+      }, 500)
+
       const response = await fetch("http://localhost:8000/upload", {
         method: "POST",
         body: formData
       })
 
-      if (!response.ok){
+      clearInterval(progressInterval)
+      setProgress(100)
+
+      if (!response.ok) {
         throw new Error("Failed to upload and process video")
       }
-      const result = await response.json(); // this should be your analysis result
-      const rawShotEvents = result.shot_events ?? result.results?.shot_events ?? [];
-      const analysisBundle = adaptShotEventsToAnalysis(rawShotEvents);
-    setUploadResult({
-      success: true,
-      videoUrl: "", // optional
-      fileName: selectedFile.name,
-      fileSize: selectedFile.size,
-      method: "fastapi",
-      verified: true,
-      mockData: analysisBundle, // this is your actual result
-    })
 
-    setUploadState("complete");
-    } catch (error){
+      const result = await response.json()
+      console.log("Received result:", result)
+      
+      // Extract shot events from the response
+      const shotEvents: GeminiShotEvent[] = result.shot_events || result.results?.shot_events || result || []
+      
+      console.log("Extracted shot events:", shotEvents)
+
+      if (!Array.isArray(shotEvents)) {
+        throw new Error("Invalid response format: expected array of shot events")
+      }
+
+      // Calculate game statistics
+      const gameStats = calculateGameStats(shotEvents)
+
+      setUploadResult({
+        success: true,
+        videoUrl: "",
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size,
+        method: "gemini_ai",
+        verified: true,
+        shotEvents,
+        gameStats,
+      })
+
+      setUploadState("complete")
+    } catch (error) {
       console.error("Upload error:", error)
       setUploadState("idle")
+      // You might want to show an error state here
     }
-  }
-
-  const createBasketballAnalysis = (): UploadResult => {
-    // Generate realistic shot data based on video duration estimate
-    const estimatedDuration = Math.min(Math.max((selectedFile!.size / (1024 * 1024)) * 30, 60), 300) // 30s per MB, 1-5 min range
-    const shotsPerMinute = 2.5
-    const totalShots = Math.round((estimatedDuration / 60) * shotsPerMinute)
-    const madeShots = Math.round(totalShots * (0.65 + Math.random() * 0.25)) // 65-90% shooting
-
-    const shotTypes = ["jump_shot", "layup", "three_pointer", "dunk", "hook_shot", "fadeaway"]
-    const outcomes = ["made", "missed"]
-
-    const shots = Array.from({ length: totalShots }, (_, i) => {
-      const timestamp = (estimatedDuration / totalShots) * i + Math.random() * 10
-      const shotType = shotTypes[Math.floor(Math.random() * shotTypes.length)]
-      const outcome = i < madeShots ? "made" : "missed"
-      const confidence = 0.8 + Math.random() * 0.15
-
-      return {
-        timestamp: Math.round(timestamp * 10) / 10,
-        shotType,
-        outcome,
-        confidence,
-        description: generateShotDescription(shotType, outcome),
-        playerPosition: {
-          x: Math.round(Math.random() * 100),
-          y: Math.round(Math.random() * 100),
-        },
-      }
-    })
-
-    // Sort shots by timestamp
-    shots.sort((a, b) => a.timestamp - b.timestamp)
-
-    // Generate quarter breakdown
-    const quarterBreakdown = Array.from({ length: 4 }, (_, i) => {
-      const quarterShots = shots.filter(
-        (shot) => shot.timestamp >= (estimatedDuration / 4) * i && shot.timestamp < (estimatedDuration / 4) * (i + 1),
-      )
-      return {
-        quarter: i + 1,
-        shots: quarterShots.length,
-        made: quarterShots.filter((shot) => shot.outcome === "made").length,
-      }
-    })
-
-    // Generate shot type breakdown
-    const shotTypeBreakdown = shotTypes.reduce(
-      (acc, type) => {
-        acc[type] = shots.filter((shot) => shot.shotType === type).length
-        return acc
-      },
-      {} as Record<string, number>,
-    )
-
-    // Generate player tracking data
-    const playersDetected = 2 + Math.floor(Math.random() * 4) // 2-5 players
-    const playerTracking = Array.from({ length: playersDetected }, (_, i) => ({
-      playerId: i + 1,
-      avgSpeed: Math.round((3 + Math.random() * 4) * 10) / 10, // 3-7 m/s
-      distanceCovered: Math.round((estimatedDuration / 60) * (200 + Math.random() * 300)), // 200-500m per minute
-      timeOnCourt: Math.round((0.7 + Math.random() * 0.3) * estimatedDuration), // 70-100% of video
-    }))
-
-    // Generate highlights
-    const highlights = shots
-      .filter((shot) => shot.outcome === "made" && (shot.shotType === "dunk" || shot.shotType === "three_pointer"))
-      .map((shot) => ({
-        timestamp: shot.timestamp,
-        type: shot.shotType === "dunk" ? "Slam Dunk" : "Three Pointer",
-        description: shot.description,
-        importance: shot.shotType === "dunk" ? 0.95 : 0.85,
-      }))
-      .slice(0, 5) // Top 5 highlights
-
-    return {
-      success: true,
-      videoUrl: `/api/mock-video/${Date.now()}/${encodeURIComponent(selectedFile!.name)}`,
-      processingId: `ai_analysis_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      fileName: selectedFile!.name,
-      fileSize: selectedFile!.size,
-      method: "ai_simulation",
-      verified: true,
-      mockData: {
-        analysis: {
-          shots,
-          gameStats: {
-            totalShots,
-            madeShots,
-            shootingPercentage: Math.round((madeShots / totalShots) * 100),
-            shotTypes: shotTypeBreakdown,
-            quarterBreakdown,
-          },
-          basketDetection: {
-            basketsVisible: 1 + Math.floor(Math.random() * 2), // 1-2 baskets
-            courtDimensions: { width: 28, height: 15 }, // Standard court in meters
-          },
-          playerTracking: {
-            playersDetected,
-            movementAnalysis: playerTracking,
-          },
-          highlights,
-        },
-      },
-    }
-  }
-
-  const generateShotDescription = (shotType: string, outcome: string): string => {
-    const descriptions = {
-      jump_shot: {
-        made: ["Clean mid-range jumper", "Smooth jump shot", "Perfect form jump shot"],
-        missed: ["Jump shot off the rim", "Contested jump shot missed", "Jump shot falls short"],
-      },
-      layup: {
-        made: ["Easy layup conversion", "Fast break layup", "Smooth layup finish"],
-        missed: ["Layup off the rim", "Contested layup missed", "Rushed layup attempt"],
-      },
-      three_pointer: {
-        made: ["Deep three-pointer!", "Corner three swished", "Long-range bomb"],
-        missed: ["Three-point attempt missed", "Long shot off target", "Three-pointer falls short"],
-      },
-      dunk: {
-        made: ["Powerful slam dunk!", "Thunderous dunk", "Emphatic finish"],
-        missed: ["Dunk attempt missed", "Failed dunk try", "Rim rejection"],
-      },
-      hook_shot: {
-        made: ["Classic hook shot", "Smooth hook finish", "Unstoppable hook"],
-        missed: ["Hook shot missed", "Hook attempt off target", "Hook shot falls short"],
-      },
-      fadeaway: {
-        made: ["Beautiful fadeaway", "Contested fadeaway made", "Perfect fadeaway jumper"],
-        missed: ["Fadeaway missed", "Difficult fadeaway attempt", "Fadeaway off the mark"],
-      },
-    }
-
-    const options = descriptions[shotType as keyof typeof descriptions]?.[
-      outcome as keyof typeof descriptions.jump_shot
-    ] || [`${shotType.replace("_", " ")} ${outcome}`]
-    return options[Math.floor(Math.random() * options.length)]
   }
 
   const resetUpload = () => {
@@ -468,40 +320,6 @@ const adaptShotEventsToAnalysis = (events: any[]) => {
             </Card>
           )}
 
-          {/* Processing State */}
-          {uploadState === "processing" && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Zap className="w-5 h-5 mr-2 text-orange-500" />
-                  AI Analysis in Progress
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Brain className="w-8 h-8 text-orange-500 animate-pulse" />
-                    </div>
-                    <h3 className="text-lg font-semibold mb-2">Finalizing Basketball Analysis</h3>
-                    <p className="text-gray-600 mb-4">Generating insights, highlights, and performance metrics...</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 text-center">
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-orange-500">🎯</div>
-                      <div className="text-sm text-gray-600">Shot Analysis</div>
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-blue-500">📊</div>
-                      <div className="text-sm text-gray-600">Performance Stats</div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Complete State */}
           {uploadState === "complete" && uploadResult && (
             <div className="space-y-6">
@@ -526,39 +344,38 @@ const adaptShotEventsToAnalysis = (events: any[]) => {
 
                       <div className="p-3 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200 mb-4">
                         <p className="text-green-800 text-sm">
-                          🤖 AI Analysis: Advanced computer vision detected{" "}
-                          {uploadResult.mockData?.analysis.gameStats.totalShots} shots with{" "}
-                          {uploadResult.mockData?.analysis.playerTracking.playersDetected} players tracked
+                          🤖 Gemini AI Analysis: Detected{" "}
+                          {uploadResult.gameStats?.totalShots || 0} shots with detailed player tracking and shot analysis
                         </p>
                       </div>
                     </div>
 
                     {/* Analysis Results */}
-                    {uploadResult.mockData?.analysis && (
+                    {uploadResult.gameStats && (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
                         <div className="p-4 bg-orange-50 rounded-lg">
                           <div className="text-2xl font-bold text-orange-600">
-                            {uploadResult.mockData.analysis.gameStats.totalShots}
+                            {uploadResult.gameStats.totalShots}
                           </div>
                           <div className="text-sm text-gray-600">Shots Detected</div>
                         </div>
                         <div className="p-4 bg-green-50 rounded-lg">
                           <div className="text-2xl font-bold text-green-600">
-                            {uploadResult.mockData.analysis.gameStats.shootingPercentage}%
+                            {uploadResult.gameStats.shootingPercentage}%
                           </div>
                           <div className="text-sm text-gray-600">Shooting %</div>
                         </div>
                         <div className="p-4 bg-blue-50 rounded-lg">
                           <div className="text-2xl font-bold text-blue-600">
-                            {uploadResult.mockData.analysis.playerTracking.playersDetected}
+                            {uploadResult.gameStats.madeShots}
                           </div>
-                          <div className="text-sm text-gray-600">Players Tracked</div>
+                          <div className="text-sm text-gray-600">Makes</div>
                         </div>
                         <div className="p-4 bg-purple-50 rounded-lg">
                           <div className="text-2xl font-bold text-purple-600">
-                            {uploadResult.mockData.analysis.highlights.length}
+                            {Object.keys(uploadResult.gameStats.shotTypes).length}
                           </div>
-                          <div className="text-sm text-gray-600">Key Highlights</div>
+                          <div className="text-sm text-gray-600">Shot Types</div>
                         </div>
                       </div>
                     )}
@@ -578,41 +395,95 @@ const adaptShotEventsToAnalysis = (events: any[]) => {
                 </CardContent>
               </Card>
 
-              {/* Shot Analysis Preview */}
-              {uploadResult.mockData?.analysis.shots && (
+              {/* Detailed Shot Analysis */}
+              {uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Shot Analysis Preview</CardTitle>
+                    <CardTitle className="flex items-center">
+                      <Target className="w-5 h-5 mr-2" />
+                      Shot-by-Shot Analysis
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-3">
-                      {uploadResult.mockData.analysis.shots.slice(0, 5).map((shot, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div className="flex items-center space-x-3">
-                            <div
-                              className={`w-3 h-3 rounded-full ${
-                                shot.outcome === "made" ? "bg-green-500" : "bg-red-500"
-                              }`}
-                            />
-                            <div>
-                              <div className="font-medium">
-                                {shot.shotType.replace("_", " ").toUpperCase()} at {shot.timestamp}s
-                              </div>
-                              <div className="text-sm text-gray-600">
-                                {shot.description} • {Math.round(shot.confidence * 100)}% confidence
+                    <div className="space-y-4">
+                      {uploadResult.shotEvents.map((shot, index) => (
+                        <div key={index} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center space-x-3">
+                              <div
+                                className={`w-4 h-4 rounded-full ${getShotOutcomeColor(shot.Outcome)}`}
+                              />
+                              <div>
+                                <div className="font-semibold text-gray-900">
+                                  Shot #{index + 1} - {formatShotType(shot.ShotType)}
+                                </div>
                               </div>
                             </div>
+                            <Badge variant={getShotOutcomeBadge(shot.Outcome)}>
+                              {shot.Outcome}
+                            </Badge>
                           </div>
-                          <Badge variant={shot.outcome === "made" ? "default" : "secondary"}>{shot.outcome}</Badge>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                            <div className="flex items-center space-x-2">
+                              <Clock className="w-4 h-4 text-gray-500" />
+                              <span className="text-gray-700">
+                                <strong>Time:</strong> {formatTimestamp(shot.TimeStamp)}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <MapPin className="w-4 h-4 text-gray-500" />
+                              <span className="text-gray-700">
+                                <strong>Location:</strong> {shot.Location}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <User className="w-4 h-4 text-gray-500" />
+                              <span className="text-gray-700">
+                                <strong>Type:</strong> {formatShotType(shot.ShotType)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {shot.Subject && (
+                            <div className="mt-3 p-3 bg-white rounded border">
+                              <div className="flex items-start space-x-2">
+                                <User className="w-4 h-4 text-gray-500 mt-0.5" />
+                                <div>
+                                  <div className="font-medium text-gray-900 mb-1">Player Description:</div>
+                                  <div className="text-sm text-gray-700">{shot.Subject}</div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="mt-3 text-sm text-gray-600">
+                            <strong>Summary:</strong> Player shoots a {formatShotType(shot.ShotType).toLowerCase()} from {shot.Location.toLowerCase()} at {formatTimestamp(shot.TimeStamp)} - {shot.Outcome.toLowerCase()}
+                          </div>
                         </div>
                       ))}
-                      {uploadResult.mockData.analysis.shots.length > 5 && (
-                        <div className="text-center pt-2">
-                          <p className="text-sm text-gray-500">
-                            +{uploadResult.mockData.analysis.shots.length - 5} more shots detected
-                          </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Shot Type Breakdown */}
+              {uploadResult.gameStats?.shotTypes && Object.keys(uploadResult.gameStats.shotTypes).length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Shot Type Breakdown</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-4">
+                      {Object.entries(uploadResult.gameStats.shotTypes).map(([type, count]) => (
+                        <div key={type} className="p-3 bg-gray-50 rounded-lg">
+                          <div className="font-semibold text-gray-900">{formatShotType(type)}</div>
+                          <div className="text-2xl font-bold text-orange-600">{count}</div>
+                          <div className="text-sm text-gray-600">
+                            {Math.round((count / uploadResult.gameStats!.totalShots) * 100)}% of shots
+                          </div>
                         </div>
-                      )}
+                      ))}
                     </div>
                   </CardContent>
                 </Card>

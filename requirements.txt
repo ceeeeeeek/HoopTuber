@@ -7,6 +7,8 @@ click==8.2.1
 decorator==4.4.2
 dotenv==0.9.9
 fastapi==0.116.1
+ffmpeg-python==0.2.0
+future==1.0.0
 google-auth==2.40.3
 google-genai==1.31.0
 h11==0.16.0
