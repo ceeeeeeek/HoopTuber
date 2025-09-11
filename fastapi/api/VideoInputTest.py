@@ -1,8 +1,10 @@
 import os
+import subprocess
 import google.genai as genai
 from dotenv import load_dotenv
 import time
 import json, re
+import glob
 load_dotenv()
 from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
 
@@ -253,24 +255,140 @@ def highlight_output(gem_output):
         return("Gemini output is a dict, not a list")
     else:
         return("Gemini is returning neither list or dict")
-    return timestamps, makes_timestamps
-def create_highlights(timestamps, file_path, highlight_path="VideoDatset/test_highlights.mp4"):
-    clip_duration = 5
-    clips = []
-    video = VideoFileClip(file_path)
-    for ts in timestamps:
-        parts = list(map(int, ts.split(":")))
-        start = parts[0]*3600 + parts[1]*60 + parts[2]
-        end = start + clip_duration
-        clips.append(video.subclip(start,end))
-    final = concatenate_videoclips(clips)
-    final.write_videofile(highlight_path, codec="libx264", audio_codec="aac")
-    print("Highlights saved")
+    print(f"Make timestamps: {makes_timestamps}")
+    return makes_timestamps
+
+def timestamp_to_seconds(timestamp_str):
+    parts = timestamp_str.split(':')
+    hours, minutes, seconds = map(int, parts)
+    return hours * 3600 + minutes * 60 + seconds
+
+def create_highlights_moviepy(video_path, timestamps, clip_duration=6, output_dir="VideoDataset"):
+    try:
+        # create output directory if does not exist
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"Creating highlights in {output_dir}...")
+        timestamp_seconds = [timestamp_to_seconds(s) for s in timestamps]
+        print(f"Converted {len(timestamp_seconds)} timestamps")
+        # loading video
+        video = VideoFileClip(video_path)
+        video_duration = video.duration
+
+        for i, (timestamp_str, timestamp_sec) in enumerate(zip(timestamps, timestamp_seconds)):
+            try:
+                end_time = min(timestamp_sec + clip_duration, video_duration)
+                if timestamp_sec < video_duration:
+                    # extract clip
+                    clip = video.subclip(timestamp_sec, end_time)
+                    output_path = os.path.join(output_dir, f"clip_{i+1}_{timestamp_str.replace(':', '-')}.mp4")
+                    clip.write_videofile(output_path, 
+                                         audio_codec='aac',
+                                           verbose=False, 
+                                           logger='bar')
+                    clip.close()
+                    print(f"Created clip {i+1}: {timestamp_str}")
+                else:
+                    print(f"Skipped timestamp at {timestamp_str}")
+            except Exception as e:
+                print(f"Error creating clip at timestamp: {timestamp_str}: {e}")
+                continue
+        video.close()
+        print("All videos processed correctly.")
+    except FileNotFoundError:
+        print(f"Error: video not found: {video_path}")
+    except Exception as e:
+        print(f"Error processing video: {e}")
+
+def create_highlights_ffmpeg(video_path, timestamps, clip_duration=6, output_dir="clips"):
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"Created output directory: {output_dir}")
+        
+        for i, timestamp_str in enumerate(timestamps):
+            output_path = os.path.join(output_dir, f"clip_{i+1}_{timestamp_str.replace(':', '-')}.mp4")
+            
+            try:
+                # FFmpeg command to extract clip
+                cmd = [
+                    'ffmpeg',
+                    '-ss', timestamp_str,           # Start time (HH:MM:SS)
+                    '-i', video_path,               # Input video
+                    '-t', str(clip_duration),       # Duration in seconds
+                    '-c', 'copy',                   # Copy streams (no re-encoding = much faster)
+                    '-avoid_negative_ts', 'make_zero',
+                    '-y',                           # Overwrite output files
+                    output_path
+                ]
+                
+                # Run FFmpeg
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode == 0:
+                    print(f"✓ Created clip {i+1}: {timestamp_str}")
+                else:
+                    print(f"✗ Error creating clip {i+1}: {result.stderr}")
+                    
+            except Exception as e:
+                print(f"✗ Error processing {timestamp_str}: {e}")
+                
+    except Exception as e:
+        print(f"✗ General error: {e}")
+
+def combine_clips_ffmpeg(clips_dir="clips", output_dir="combined", output_filename="combined_video.mp4"):
+    try:
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Get all clip files and sort them
+        clip_files = sorted(glob.glob(os.path.join(clips_dir, "*.mp4")))
+        
+        if not clip_files:
+            print("No clip files found!")
+            return
+        
+        # Create the full output path
+        output_path = os.path.join(output_dir, output_filename)
+        
+        # Create a text file listing all clips for FFmpeg
+        filelist_path = "temp_filelist.txt"
+        with open(filelist_path, 'w') as f:
+            for clip_file in clip_files:
+                f.write(f"file '{os.path.abspath(clip_file)}'\n")
+        
+        # FFmpeg command to concatenate
+        cmd = [
+            'ffmpeg',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', filelist_path,
+            '-c', 'copy',  # No re-encoding, just copy
+            '-y',          # Overwrite output
+            output_path    # Full path including folder
+        ]
+        
+        print(f"Combining {len(clip_files)} clips...")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        # Clean up temp file
+        os.remove(filelist_path)
+        
+        if result.returncode == 0:
+            print(f"✓ Combined video saved as: {output_path}")
+        else:
+            print(f"✗ Error combining clips: {result.stderr}")
+            
+    except Exception as e:
+        print(f"✗ Error: {e}")
+
+
 if __name__ == "__main__":
     file_name = "meshooting2.mp4"
     file_path = f"videoDataset/{file_name}"
     #slowed_file_path = f"videoDataset/{file_name.split('.')[0]}_slowed.mp4"
     #slow_down_video(file_path, slowed_file_path, speed_factor=0.5)
-    res = process_video_and_summarize(file_path)
-    reg_timestamps, make_timestamps = highlight_output(res)
-    create_highlights(make_timestamps, file_path)
+    #res = process_video_and_summarize(file_path)
+    #make_timestamps = highlight_output(res)
+    make_timestamps_mock = ['00:00:11', '00:00:26', '00:00:48'] # timestamps for testing
+    create_highlights_ffmpeg(file_path, make_timestamps_mock, clip_duration=6, output_dir="clips")
+    combine_clips_ffmpeg(clips_dir="clips", output_dir="combined", output_filename="combined_video.mp4")
+

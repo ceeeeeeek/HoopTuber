@@ -16,8 +16,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATASET_DIR = os.path.join(BASE_DIR, "videoDataset")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # directory of current script (main.py)
+DATASET_DIR = os.path.join(BASE_DIR, "videoDataset") # directory to save uploaded videos (/videoDataset)
 os.makedirs(DATASET_DIR, exist_ok=True)
 
 
@@ -27,11 +27,13 @@ async def upload_video(video: UploadFile = File(...)):
     Handles video upload, processing, and returns a structured response
     or a specific HTTP error for all failure cases.
     """
-    os.makedirs(DATASET_DIR, exist_ok=True)
-    temp_filename = os.path.join(DATASET_DIR, f"{uuid.uuid4()}.mp4")
-    highlight_filename = os.path.join(DATASET_DIR, f"{uuid.uuid4()}_highlightvid.mp4")
+
+    os.makedirs(DATASET_DIR, exist_ok=True) # Making sure dataset directory exists
+    temp_filename = os.path.join(DATASET_DIR, f"{uuid.uuid4()}.mp4") # creating temporary video file
+    highlight_filename = os.path.join(DATASET_DIR, f"{uuid.uuid4()}_highlightvid.mp4") # highlight filename
+
     with open(temp_filename, "wb") as buffer:
-        shutil.copyfileobj(video.file, buffer)
+        shutil.copyfileobj(video.file, buffer) # saving uploaded video to temp file directory (/videoDataset)
 
     results = process_video_and_summarize(temp_filename)
     print("DEBUG: returning response to frontend:", results)
