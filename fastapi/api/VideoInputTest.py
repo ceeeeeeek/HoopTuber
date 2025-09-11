@@ -334,6 +334,19 @@ def create_highlights_ffmpeg(video_path, timestamps, clip_duration=6, output_dir
     except Exception as e:
         print(f"✗ General error: {e}")
 
+def clear_folder(folder_path):
+    for filename in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, filename)
+        try:
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+            elif os.path.isdir(file_path):
+                clear_folder(file_path)
+                os.rmdir(file_path)
+        except Exception as e:
+            print(f"Error deleting: {file_path}. Reason: {e}")
+    print(f"Cleared folder: {folder_path}")
+
 def combine_clips_ffmpeg(clips_dir="clips", output_dir="combined", output_filename="combined_video.mp4"):
     try:
         # Create output directory if it doesn't exist
@@ -382,13 +395,14 @@ def combine_clips_ffmpeg(clips_dir="clips", output_dir="combined", output_filena
 
 
 if __name__ == "__main__":
-    file_name = "meshooting2.mp4"
+    file_name = "alivschristian2.mp4"
     file_path = f"videoDataset/{file_name}"
     #slowed_file_path = f"videoDataset/{file_name.split('.')[0]}_slowed.mp4"
     #slow_down_video(file_path, slowed_file_path, speed_factor=0.5)
-    #res = process_video_and_summarize(file_path)
-    #make_timestamps = highlight_output(res)
-    make_timestamps_mock = ['00:00:11', '00:00:26', '00:00:48'] # timestamps for testing
-    create_highlights_ffmpeg(file_path, make_timestamps_mock, clip_duration=6, output_dir="clips")
+    res = process_video_and_summarize(file_path)
+    make_timestamps = highlight_output(res)
+    #make_timestamps_mock = ['00:00:11', '00:00:26', '00:00:48'] # timestamps for testing
+    create_highlights_ffmpeg(file_path, make_timestamps, clip_duration=6, output_dir="clips")
     combine_clips_ffmpeg(clips_dir="clips", output_dir="combined", output_filename="combined_video.mp4")
+    clear_folder("clips")
 
