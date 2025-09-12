@@ -1,0 +1,11 @@
+# Google Cloud clients
+google-cloud-pubsub==2.23.1
+google-cloud-storage==2.18.2
+google-cloud-firestore==2.16.0
+google-auth==2.40.3
+
+# Video stack (if the worker does the heavy work)
+moviepy==2.2.1
+imageio-ffmpeg==0.6.0
+numpy==2.3.2
+pillow==10.3.0

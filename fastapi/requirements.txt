@@ -1,0 +1,25 @@
+# --- Web API
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+python-multipart==0.0.20
+pydantic==2.11.7
+requests==2.32.5
+httpx==0.28.1            # if you call any HTTP APIs from the API service
+
+# --- Google Cloud clients
+google-genai==1.31.0
+google-cloud-storage==2.18.2
+google-cloud-firestore==2.16.0
+google-cloud-pubsub==2.23.1
+google-auth==2.40.3
+
+# --- Video stack (if your API processes video)
+moviepy==2.2.1
+imageio-ffmpeg==0.6.0
+numpy==2.3.2
+#pillow==11.3.0
+#tqdm==4.67.1
+
+# --- Dev/quality-of-life (optional)
+python-dotenv==1.1.1     # local dev only; not needed on Render
+tenacity==9.1.2          # if you want retries around GCS/PubSub calls
