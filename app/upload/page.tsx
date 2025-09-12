@@ -35,14 +35,6 @@ interface GeminiShotEvent {
   Outcome: string;
 }
 
-interface GeminiShotEvent {
-  Subject: string
-  Location: string
-  ShotType: string
-  TimeStamp: string
-  Outcome: string
-}
-
 interface UploadResult {
   success: boolean;
   videoUrl?: string; // NEW: signed URL once worker completes
