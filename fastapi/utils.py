@@ -1,3 +1,5 @@
+#fastapi/utils.py (#fastapi/utils.py Version as of Thursday 09-11-25)
+
 from moviepy.editor import VideoFileClip
 import os
 import io
@@ -132,9 +134,6 @@ def normalize_events(events: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
         }
     }
 
-test_file = "Game1SideA.mp4"
-segments = detect_objects(f"videoDataset/{test_file}")
-trim_video(f"videoDataset/{test_file}", "trimmed_video.mp4", segments)
-
-
-
+# test_file = "Game1SideA.mp4"
+# segments = detect_objects(f"videoDataset/{test_file}")
+# trim_video(f"videoDataset/{test_file}", "trimmed_video.mp4", segments)
