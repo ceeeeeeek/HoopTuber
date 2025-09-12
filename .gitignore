@@ -33,9 +33,6 @@ fastapi/api/__pycache__/
 # data folders
 fastapi/api/videoDataset
 fastapi/api/clips
-<<<<<<< Updated upstream
-fastapi/api/combined
-=======
 fastapi/api/combined
 
 # json service accounts
@@ -45,4 +42,4 @@ worker-sa.json
 *.sa.json
 *.pem
 *.p12
->>>>>>> Stashed changes
+
