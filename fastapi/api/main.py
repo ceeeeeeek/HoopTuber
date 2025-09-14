@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import shutil
 import os
 import uuid
-from VideoInputTest import process_video_and_summarize, client
+from VideoInputTest import process_video_and_summarize, CreateHighlightVideo, client
 from typing import List, Dict, Any, Optional
 import json
 
@@ -36,6 +36,7 @@ async def upload_video(video: UploadFile = File(...)):
         shutil.copyfileobj(video.file, buffer) # saving uploaded video to temp file directory (/videoDataset)
 
     results = process_video_and_summarize(temp_filename)
+
     print("DEBUG: returning response to frontend:", results)
     print("DEBUG: type of response: :", type(results))
     if isinstance(results, str):
