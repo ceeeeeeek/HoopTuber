@@ -5,6 +5,16 @@ certifi==2025.8.3
 charset-normalizer==3.4.3
 decorator==4.4.2
 dotenv==0.9.9
+
+#added for Render deployment - 7:54pm
+google-cloud-core==2.4.3
+google-cloud-storage==2.18.2
+google-cloud-pubsub==2.23.1
+google-cloud-firestore==2.16.0
+google-resumable-media==2.7.2
+grpc-google-iam-v1==0.14.2
+#added for Render deployment - 7:54pm
+
 google-ai-generativelanguage==0.6.15
 google-api-core==2.25.1
 google-api-python-client==2.181.0

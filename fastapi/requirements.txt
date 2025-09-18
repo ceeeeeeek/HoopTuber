@@ -17,8 +17,18 @@ google-genai==1.31.0
 google-resumable-media==2.7.2
 googleapis-common-protos==1.70.0
 grpc-google-iam-v1==0.14.2
-grpcio==1.75.0rc1
+
+#added for Render deployment - 7:54pm
+#grpcio==1.75.0rc1 We pin grpcio==1.66.2 - stable Linux build - Avoid RC versions like 1.75.0rc1
+grpcio==1.66.2
+#added for Render deployment - 7:54pm
+
 grpcio-status==1.62.3
+
+#added for Render deployment - 7:54pm
+gunicorn==21.2.0 #added for Render deployment - 7:54pm
+#added for Render deployment - 7:54pm
+
 h11==0.16.0
 httpcore==1.0.9
 #httptools==0.6.4 //install on Linux/macOS only; Windows will skip
