@@ -101,6 +101,30 @@ protobuf==4.25.3
 proto-plus==1.26.1
 googleapis-common-protos==1.70.0
 google-api-core==2.25.1
+
+#Newly added dependencies to match HoopTuberDB-GCS-2 as of Thursday 09-18-25
+google-api-python-client==2.181.0
+google-auth-httplib2==0.2.0
+#google-cloud-firestore==2.21.0
+#google-cloud-pubsub==2.31.1
+#google-cloud-storage==3.4.0
+google-crc32c==1.7.1
+#grpcio==1.74.0
+#grpcio-status==1.71.2
+opentelemetry-api==1.37.0
+opentelemetry-sdk==1.37.0
+opentelemetry-semantic-conventions==0.58b0
+#protobuf==5.29.5
+pyasn1==0.6.1
+pyasn1_modules==0.4.2
+pydantic==2.11.9
+pydantic_core==2.33.2
+pyparsing==3.2.4
+tenacity==9.1.2
+zipp==3.23.0
+#Newly added dependencies to match HoopTuberDB-GCS-2 as of Thursday 09-18-25
+#The rest without out these listed here to a sucessful deployment on Render
+
 google-auth==2.40.3
 google-cloud-core==2.4.3
 google-resumable-media==2.7.2
