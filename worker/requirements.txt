@@ -96,7 +96,8 @@ urllib3==2.5.0
 websockets==15.0.1
 
 # --- Google Cloud stack (aligned on protobuf 5.x) ---
-protobuf==5.28.3
+# protobuf 4 line (Firestore 2.16 needs <5)
+protobuf==4.25.3
 proto-plus==1.26.1
 googleapis-common-protos==1.70.0
 google-api-core==2.25.1
@@ -110,9 +111,9 @@ google-cloud-pubsub==2.23.1
 google-cloud-firestore==2.16.0
 grpc-google-iam-v1==0.14.2
 
-# gRPC runtime (has py3.13 wheels at these versions)
-grpcio==1.65.5
-grpcio-status==1.65.5
+# grpc at a version that has manylinux wheels for py3.12 and works with protobuf 4
+grpcio==1.59.3
+grpcio-status==1.59.3
 
 # --- your extras (Gemini SDKs etc.) ---
 google-ai-generativelanguage==0.6.15
