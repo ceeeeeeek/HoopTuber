@@ -16,9 +16,28 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# virtualenvs (anywhere)
+.venv/
+.venv-*/
+venv/
+venv-*/
+fastapi/.venv*/
+worker/.venv*/
+
+# python bytecode
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS junk
+.DS_Store
+Thumbs.db
+
 # env files
 .env*
 env/
+*.env
 
 # vercel
 .vercel
@@ -35,7 +54,9 @@ fastapi/api/videoDataset
 fastapi/api/clips
 fastapi/api/combined
 
-# json service accounts
+# json service accounts & secrets
+fastapi/api-sa.json
+worker/worker-sa.json
 api-sa.json
 worker-sa.json
 *.key.json
