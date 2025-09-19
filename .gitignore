@@ -1,0 +1,55 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+node_modules/
+client/node_modules/
+/worker/node_modules
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+**/.env
+**/.env.*
+.env
+.env.*
+.venv/
+worker/.venv
+fastapi/.venv_fastapi
+fastapi/api/.venv_fastapi
+fastapi/api/.env
+worker/.env
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# py cache folder
+fastapi/__pycache__/
+fastapi/api/__pycache__/
+# data folders
+fastapi/api/videoDataset
+fastapi/api/clips
+fastapi/api/combined
+worker/__pycache__/
+# json service accounts
+api-sa.json
+worker-sa.json
+*.key.json
+*.sa.json
+*.pem
+*.p12
+hooptuber-dev-1234-c69c74a5bac2.json
+
+

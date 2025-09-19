@@ -1,0 +1,16 @@
+{
+  "name": "hooptuber",
+  "private": true,
+  "scripts": {
+    "frontend": "cd client && npm run dev",
+    "backend": "cd fastapi/api && ../.venv_fastapi/bin/uvicorn main:app --reload",
+    "worker": "cd worker && ./.venv/bin/python main.py",
+    "build": "next build",
+    "dev": "concurrently \"npm run frontend\" \"npm run backend\" \"npm run worker\"",
+    "lint": "next lint",
+    "start": "next start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
