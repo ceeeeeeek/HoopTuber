@@ -39,14 +39,14 @@ def upload_to_gcs(local_path: str, bucket_name: str, dst_key: str) -> str:
     blob.upload_from_filename(local_path)
     return f"gs://{bucket_name}/{dst_key}"
 
-def make_highlight(in_path: str, out_path: str):
+def make_highlight(in_path: str, out_path: str, gemini_output):
     highlighter = CreateHighlightVideo2()
     """
     Replace this with your real highlight pipeline (ffmpeg, moviepy, Gemini, etc).
     For now, just copy the file to simulate work.
     """
     # REAL HIGHLIGHT PIPELINE:
-    gemini_output = process_video_and_summarize(in_path) # gemini output
+    
     make_timestamps = timestamp_maker(gemini_output) # list of make timestamps
     clip_files = highlighter.create_highlights_ffmpeg(make_timestamps, in_path, out_path) # create highlight clips
     if not clip_files:
@@ -59,23 +59,31 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
         user_id       = payload.get("userId")
         input_gcs_uri = payload["videoGcsUri"]     # gs://...
         out_key       = f"{job_id}/highlight.mp4"
+        json_key      = f"{job_id}/analysis.json"
 
         update_job(job_id, {"status": "processing", "startedAt": firestore.SERVER_TIMESTAMP})
 
         with tempfile.TemporaryDirectory() as td:
             in_path  = os.path.join(td, "input.mp4")
             out_path = os.path.join(td, "highlight.mp4")
+            json_path = os.path.join(td, "output.json")
 
             download_from_gcs(input_gcs_uri, in_path)
-
-            # TODO: your real pipeline here (person selection, makes/misses, etc.)
-            make_highlight(in_path, out_path)
+            raw_gemini_output = process_video_and_summarize(in_path) # gemini output
+            if isinstance(raw_gemini_output, str) and '```json' in raw_gemini_output:
+                json_start = raw_gemini_output.find('[')
+                json_end = raw_gemini_output.rfind(']') + 1
+                clean_data = raw_gemini_output[json_start:json_end]
+            with open(json_path, "w") as f:
+                json.dump(raw_gemini_output, f)
+            make_highlight(in_path, out_path, raw_gemini_output)
 
             out_gcs_uri = upload_to_gcs(out_path, OUT_BUCKET, out_key)
-
+            analysis_gcs_uri = upload_to_gcs(json_path, OUT_BUCKET, json_key)
         update_job(job_id, {
             "status": "done",
             "outputGcsUri": out_gcs_uri,
+            "analysisGcsUri": analysis_gcs_uri,
             "finishedAt": firestore.SERVER_TIMESTAMP,
         })
         msg.ack()

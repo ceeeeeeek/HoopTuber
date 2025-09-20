@@ -242,7 +242,11 @@ def job_download(job_id: str):
         raise HTTPException(status_code=409, detail="job not finished")
     try:
         url = _sign_get_url(data["outputGcsUri"], minutes=30)
-        return {"ok": True, "url": url, "expiresInMinutes": 30}
+        response =  {"ok": True, "url": url, "expiresInMinutes": 30}
+        if data.get("analysisGcsUri"):
+            analysis_url = _sign_get_url(data["analysisGcsUri"], minutes=30)
+            response["analysisGcsUri"] = analysis_url
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"signing failed: {e}")
 

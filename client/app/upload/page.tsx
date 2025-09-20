@@ -147,6 +147,22 @@ export default function UploadPage() {
               videoUrl: j.url,
               processingId: id,
             }));
+          
+          if (j.analysisUrl) {
+            try {
+              const analysisRes = await fetch(j.analysisUrl);
+              if (analysisRes.ok) {
+                const analysisData = await analysisRes.json();
+            setUploadResult((prev) => ({
+              ...(prev || { success: true }),
+              shotEvents: analysisData,
+              gameStats: calculateGameStats(analysisData),
+            }));
+          }
+        } catch (e) {
+              console.warn("Failed to fetch analysis JSON:", e);
+        }
+          }
           }
           stopPolling();
           setUploadState("complete");

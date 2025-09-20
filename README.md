@@ -1,23 +1,11 @@
-# 🏀 HoopTuber 
+# HoopTuber 
 
-**HoopTuber** is a web-based application that allows users to upload basketball game videos and uses AI (YOLOv8) to detect basketballs, players, and made shots. The frontend is built with **Next.js** and deployed via **Vercel**, while the backend runs **FastAPI** with **YOLOv8 object detection**, hosted on **Railway**.
+**HoopTuber** is a web-based application that allows users to upload basketball game videos and uses AI (YOLOv8, AutoML, PyTorch, Gemini API) to detect basketballs, players, made shots, as well as highlight-worthy moves such as crossovers, dunks, flashy passes etc. The frontend is built with **Next.js** and deployed via **Render**, while the backend runs **FastAPI** with **Gemini API**, hosted on **Railway**.
 
 ---
 <<<<<<< HEAD
 =======
 ## How to Run
-- cd fastapi
-- create env folder (python3 -m venv .venv on Mac, pyton -m venv .venv Windows)
-- run source .venv/bin/activate
-- pip install -r requirements.txt
-- deactivate
-- cd ..
-- cd worker
-- create env folder (python3 -m venv .venv on Mac, pyton -m venv .venv Windows)
-- run source .venv/bin/activate
-- deactivate
-- pip install -r requirements.txt
-- npm install
 - npm run dev (will start next.js server on port:3000 and FastAPI server on port:8000 simoutaneously)
 
 >>>>>>> 4e671c30 (Branch with moved folders, docker stuff)

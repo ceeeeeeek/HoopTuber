@@ -1,7 +1,32 @@
+
+# Node stuff
 node_modules
+client/node_modules
+
+# Python stuff
 __pycache__/
-secrets/
-.env
-*.log
-.DS_Store
 *.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# Virtual environments
+.venv
+venv
+fastapi/.venv
+worker/.venv
+
+# Git
+.git
+.gitignore
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+
+# Local data / secrets
+secrets/
+*.json
+.env
