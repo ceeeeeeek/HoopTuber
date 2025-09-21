@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+
+  fastapi:
+    build:
+      context: ./fastapi
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./fastapi:/app
+
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    volumes:
+      - ./worker:/app
