@@ -2,7 +2,7 @@
 
 import os, json, time, tempfile, shutil
 from google.cloud import pubsub_v1, storage, firestore
-from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker
+from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker, strip_code_fences
 
 
 PROJECT_ID         = os.environ["GCP_PROJECT_ID"]
@@ -73,7 +73,7 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
             if isinstance(raw_gemini_output, str) and '```json' in raw_gemini_output:
                 json_start = raw_gemini_output.find('[')
                 json_end = raw_gemini_output.rfind(']') + 1
-                clean_data = raw_gemini_output[json_start:json_end]
+                clean_data = strip_code_fences(raw_gemini_output[json_start:json_end])
             with open(json_path, "w") as f:
                 json.dump(raw_gemini_output, f)
             make_highlight(in_path, out_path, raw_gemini_output)
