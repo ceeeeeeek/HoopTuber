@@ -87,7 +87,7 @@ async function start() {
 
   server.get("/healthz", (_req, res) => res.send("ok"));
 
-  // ⬇️ Catch-all: NO '*' or '(.*)' — just a plain middleware
+  //Catch-all: NO '*' or '(.*)' — just a plain middleware
   server.use((req, res) => handle(req, res));
 
   const port = process.env.PORT || 3000;
