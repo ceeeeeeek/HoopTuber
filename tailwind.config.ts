@@ -5,10 +5,10 @@ import type { Config } from "tailwindcss";
 const config: Config = {
     darkMode: ["class"],
     content: [
-    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./app/**/*.{js,ts,jsx,tsx,mdx}",
-    "*.{js,ts,jsx,tsx,mdx}"
+	"./app/**/*.{js,ts,jsx,tsx,mdx}",
+	"./components/**/*.{js,ts,jsx,tsx,mdx}",
+	"./pages/**/*.{js,ts,jsx,tsx,mdx}",
+	// Remove the catch-all "*.{...}" entry – it’s unnecessary and noisy
   ],
   theme: {
   	extend: {

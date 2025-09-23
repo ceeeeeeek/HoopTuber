@@ -25,23 +25,6 @@ export default function DashboardPage() {
 
   const [me, setMe] = useState<{ name?: string; photo?: string } | null>(null);
 
-  // useEffect(() => {
-  //   (async () => {
-  //     const r = await fetch("/api/me");
-  //     if (r.ok) {
-  //       const j = await r.json();
-  //       setMe(j.user);
-  //     } else {
-  //       // not logged in → kick back to /login
-  //       window.location.href = "/login";
-  //     }
-  //   })();
-  // }, []);
-
-  // useEffect(() => {
-  //   fetchUserVideos()
-  // }, [])
-
   const fetchUserVideos = async () => {
     try {
       const response = await fetch("/api/user-videos?userId=demo-user&limit=20")
