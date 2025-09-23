@@ -23,9 +23,24 @@ export default function DashboardPage() {
   const [userVideos, setUserVideos] = useState<UserVideo[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    fetchUserVideos()
-  }, [])
+  const [me, setMe] = useState<{ name?: string; photo?: string } | null>(null);
+
+  // useEffect(() => {
+  //   (async () => {
+  //     const r = await fetch("/api/me");
+  //     if (r.ok) {
+  //       const j = await r.json();
+  //       setMe(j.user);
+  //     } else {
+  //       // not logged in → kick back to /login
+  //       window.location.href = "/login";
+  //     }
+  //   })();
+  // }, []);
+
+  // useEffect(() => {
+  //   fetchUserVideos()
+  // }, [])
 
   const fetchUserVideos = async () => {
     try {
@@ -41,6 +56,29 @@ export default function DashboardPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    let cancelled = false;
+  
+    (async () => {
+      const r = await fetch("/api/me");
+      if (!r.ok) {
+        window.location.href = "/login";
+        return;
+      }
+      const j = await r.json();
+      if (cancelled) return;
+  
+      setMe(j.user);
+      // now that we know the user is authenticated, load their data
+      await fetchUserVideos();
+    })();
+  
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchUserVideos]);
+    
   const handleVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
   const file = event.target.files?.[0]
   if (!file) return
