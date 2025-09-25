@@ -19,6 +19,11 @@ services:
       - "8000:8000"
     volumes:
       - ./fastapi:/app
+      - ./secrets/hooptuberdev.json:/app/hooptuberdev.json:ro
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /app/hooptuberdev.json
+    env_file: # pulling env variables
+      - .env
 
   worker:
     build:
@@ -26,3 +31,8 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./worker:/app
+      - ./secrets/hooptuberdev.json:/app/hooptuberdev.json:ro
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /app/hooptuberdev.json
+    env_file:  # pulling env fariables
+      - .env

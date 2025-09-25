@@ -52,6 +52,9 @@ worker-sa.json
 *.sa.json
 *.pem
 *.p12
-hooptuber-dev-1234-c69c74a5bac2.json
-
+hooptuberdev.json
+# video folders
+worker/videoDataset/
+worker/combined
+worker/clips/
 

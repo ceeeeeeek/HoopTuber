@@ -60,7 +60,10 @@ interface JobRecord {
   outputGcsUri?: string;
   error?: string;
 }
-
+const basketballTerms = [
+  "You miss 100% of the shots you don't take - Michael Jordan",
+  "Hard work beats talent when talent doesn't work hard - Kevin Durant",
+]
 export default function UploadPage() {
   // UNCHANGED: base UI states
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete">("idle");

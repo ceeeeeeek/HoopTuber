@@ -8,7 +8,7 @@ import glob
 import tempfile
 load_dotenv()
 from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
-from prompts import prompt_4
+from prompts import prompt_4, json_input
 
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
@@ -301,7 +301,25 @@ class CreateHighlightVideo2:
             print(f"✗ Error combining clips: {e}")
             return False
 
+def check_json(json_input):
+    json_stripped_str = strip_code_fences(json_input)
 
+    try:
+        parsed_stripped = json.loads(json_stripped_str)
+        parsed_regular = json.loads(json_input)
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "Input is not valid JSON"}
+    if isinstance(parsed_regular, str):
+        return (f"Regular json output is a str: {parsed_regular}")
+    if isinstance(parsed_stripped, str):
+        return (f"Stripped json output is a str: {parsed_stripped}")
+    
+    if isinstance(parsed_regular, json):
+        return ("Regular json output is a json object: ", parsed_regular)
+    if isinstance(parsed_stripped, json):
+        return (f"Stripped json output is a json object: {parsed_stripped}")
+    
+    return ("Input is not a str or json object:", parsed_stripped, parsed_regular)
 if __name__ == "__main__":
     file_name = "meshooting2.mp4"
     file_path = f"videoDataset/{file_name}"
@@ -311,11 +329,14 @@ if __name__ == "__main__":
 
     #slowed_file_path = f"videoDataset/{file_name.split('.')[0]}_slowed.mp4"
     #slow_down_video(file_path, slowed_file_path, speed_factor=0.5)
-    res = process_video_and_summarize(file_path)
-    make_timestamps = timestamp_maker(res)
+    #res = process_video_and_summarize(file_path)
+    #make_timestamps = timestamp_maker(res)
 
     #make_timestamps_mock = ['00:00:11', '00:00:26', '00:00:48'] # timestamps for testing
-    highlighter.create_highlights_ffmpeg(make_timestamps)
-    highlighter.combine_clips_ffmpeg(output_filename=f"{file_name}_combined_video.mp4")
+    #highlighter.create_highlights_ffmpeg(make_timestamps)
+    #highlighter.combine_clips_ffmpeg(output_filename=f"{file_name}_combined_video.mp4")
     #highlighter.clear_folder("clips")
-    print(make_timestamps)
+    #print(make_timestamps)
+    json_inp = json_input()
+    res = check_json(json_inp)
+    print(res)

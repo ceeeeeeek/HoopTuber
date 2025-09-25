@@ -14,7 +14,7 @@ __pycache__/
 # Virtual environments
 .venv
 venv
-fastapi/.venv
+fastapi/.venv_fastapi
 worker/.venv
 
 # Git
