@@ -67,7 +67,6 @@ export default function LandingPage() {
 
       {/* Features Section */}
       <section id="features" className="py-20 px-4 bg-white">
-        
         <div className="container mx-auto">
           <h2 className="text-3xl font-bold text-center mb-12">How HoopTuber Works</h2>
           <div className="grid md:grid-cols-3 gap-8">
