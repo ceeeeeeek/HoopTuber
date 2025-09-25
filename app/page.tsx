@@ -28,9 +28,17 @@ export default function LandingPage() {
             <Link href="/login" className="text-gray-600 hover:text-orange-500">
               Login
             </Link>
-            <Button asChild>
+            {/* <Button asChild>
               <Link href="/upload">Try Free</Link>
-            </Button>
+            </Button> */}
+            <TryFreeUploadButton
+            size="sm"
+            variant="secondary"
+            className="rounded-full bg-gray-900 hover:bg-black text-white"
+            withIcon={false}
+            >
+              Try Free
+            </TryFreeUploadButton>
           </nav>
         </div>
       </header>
@@ -50,8 +58,13 @@ export default function LandingPage() {
             that showcase your best moments.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <TryFreeUploadButton />
-            <Button size="lg" variant="outline" asChild>
+          <TryFreeUploadButton
+          size="lg"
+          variant="default"
+          className="bg-orange-500 hover:bg-orange-600"
+          withIcon
+          />
+          <Button size="lg" variant="outline" asChild>
               <Link href="#demo">
                 <Play className="w-5 h-5 mr-2" />
                 Watch Demo
@@ -193,12 +206,13 @@ export default function LandingPage() {
             Join thousands of players already using HoopTuber to showcase their skills.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" variant="secondary" asChild>
+            {/* <Button size="lg" variant="secondary" asChild>
               <Link href="/upload">
                 Try Free Upload
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Link>
-            </Button>
+            </Button> */}
+            <TryFreeUploadButton />
             <Button
               size="lg"
               variant="outline"
@@ -236,9 +250,10 @@ export default function LandingPage() {
                 <li>
                   <Link href="#pricing">Pricing</Link>
                 </li>
-                <li>
+                {/* <li>
+                  <Link href="/login">Try Free</Link>
                   <Link href="/upload">Try Free</Link>
-                </li>
+                </li> */}
               </ul>
             </div>
             <div>

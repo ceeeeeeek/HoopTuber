@@ -8,9 +8,13 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Play, ArrowLeft, Mail, Lock } from "lucide-react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true)
+
+  const search = useSearchParams();
+  const next = search.get("next") || "/dashboard";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center p-4">
@@ -91,7 +95,10 @@ export default function LoginPage() {
             </div>
 
             <Button variant="outline" className="w-full" asChild>
-              <a href="/auth/google" className="flex items-center justify-center">
+              <a     
+              href={`/auth/google?next=${encodeURIComponent(next)}`}
+              className="flex items-center justify-center"
+              >
                 <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
                   <path
                     fill="currentColor"

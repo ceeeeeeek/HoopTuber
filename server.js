@@ -1,4 +1,4 @@
-// // server.js (repo root)
+//server.js (Wednesday 09-24-25 Version) - at repo root
 
 require("dotenv").config();
 
@@ -21,8 +21,6 @@ passport.use(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    //callbackURL: "https://app.hooptuber.com/auth/google/callback", //When you deploy, switch to/uncomment when not testing LOCALLY and on app.hooptuber.com
-    //callbackURL: "http://localhost:3000/auth/google/callback", //Keep your local server.js using the local callback during dev - http://localhost:3000/auth/google/callback
       callbackURL: dev
         ? "http://localhost:3000/auth/google/callback"
         : "https://app.hooptuber.com/auth/google/callback",
@@ -61,17 +59,27 @@ async function start() {
   server.use(passport.initialize());
   server.use(passport.session());
 
- //Auth routes/writing the endpoints - to handle login and display user information 
-  server.get(
-    "/auth/google",
+  // When starting Google auth, remember ?next=… in the session
+  // capture ?next=/upload and stash it in the session
+  server.get("/auth/google",
+    (req, res, next) => {
+      const nextUrl = typeof req.query.next === "string" ? req.query.next : null;
+      // only allow internal paths for safety
+      req.session.returnTo = nextUrl && nextUrl.startsWith("/") ? nextUrl : "/upload";
+      next();
+    },
     passport.authenticate("google", { scope: ["profile", "email"] })
   );
 
-  server.get(
-    "/auth/google/callback",
-    passport.authenticate("google", { failureRedirect: "/login?error=1" }),
-    (req, res) => res.redirect("/dashboard")
-  );
+  // In the callback, redirect to the stored destination (default /dashboard)
+  server.get("/auth/google/callback",
+  passport.authenticate("google", { failureRedirect: "/login?error=1" }),
+  (req, res) => {
+    const dest = req.session.returnTo || "/upload";
+    delete req.session.returnTo;              // clean up
+    res.redirect(dest);
+  }
+);
 
 //Logout Route  
   server.get("/logout", (req, res) => {
