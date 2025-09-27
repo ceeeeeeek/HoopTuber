@@ -8,6 +8,10 @@ client/node_modules/
 /.next/
 /out/
 client/.next/
+.next/
+.next
+client/.next
+.next*
 
 # production
 /build

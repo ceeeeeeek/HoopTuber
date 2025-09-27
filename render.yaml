@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: hooptuber-client
+    env: docker
+    repo:
+    dockerfilePath: ./client/Dockerfile
+    dockerContext: ./client
+    plan: free
+
+  - type: web
+    name: hooptuber-fastapi
+    env: docker
+    repo:
+    dockerfilePath: ./fastapi/dockerfile
+    dockerContext: ./fastapi
+    plan: free
+    envVars:
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /app/hooptuberdev.json
+
+  - type: worker
+    name: hooptuber-worker
+    env: docker
+    repo: 
+    dockerfilePath: ./worker/Dockerfile
+    dockerContext: ./worker
+    plan: free
+    envVars:
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /app/hooptuberdev.json
+    
