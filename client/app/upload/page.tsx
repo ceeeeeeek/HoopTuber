@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+
 import {
   Upload,
   Play,
@@ -24,6 +27,8 @@ import {
   Download, // NEW: icon for download button
 } from "lucide-react";
 import Link from "next/link";
+
+
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
@@ -69,7 +74,14 @@ interface JobRecord {
   error?: string;
 }
 
-export default function UploadPage() {
+
+
+export default async function UploadPage() {
+
+  const session = await getServerSession();
+  if (!session) {
+    redirect("/login?next=/upload")
+  }
   // UNCHANGED: base UI states
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete">("idle");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
