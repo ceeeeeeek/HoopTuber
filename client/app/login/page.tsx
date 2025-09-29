@@ -14,7 +14,7 @@ export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true)
 
   const search = useSearchParams();
-  const next = search.get("next") || "/dashboard";
+  const next = search.get("next") ?? "/dashboard";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center p-4">
