@@ -76,12 +76,8 @@ interface JobRecord {
 
 
 
-export default async function UploadPage() {
+export default function UploadPage() {
 
-  const session = await getServerSession();
-  if (!session) {
-    redirect("/login?next=/upload")
-  }
   // UNCHANGED: base UI states
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete">("idle");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);

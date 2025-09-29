@@ -5,7 +5,7 @@ import './globals.css'
 import RoutePrefetcher from "./app-components/RoutePrefetcher";
 
 export const metadata: Metadata = {
-  title: 'v0 App',
+  title: 'HoopTuber',
   description: 'Created with v0',
   generator: 'v0.dev',
 }
@@ -16,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en-US">
       <head>
         <style>{`
 html {
