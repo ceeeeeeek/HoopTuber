@@ -38,6 +38,7 @@ Thumbs.db
 .env*
 env/
 *.env
+env/*.json
 
 # vercel
 .vercel
@@ -54,11 +55,15 @@ fastapi/api/videoDataset
 fastapi/api/clips
 fastapi/api/combined
 
-# json service accounts & secrets
+# json service accounts & secrets 
+# from #Google Cloud Services/GCS IAM & Admin Service Accounts
 fastapi/api-sa.json
 worker/worker-sa.json
 api-sa.json
 worker-sa.json
+hooptuber-leads.json
+.keys/
+*leads*.json
 *.key.json
 *.sa.json
 *.pem
