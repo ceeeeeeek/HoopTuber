@@ -2,7 +2,7 @@ services:
   - type: web
     name: hooptuber-client
     env: docker
-    repo:
+    repo: https://github.com/ceeeeeeek/HoopTuber
     dockerfilePath: ./client/Dockerfile
     dockerContext: ./client
     plan: free
@@ -10,22 +10,23 @@ services:
   - type: web
     name: hooptuber-fastapi
     env: docker
-    repo:
+    repo: https://github.com/ceeeeeeek/HoopTuber
     dockerfilePath: ./fastapi/dockerfile
     dockerContext: ./fastapi
     plan: free
     envVars:
       - key: GOOGLE_APPLICATION_CREDENTIALS
-        value: /app/hooptuberdev.json
-
+        value: /etc/secrets/hooptuberdev.json
+      # - key: GOOGLE_APPLICATION_CREDENTIALS
+      #   value: /app/hooptuberdev.json # ONLY USING FOR LOCAL TESTING WITH DOCKER
   - type: worker
     name: hooptuber-worker
     env: docker
-    repo: 
+    repo: https://github.com/ceeeeeeek/HoopTuber
     dockerfilePath: ./worker/Dockerfile
     dockerContext: ./worker
     plan: free
     envVars:
       - key: GOOGLE_APPLICATION_CREDENTIALS
-        value: /app/hooptuberdev.json
+        value: /etc/secrets/hooptuberdev.json
     
