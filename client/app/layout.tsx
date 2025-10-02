@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   title: 'HoopTuber',
   description: 'Created with v0',
   generator: 'v0.dev',
+  icons: {
+    icon: "/hooptubericon.png"
+  }
 }
 
 export default function RootLayout({
