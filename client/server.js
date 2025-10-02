@@ -45,7 +45,7 @@ async function start() {
 
   server.use(
     session({
-      secret: process.env.SESSION_SECRET || "change-me",
+      secret: process.env.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
       cookie: {
