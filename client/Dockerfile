@@ -12,6 +12,8 @@ RUN npm install
 # Copy the rest of the frontend code
 COPY . .
 
+RUN npm run build
+
 EXPOSE 3000
 
-CMD ["npm", "run", "dev"]
+CMD ["node, "server.js"]
