@@ -8,7 +8,7 @@ const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const next = require("next");
 
-const dev = process.env.NODE_ENV !== "production";
+const dev = process.env.NODE_ENV !== "production"; // change !== to === for production, !== for dev
 const app = next({ dev, dir: "." }); // serve your Next.js app/ pages
 const handle = app.getRequestHandler();
 
@@ -50,8 +50,8 @@ async function start() {
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
-        sameSite: "lax",
         secure: !dev,
+        sameSite: dev ? "lax": "none",
         maxAge: 24 * 60 * 60 * 1000,
       },
     })
