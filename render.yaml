@@ -6,7 +6,7 @@ services:
     dockerfilePath: ./client/Dockerfile
     dockerContext: ./client
     plan: free
-
+    
   - type: web
     name: hooptuber-fastapi
     env: docker
@@ -17,8 +17,6 @@ services:
     envVars:
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/hooptuberdev.json
-      # - key: GOOGLE_APPLICATION_CREDENTIALS
-      #   value: /app/hooptuberdev.json # ONLY USING FOR LOCAL TESTING WITH DOCKER
   - type: worker
     name: hooptuber-worker
     env: docker
