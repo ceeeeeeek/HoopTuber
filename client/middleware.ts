@@ -21,7 +21,9 @@ export async function middleware(req: NextRequest) {
   try {
     const r = await fetch(`${req.nextUrl.origin}/api/me`, {
       // forward just the session cookie
-      headers: { cookie: `connect.sid=${sid}` },
+      headers: { 
+        cookie: req.headers.get("cookie") || "" // CHANGE: forward entire cookie header
+      },
       // avoid caching any auth checks
       cache: "no-store",
     });
