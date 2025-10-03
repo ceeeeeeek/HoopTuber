@@ -9,8 +9,8 @@ const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const next = require("next");
 
 // redis setup
-const RedisStore = require("connect-redis")(session);
 const { createClient } = require("redis");
+const RedisStore = require("connect-redis").default;
 
 const dev = process.env.NODE_ENV !== "production"; // change !== to === for production, !== for dev
 const app = next({ dev, dir: "." }); // serve your Next.js app/ pages
