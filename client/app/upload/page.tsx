@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { useRouter } from "next/navigation";
 
 import {
   Upload,
@@ -30,28 +29,6 @@ import Link from "next/link";
 
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
-const router = useRouter();
-
-useEffect(() => {
-  const checkSession = async () => {
-    try {
-      const res = await fetch("/api/me", {
-        method: "GET",
-        credentials: "include", // REQUIRED for cookies to be sent!
-      });
-
-      if (!res.ok) {
-        router.push(`/login?next=/upload`);
-      }
-    } catch (err) {
-      console.error("Session check failed:", err);
-      router.push(`/login?next=/upload`);
-    }
-  };
-
-  checkSession();
-}, []);
-
 
 interface GeminiShotEvent {
   Subject: string;
