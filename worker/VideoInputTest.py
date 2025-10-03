@@ -148,7 +148,7 @@ class CreateHighlightVideo:
                     print(f"✗ Error creating clip {i+1}: {result.stderr}")
 
         except Exception as e:
-            print(f"✗ General error: {e}")
+            print(f"General error: {e}")
 
     def clear_folder(self, folder_path):
         for filename in os.listdir(folder_path):

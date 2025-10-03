@@ -75,7 +75,7 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
                 json_end = raw_gemini_output.rfind(']') + 1
                 clean_data = strip_code_fences(raw_gemini_output[json_start:json_end])
             with open(json_path, "w") as f:
-                json.dump(raw_gemini_output, f)
+                json.dump(clean_data, f)
             make_highlight(in_path, out_path, raw_gemini_output)
 
             out_gcs_uri = upload_to_gcs(out_path, OUT_BUCKET, out_key)
