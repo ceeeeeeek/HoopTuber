@@ -11,25 +11,12 @@ const next = require("next");
 // redis setup
 const { createClient } = require("redis");
 
-const RedisStore = require("connect-redis");
 
 const dev = process.env.NODE_ENV !== "production"; // change !== to === for production, !== for dev
 const app = next({ dev, dir: "." }); // serve your Next.js app/ pages
 const handle = app.getRequestHandler();
 
 // redis session setup
-const redisClient = createClient({
-  url: process.env.REDIS_URL,
-});
-
-redisClient.connect().catch(console.error);
-// error handling for connecting to redis
-redisClient.on("error", (err) =>  {
-  console.error("Redis connection error: ", err)
-});
-const sessionStore = new RedisStore({
-  client: redisClient,
-});
 
 // Minimal passport user shape
 passport.serializeUser((user, done) => done(null, user));
@@ -57,6 +44,20 @@ passport.use(
 );
 
 async function start() {
+  const { default: RedisStore } = await import("connect-redis");
+  // redis session setup
+  const redisClient = createClient({
+    url: process.env.REDIS_URL,
+  });
+
+  await redisClient.connect().catch(console.error);
+  // error handling for connecting to redis
+  redisClient.on("error", (err) =>  {
+    console.error("Redis connection error: ", err)
+  });
+  const sessionStore = new RedisStore({
+    client: redisClient,
+  });
   await app.prepare();
   const server = express();
 
