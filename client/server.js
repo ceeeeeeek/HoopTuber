@@ -10,6 +10,7 @@ const next = require("next");
 
 // redis setup
 const { createClient } = require("redis");
+
 const RedisStore = require("connect-redis");
 
 const dev = process.env.NODE_ENV !== "production"; // change !== to === for production, !== for dev
