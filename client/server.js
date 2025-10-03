@@ -8,6 +8,7 @@ const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const next = require("next");
 
+
 // redis setup
 const { createClient } = require("redis");
 
@@ -46,7 +47,7 @@ passport.use(
 async function start() {
   const connectRedis = await import("connect-redis");
   //const redisStore = connectRedis.default(session);
-  const RedisStore = (await import("connect-redis")).default;
+  const { RedisStore } = await import("connect-redis");
   // redis session setup
   const redisClient = createClient({
     url: process.env.REDIS_URL,
