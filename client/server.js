@@ -1,4 +1,4 @@
-//server.js (Wednesday 09-24-25 Version) - at repo root
+//server.js (Wednesday 10-02-25 Version) - at repo root
 
 require("dotenv").config();
 
@@ -8,9 +8,27 @@ const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const next = require("next");
 
+// redis setup
+const RedisStore = require("connect-redis").default;
+const { createClient } = require("redis");
+
 const dev = process.env.NODE_ENV !== "production"; // change !== to === for production, !== for dev
 const app = next({ dev, dir: "." }); // serve your Next.js app/ pages
 const handle = app.getRequestHandler();
+
+// redis session setup
+const redisClient = createClient({
+  url: process.env.REDIS_URL,
+});
+
+redisClient.connect().catch(console.error);
+// error handling for connecting to redis
+redisClient.on("error", (err) =>  {
+  console.error("Redis connection error: ", err)
+});
+const sessionStore = new RedisStore({
+  client: redisClient,
+});
 
 // Minimal passport user shape
 passport.serializeUser((user, done) => done(null, user));
@@ -45,6 +63,7 @@ async function start() {
 
   server.use(
     session({
+      store: sessionStore,
       secret: process.env.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
