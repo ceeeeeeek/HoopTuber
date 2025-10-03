@@ -112,6 +112,12 @@ async function start() {
 
 //API for the dashboard header
   server.get("/api/me", (req, res) => {
+    //debug
+    console.log("---- API/ME DEBUG -----");
+    console.log("Cookies: ", req.cookies);
+    console.log("Session: ", req.session);
+    console.log("User: ", req.user);
+    console.log("Sesh ID: ", req.sessionID);
     if (!req.user) return res.status(401).json({ ok: false });
     const { name, photo } = req.user;
     res.json({ ok: true, user: { name, photo } });
