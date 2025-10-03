@@ -46,7 +46,7 @@ passport.use(
 async function start() {
   const connectRedis = await import("connect-redis");
   //const redisStore = connectRedis.default(session);
-  const RedisStore = (await import("connect-redis")).default(session);
+  const RedisStore = (await import("connect-redis")).default;
   // redis session setup
   const redisClient = createClient({
     url: process.env.REDIS_URL,
