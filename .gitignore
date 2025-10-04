@@ -12,6 +12,9 @@ client/.next/
 .next
 client/.next
 .next*
+/client/.next*
+.next*
+
 
 # production
 /build

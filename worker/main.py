@@ -70,12 +70,18 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
 
             download_from_gcs(input_gcs_uri, in_path)
             raw_gemini_output = process_video_and_summarize(in_path) # gemini output
-            if isinstance(raw_gemini_output, str) and '```json' in raw_gemini_output:
+            #if isinstance(raw_gemini_output, str):
+            if '```json' in raw_gemini_output:
                 json_start = raw_gemini_output.find('[')
                 json_end = raw_gemini_output.rfind(']') + 1
                 clean_data = strip_code_fences(raw_gemini_output[json_start:json_end])
+                parsed_data = json.loads(clean_data)
+            else:
+                parsed_data = json.loads(raw_gemini_output)
+            #else:
+                #parsed_data = raw_gemini_output
             with open(json_path, "w") as f:
-                json.dump(clean_data, f)
+                json.dump(parsed_data, f,indent=2)
             make_highlight(in_path, out_path, raw_gemini_output)
 
             out_gcs_uri = upload_to_gcs(out_path, OUT_BUCKET, out_key)

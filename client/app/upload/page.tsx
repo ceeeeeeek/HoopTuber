@@ -136,44 +136,49 @@ export default function UploadPage() {
   };
 
   const startPolling = (id: string) => {
-    stopPolling();
-    pollRef.current = window.setInterval(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/jobs/${id}`);
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data: JobRecord = await res.json();
+  stopPolling();
+  pollRef.current = window.setInterval(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/jobs/${id}`);
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data: JobRecord = await res.json();
 
-        if (data.status === "error" || data.status === "publish_error") {
-          stopPolling();
-          setUploadState("idle");
-          console.error("Job failed:", data.error || "unknown");
-          return;
-        }
-
-        if (data.status === "done" && data.outputGcsUri) {
-          // NEW: grab signed download URL when output is ready
-          const dlRes = await fetch(`${API_BASE}/jobs/${id}/download`);
-          if (dlRes.ok) {
-            const j = await dlRes.json();
-            setDownloadUrl(j.url);
-            setUploadResult((prev) => ({
-              ...(prev || { success: true }),
-              videoUrl: j.url,
-              processingId: id,
-            }));
-          }
-          stopPolling();
-          setUploadState("complete");
-        } else {
-          // queued/processing – keep waiting
-          setUploadState("processing");
-        }
-      } catch (e) {
-        // transient errors are fine; keep polling
-        console.warn("Polling error:", e);
+      if (data.status === "error" || data.status === "publish_error") {
+        stopPolling();
+        setUploadState("idle");
+        console.error("Job failed:", data.error || "unknown");
+        return;
       }
-    }, 3000);
-  };
+
+      if (data.status === "done" && data.outputGcsUri) {
+        // Fetch final download + analysis
+        const dlRes = await fetch(`${API_BASE}/jobs/${id}/download`);
+        if (dlRes.ok) {
+          const j = await dlRes.json();
+
+          const shotEvents: GeminiShotEvent[] = j.shot_events || [];
+          const gameStats = shotEvents.length > 0 ? calculateGameStats(shotEvents) : undefined;
+
+          setDownloadUrl(j.url);
+          setUploadResult((prev) => ({
+            ...(prev || { success: true }),
+            videoUrl: j.url,
+            processingId: id,
+            shotEvents,
+            gameStats,
+          }));
+        }
+        stopPolling();
+        setUploadState("complete");
+      } else {
+        setUploadState("processing");
+      }
+    } catch (e) {
+      console.warn("Polling error:", e);
+    }
+  }, 3000);
+};
+
 
   // NEW: cleanup on unmount
   useEffect(() => {

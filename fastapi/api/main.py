@@ -228,27 +228,41 @@ def job_status(job_id: str):
     return snap.to_dict()
 
 @app.get("/jobs/{job_id}/download")
+
 def job_download(job_id: str):
     """
-    Return a signed URL for the output when ready.
-    Worker should set outputGcsUri on success:
-      { status: 'done', outputGcsUri: 'gs://<OUT_BUCKET>/<key>' }
+    Return a signed URL for the highlight video and inline JSON analysis when ready.
     """
     snap = _job_doc(job_id).get()
     if not snap.exists:
         raise HTTPException(status_code=404, detail="job not found")
     data = snap.to_dict()
+
     if data.get("status") != "done" or not data.get("outputGcsUri"):
         raise HTTPException(status_code=409, detail="job not finished")
+
     try:
+        # Always return highlight video signed URL
         url = _sign_get_url(data["outputGcsUri"], minutes=30)
-        response =  {"ok": True, "url": url, "expiresInMinutes": 30}
+        response = {"ok": True, "url": url, "expiresInMinutes": 30}
+
+        # If analysis JSON exists, fetch it and return inline
         if data.get("analysisGcsUri"):
-            analysis_url = _sign_get_url(data["analysisGcsUri"], minutes=30)
-            response["analysisGcsUri"] = analysis_url
+            bucket_name, blob_name = _parse_gs_uri(data["analysisGcsUri"])
+            blob = storage_client.bucket(bucket_name).blob(blob_name)
+
+            try:
+                # Download and parse JSON
+                analysis_json = json.loads(blob.download_as_text())
+                response["shot_events"] = analysis_json
+            except Exception as e:
+                response["shot_events_error"] = f"Failed to parse analysis JSON: {e}"
+
         return response
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"signing failed: {e}")
+
 
 @app.get("/healthz")
 def healthz():
