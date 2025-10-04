@@ -6,10 +6,10 @@ import RoutePrefetcher from "./app-components/RoutePrefetcher";
 
 export const metadata: Metadata = {
   title: 'HoopTuber',
-  description: 'Created with v0',
+  description: 'Create your own basketball highlights in seconds!',
   generator: 'v0.dev',
   icons: {
-    icon: "/hooptubericon.png"
+    icon: "/hooptuberlogo1.png"
   }
 }
 
