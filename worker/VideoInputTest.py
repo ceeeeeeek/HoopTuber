@@ -237,7 +237,13 @@ class CreateHighlightVideo2:
                         '-y',                           # Overwrite
                         clip_path
                     ]
-
+                    """
+                    EDGE CASE NOT REALLY: HANDLE
+                    will be times that the highlight times overlap.
+                    In that case, maybe start the next highlight at the end of the previous highlight?
+                    H
+                    
+                    """
                     result = subprocess.run(cmd, capture_output=True, text=True)
 
                     if result.returncode == 0:
