@@ -29,6 +29,7 @@ def download_from_gcs(gcs_uri: str, dest_path: str):
     assert gcs_uri.startswith("gs://")
     _, _, rest = gcs_uri.partition("gs://")
     bucket_name, _, blob_name = rest.partition("/")
+    folder_prefix = os.path.dirname(blob_name)
     bucket = storage_client.bucket(bucket_name)
     blob   = bucket.blob(blob_name)
     blob.download_to_filename(dest_path)

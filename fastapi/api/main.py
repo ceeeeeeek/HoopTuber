@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 # NEW: Google Cloud clients
 from google.cloud import storage, firestore
 from google.cloud import pubsub_v1
+from datetime import datetime, timezone
 load_dotenv()
 
 print("DEBUGGING:")
@@ -75,7 +76,8 @@ def _make_keys(original_name: str, job_id: str) -> tuple[str, str, str]:
     """
     # Keep user uploads grouped by job; you can also include userId if you pass it
     safe_name = original_name or "upload.mp4"
-    blob_name = f"uploads/{job_id}/{safe_name}"
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    blob_name = f"uploads/{timestamp}{job_id}/{safe_name}"
     gcs_uri   = f"gs://{RAW_BUCKET}/{blob_name}"
     return blob_name, gcs_uri, safe_name
 
