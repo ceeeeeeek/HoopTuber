@@ -3,7 +3,7 @@ import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials"
 
 async function verifyUser(email?: string, password?: string) {
-  // Temporary hardcoded example for testing:
+  // Temporary hardcoded example for testing, replace with real user verification logic when actual DB is implemented:
   if (email === "test@example.com" && password === "123456") {
     return { id: "1", name: "Test User", email }
   }
@@ -29,7 +29,7 @@ const handler = NextAuth({
         password: { label: "Paddword", type: "password" },
         },
               async authorize(credentials) {
-        // This is where YOU verify the user manually
+        // Verifying user with example
         const user = await verifyUser(credentials?.email, credentials?.password)
         if (!user) {
           throw new Error("Invalid email or password")
@@ -38,6 +38,25 @@ const handler = NextAuth({
       },
     }),
   ],
+  callbacks: {
+    // callback to monitor every time user logs in
+    async signIn({ user, account, profile, email, credentials }) {
+      console.log("New login attempt from:", user)
+      return true
+    },
+    // callback to monitor session activity
+    async session({ session, token}) {
+      console.log("Session callback for: ", session.user?.email)
+      return session
+    },
+    // mointoring JWT token 
+    async jwt({ token, user }) {
+      if (user) {
+        console.log("JWT issued for: ", user.email)
+      }
+      return token
+    }
+  },
   secret: process.env.NEXTAUTH_SECRET,
   pages: {
     signIn: "/login", // optional custom login page
