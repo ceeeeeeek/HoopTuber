@@ -26,9 +26,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 console.log("API_BASE =", process.env.NEXT_PUBLIC_API_BASE);
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com"; // testing now, use localhost:8000
 
 interface GeminiShotEvent {
   Subject: string;

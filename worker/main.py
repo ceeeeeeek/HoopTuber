@@ -72,7 +72,7 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
             download_from_gcs(input_gcs_uri, in_path)
             raw_gemini_output = process_video_and_summarize(in_path) # gemini output
             #if isinstance(raw_gemini_output, str):
-            if '```json' in raw_gemini_output:
+            if '```json' in raw_gemini_output or r"```json\n" in raw_gemini_output:
                 json_start = raw_gemini_output.find('[')
                 json_end = raw_gemini_output.rfind(']') + 1
                 clean_data = strip_code_fences(raw_gemini_output[json_start:json_end])

@@ -19,12 +19,13 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from typing import Optional
-from datetime import timedelta
+from datetime import timedelta, datetime
 import os, uuid, json
 from dotenv import load_dotenv
 # NEW: Google Cloud clients
 from google.cloud import storage, firestore
 from google.cloud import pubsub_v1
+from zoneinfo import ZoneInfo
 load_dotenv()
 
 print("DEBUGGING:")
@@ -75,8 +76,11 @@ def _make_keys(original_name: str, job_id: str) -> tuple[str, str, str]:
     """
     # Keep user uploads grouped by job; you can also include userId if you pass it
     safe_name = original_name or "upload.mp4"
+    now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
+    date_str = now_pst.strftime("%Y-%m-%d")
     blob_name = f"uploads/{job_id}/{safe_name}"
     gcs_uri   = f"gs://{RAW_BUCKET}/{blob_name}"
+    print(f"DEBUG: uploading to blob_name={blob_name}")
     return blob_name, gcs_uri, safe_name
 
 def _publish_job(job_id: str, raw_gcs_uri: str, user_id: Optional[str] = None):
@@ -244,8 +248,14 @@ def job_download(job_id: str):
         url = _sign_get_url(data["outputGcsUri"], minutes=30)
         response =  {"ok": True, "url": url, "expiresInMinutes": 30}
         if data.get("analysisGcsUri"):
-            analysis_url = _sign_get_url(data["analysisGcsUri"], minutes=30)
-            response["analysisGcsUri"] = analysis_url
+            bucket_name, blob_name = _parse_gs_uri(data["analysisGcsUri"])
+            blob = storage_client.bucket(bucket_name).blob(blob_name)
+            json_bytes = blob.download_as_bytes()
+            try:
+                shot_events = json.loads(json_bytes.decode("utf-8"))
+                response["shot_events"] = shot_events
+            except Exception as e:
+                print(f"Warning: failed to parse analysis JSON: {e}")
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"signing failed: {e}")
