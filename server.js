@@ -1,4 +1,4 @@
-//server.js (Sunday 09-28-25 Version) - at repo root
+//server.js (Sunday 09-30-25 Version) - at repo root
 
 require("dotenv").config();
 
@@ -8,10 +8,16 @@ const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const next = require("next");
 
-//Firestore + email
+//Firestore + google email for OAuth 2.0 - for leads signing into HoopTuber with Google gmail accounts
 const path = require("path");
 const { Firestore, FieldValue } = require("@google-cloud/firestore");
 const nodemailer = require("nodemailer");
+//Firestore + google email for OAuth 2.0
+
+//local (email/password) auth flow - for leads signing into HoopTuber with accounts made on HoopTuber
+const LocalStrategy = require("passport-local").Strategy;
+const bcrypt = require("bcryptjs");
+const { z } = require("zod");
 
 const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev, dir: "." }); // serve your Next.js app/ pages
@@ -42,7 +48,7 @@ passport.use(
   )
 );
 
-//Firestore client (service-account key file) - for leads
+//Firestore init client (service-account key file) - for leads
 const firestore = new Firestore({
   projectId: process.env.GCP_PROJECT_ID,
   keyFilename: process.env.FIRESTORE_KEY_FILE
@@ -51,6 +57,20 @@ const firestore = new Firestore({
       ? path.resolve(process.env.GOOGLE_APPLICATION_CREDENTIALS)
       : undefined, // falls back to ADC if neither is set
 });
+
+//10-02-25 Thursday addition 4:00pm
+//Local users collection helpers (site-native accounts) - should be placed right after Firestore init because it needs firestore initialized FIRST
+const USERS = () => firestore.collection("users");
+
+function emailKey(email) {
+  return String(email).trim().toLowerCase();
+}
+
+async function findUserByEmail(email) {
+  const doc = await USERS().doc(emailKey(email)).get();
+  return doc.exists ? { id: doc.id, ...doc.data() } : null;
+}
+//10-02-25 Thursday addition 4:00pm
 
 //Nodemailer (Gmail with App Password)
 const mailer = nodemailer.createTransport({
@@ -61,47 +81,43 @@ const mailer = nodemailer.createTransport({
   },
 });
 
-//saveLeadAndNotify() VERSION 2 - both (one-per-user and a history), 
+//10-02-25 Thursday addition 4:00pm
+//saveLeadAndNotify() VERSION with both (one-per-user and a history), 
 //you can write to two collections: an upsert to leads/{user.id} and an append to leadLog/{user.id}/{loginId}.
 //Upserts one document per user at leads/{user.id} (preserves firstSeen).
 //+
 //Also appends a history entry at leadLog/{user.id}/logins/{autoId}.
-async function saveLeadAndNotify({ user, sourcePath }) {
+async function saveLeadAndNotify({ user, sourcePath, provider = "google", kind = "login" }) {
   try {
     const leads = firestore.collection("leads");
-    const docRef = leads.doc(user.id);              
+    const docRef = leads.doc(user.id); // stable per-user (google id or our local uid)
     const now = new Date();
     const nowIso = now.toISOString();
 
-    // Transaction so firstSeen is only set once
+    // Upsert 1 row per person (firstSeen once, lastLogin every time)
     await firestore.runTransaction(async (tx) => {
       const snap = await tx.get(docRef);
+      const base = {
+        email: user.email || null,
+        name: user.name || null,
+        photo: user.photo || null,
+        provider,
+        lastSource: sourcePath || "/",
+        lastLogin: FieldValue.serverTimestamp(),
+        lastLoginIso: nowIso,
+      };
       if (snap.exists) {
-        tx.update(docRef, {
-          email: user.email || null,
-          name: user.name || null,
-          photo: user.photo || null,
-          provider: "google",
-          lastSource: sourcePath || "/",
-          lastLogin: FieldValue.serverTimestamp(),
-          lastLoginIso: nowIso,
-        });
+        tx.update(docRef, base);
       } else {
         tx.set(docRef, {
-          email: user.email || null,
-          name: user.name || null,
-          photo: user.photo || null,
-          provider: "google",
+          ...base,
           firstSeen: FieldValue.serverTimestamp(),
           firstSeenIso: nowIso,
-          lastSource: sourcePath || "/",
-          lastLogin: FieldValue.serverTimestamp(),
-          lastLoginIso: nowIso,
         });
       }
     });
 
-    //Append per-login history entry: leadLog/{uid}/logins/{autoId}
+    // Append per-event history: leadLog/{uid}/logins/{autoId}
     await firestore
       .collection("leadLog")
       .doc(user.id)
@@ -113,10 +129,11 @@ async function saveLeadAndNotify({ user, sourcePath }) {
         source: sourcePath || "/",
         when: FieldValue.serverTimestamp(),
         whenIso: nowIso,
-        provider: "google",
+        provider,
+        kind, // "signup" or "login"
       });
 
-    //Email notify (unchanged)
+    // Email notify
     const to = (process.env.NOTIFY_TO || process.env.NOTIFY_EMAIL || "")
       .split(",")
       .map((s) => s.trim())
@@ -126,9 +143,9 @@ async function saveLeadAndNotify({ user, sourcePath }) {
       await mailer.sendMail({
         from: process.env.NOTIFY_EMAIL,
         to,
-        subject: `[HoopTuber] New Google sign-in: ${user.email || user.name || user.id}`,
+        subject: `[HoopTuber] ${provider} ${kind}: ${user.email || user.name || user.id}`,
         text: [
-          `A user signed in via Google:`,
+          `A user ${kind} via ${provider}.`,
           `Name: ${user.name || "(none)"}`,
           `Email: ${user.email || "(none)"}`,
           `Source path: ${sourcePath || "/"}`,
@@ -140,6 +157,8 @@ async function saveLeadAndNotify({ user, sourcePath }) {
     console.error("Lead save/email failed:", err);
   }
 }
+//10-02-25 Thursday addition 4:00pm
+
 
 async function start() {
   await app.prepare();
@@ -153,6 +172,12 @@ async function start() {
   const server = express();
 
   if (!dev) server.set("trust proxy", 1);
+
+  //10-02-25 Thursday addition 4:00pm
+  //parsers - to read JSON form bodies for local auth endpoints; must be placed before server.use(session({...}))
+  server.use(express.json());
+  server.use(express.urlencoded({ extended: true }));
+  //10-02-25 Thursday addition 4:00pm
 
   server.use(
     session({

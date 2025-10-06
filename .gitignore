@@ -2,10 +2,20 @@
 
 # dependencies
 /node_modules
+node_modules/
+client/node_modules/
+/worker/node_modules
 
 # next.js
 /.next/
 /out/
+client/.next/
+.next/
+.next
+client/.next
+.next*
+/client/.next*
+.next*
 
 # production
 /build
@@ -24,6 +34,18 @@ venv-*/
 fastapi/.venv*/
 worker/.venv*/
 
+worker/.venv/
+fastapi/api/.env
+
+# env files
+**/.env
+**/.env.*
+.env
+.env*
+env/
+*.env
+env/*.json
+
 # python bytecode
 **/__pycache__/
 *.pyc
@@ -33,12 +55,6 @@ worker/.venv*/
 # OS junk
 .DS_Store
 Thumbs.db
-
-# env files
-.env*
-env/
-*.env
-env/*.json
 
 # vercel
 .vercel
@@ -54,6 +70,7 @@ fastapi/api/__pycache__/
 fastapi/api/videoDataset
 fastapi/api/clips
 fastapi/api/combined
+worker/__pycache__/
 
 # json service accounts & secrets 
 # from #Google Cloud Services/GCS IAM & Admin Service Accounts
@@ -69,4 +86,7 @@ hooptuberdev.json
 *.pem
 *.p12
 
-
+# video folders
+worker/videoDataset/
+worker/combined
+worker/clips/
