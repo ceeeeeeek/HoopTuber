@@ -74,6 +74,7 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
             download_from_gcs(input_gcs_uri, in_path)
             # handling .mov files, will be better in the long run
             converted_path = in_path
+            """
             try:
                 if not in_path.lower.endswith(".mp4"):
                     converted_path = os.path.join(td, "converted.mp4")
@@ -85,6 +86,8 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
                     logging.info(f"{in_path} is an .mp4 file")
             except Exception as E:
                 logging.error("Conversion failed, contintuing with original file")
+            
+            """
             raw_gemini_output = process_video_and_summarize(converted_path) # gemini output
             #if isinstance(raw_gemini_output, str):
             if '```json' in raw_gemini_output or r"```json\n" in raw_gemini_output:
