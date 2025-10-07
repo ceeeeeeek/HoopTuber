@@ -3,8 +3,10 @@
 import os, json, time, tempfile, shutil
 from google.cloud import pubsub_v1, storage, firestore
 from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker, strip_code_fences
+import subprocess
+import logging # for render logs
 
-
+logging.basicConfig(level=logging.INFO)
 PROJECT_ID         = os.environ["GCP_PROJECT_ID"]
 SUBSCRIPTION_ID    = os.environ["PUBSUB_SUB"]          # e.g. video-jobs-worker
 RAW_BUCKET         = os.environ["GCS_RAW_BUCKET"]
@@ -70,7 +72,20 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
             json_path = os.path.join(td, "output.json")
 
             download_from_gcs(input_gcs_uri, in_path)
-            raw_gemini_output = process_video_and_summarize(in_path) # gemini output
+            # handling .mov files, will be better in the long run
+            converted_path = in_path
+            try:
+                if not in_path.lower.endswith(".mp4"):
+                    converted_path = os.path.join(td, "converted.mp4")
+                    logging.info("Converting .MOV file to .mp4")
+                    subprocess.run([
+                        "ffmpeg", "-i", in_path, "-c:v", "libx264", "-c:a", "aac", "-y", converted_path
+                    ], check=True)
+                else:
+                    logging.info(f"{in_path} is an .mp4 file")
+            except Exception as E:
+                logging.error("Conversion failed, contintuing with original file")
+            raw_gemini_output = process_video_and_summarize(converted_path) # gemini output
             #if isinstance(raw_gemini_output, str):
             if '```json' in raw_gemini_output or r"```json\n" in raw_gemini_output:
                 json_start = raw_gemini_output.find('[')
