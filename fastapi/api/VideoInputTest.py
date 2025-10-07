@@ -333,7 +333,7 @@ if __name__ == "__main__":
     file_path = f"videoDataset/{file_name}"
 
     # Create an instance of your class
-    highlighter = CreateHighlightVideo(video_path=file_path, output_dir="clips", combined_dir="combined", clip_duration=5)
+    highlighter = CreateHighlightVideo(video_path=file_path, output_dir="clips", combined_dir="combined", clip_duration=10)
 
     #slowed_file_path = f"videoDataset/{file_name.split('.')[0]}_slowed.mp4"
     #slow_down_video(file_path, slowed_file_path, speed_factor=0.5)
