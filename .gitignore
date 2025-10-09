@@ -36,6 +36,9 @@ worker/.venv/
 fastapi/.venv_fastapi
 fastapi/api/.venv_fastapi
 fastapi/api/.env
+worker/.venv/
+**.venv/
+**/.venv*
 worker/.venv
 # vercel
 .vercel
