@@ -28,7 +28,7 @@ export default function TryFreeUploadButton({
     try {
       setPending(true);
       // Ask your Node/Express server if a session exists
-      const r = await fetch("/api/me", {
+      const r = await fetch("/api/auth/session", {
         method: "GET",
         credentials: "include",
         headers: { Accept: "application/json" },
