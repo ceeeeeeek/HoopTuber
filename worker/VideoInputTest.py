@@ -55,7 +55,7 @@ def process_video_and_summarize(file_path):
 
         prompt4 = prompt_4() # prompts are saved in prompts.py
         resp = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro",
             contents=[uploaded_file, prompt4]
             #,generation_config={"response_mime_type": "application/json,"}
         )
