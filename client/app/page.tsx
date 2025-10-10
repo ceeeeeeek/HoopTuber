@@ -1,12 +1,17 @@
+"use client"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Play, Smartphone, Users, Zap, Star, Download, ArrowRight } from "lucide-react"
 import Link from "next/link"
-import TryFreeUploadButton from "./app-components/TryFreeUploadButton";
+import TryFreeUploadButton from "./app-components/TryFreeUploadButton"
+import ProfileDropdown from "./app-components/ProfileDropdown"
+import { useSession } from "next-auth/react"
 
 
 export default function LandingPage() {
+  const { data: session, status } = useSession()
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
       {/* Header */}
@@ -25,20 +30,33 @@ export default function LandingPage() {
             <Link href="#pricing" className="text-gray-600 hover:text-orange-500">
               Pricing
             </Link>
-            <Link href="/login" className="text-gray-600 hover:text-orange-500">
-              Login
-            </Link>
-            {/* <Button asChild>
-              <Link href="/upload">Try Free</Link>
-            </Button> */}
-            <TryFreeUploadButton
-            size="sm"
-            variant="secondary"
-            className="rounded-full bg-gray-900 hover:bg-black text-white"
-            withIcon={false}
-            >
-              Try Free
-            </TryFreeUploadButton>
+            {status === "authenticated" && session ? (
+              <>
+                <TryFreeUploadButton
+                  size="sm"
+                  variant="secondary"
+                  className="rounded-full bg-gray-900 hover:bg-black text-white"
+                  withIcon={false}
+                >
+                  Try Free
+                </TryFreeUploadButton>
+                <ProfileDropdown />
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="text-gray-600 hover:text-orange-500">
+                  Login
+                </Link>
+                <TryFreeUploadButton
+                  size="sm"
+                  variant="secondary"
+                  className="rounded-full bg-gray-900 hover:bg-black text-white"
+                  withIcon={false}
+                >
+                  Try Free
+                </TryFreeUploadButton>
+              </>
+            )}
           </nav>
         </div>
       </header>

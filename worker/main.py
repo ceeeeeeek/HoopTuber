@@ -89,16 +89,29 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
             
             """
             raw_gemini_output = process_video_and_summarize(converted_path) # gemini output
-            #if isinstance(raw_gemini_output, str):
-            if '```json' in raw_gemini_output or r"```json\n" in raw_gemini_output:
-                json_start = raw_gemini_output.find('[')
-                json_end = raw_gemini_output.rfind(']') + 1
-                clean_data = strip_code_fences(raw_gemini_output[json_start:json_end])
-                parsed_data = json.loads(clean_data)
+            print(f"DEBUG: gemini is outputting: {type(raw_gemini_output)}, coming from worker/main.py")
+            print(f"DEBUG: Gem output: {raw_gemini_output}")
+
+            # Handle dict error responses from process_video_and_summarize
+            if isinstance(raw_gemini_output, dict):
+                # Check if it's an error response
+                if not raw_gemini_output.get("ok", True):
+                    error_msg = raw_gemini_output.get("error", "Unknown error from Gemini")
+                    logging.error(f"Gemini processing failed: {error_msg}")
+                    raise RuntimeError(f"Gemini processing failed: {error_msg}")
+                parsed_data = raw_gemini_output
+                logging.info("Gemini is returning a dict object")
+            elif isinstance(raw_gemini_output, str):
+                if '```json' in raw_gemini_output or r"```json\n" in raw_gemini_output:
+                    json_start = raw_gemini_output.find('[')
+                    json_end = raw_gemini_output.rfind(']') + 1
+                    clean_data = strip_code_fences(raw_gemini_output[json_start:json_end])
+                    parsed_data = json.loads(clean_data)
+                else:
+                    parsed_data = json.loads(raw_gemini_output)
+                #else:
             else:
-                parsed_data = json.loads(raw_gemini_output)
-            #else:
-                #parsed_data = raw_gemini_output
+                raise TypeError(f"Gemini output is neither dict nor string, it is: {type(raw_gemini_output)}")
             with open(json_path, "w") as f:
                 json.dump(parsed_data, f,indent=2)
             make_highlight(in_path, out_path, raw_gemini_output)

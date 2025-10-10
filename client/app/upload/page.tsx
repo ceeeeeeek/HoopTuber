@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { useRouter } from "next/navigation";
 
 import {
   Upload,
@@ -24,9 +25,10 @@ import {
   User,
   Download, // NEW: icon for download button
 } from "lucide-react";
-import Link from "next/link";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
+import Link from "next/link"
+import ProfileDropdown from "../app-components/ProfileDropdown"
+// "https://hooptuber-fastapi-web-service-docker.onrender.com"
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 console.log("API_BASE =", process.env.NEXT_PUBLIC_API_BASE);
 
 
@@ -75,6 +77,22 @@ interface JobRecord {
 
 
 export default function UploadPage() {
+  const router = useRouter();
+  useEffect(() => {
+    const checkSession = async () => {
+      const res = await fetch("/api/auth/session", {
+        method: "GET",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!data?.user) {
+        router.push("/login?next=/upload");
+      }
+    };
+
+    checkSession();
+  }, [router]);
+
 
   // UNCHANGED: base UI states
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete">("idle");
@@ -287,7 +305,10 @@ export default function UploadPage() {
             </div>
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </Link>
-          <Badge variant="secondary">Basketball AI</Badge>
+          <div className="flex items-center space-x-4">
+            <Badge variant="secondary">Basketball AI</Badge>
+            <ProfileDropdown />
+          </div>
         </div>
       </header>
 

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Play, Upload, BarChart3, Users, Clock, Download, Share } from "lucide-react"
 import Link from "next/link"
+import ProfileDropdown from "../app-components/ProfileDropdown"
 
 interface UserVideo {
   id: string
@@ -112,16 +113,16 @@ export default function DashboardPage() {
             </Link>
             <div className="flex items-center space-x-4">
               <label className="flex items-center space-x-2 cursor-pointer">
-            <Upload className="w-5 h-5 text-gray-700" />
-            <span className="text-sm text-gray-700 font-medium">Upload Video</span>
-            <input
-              type="file"
-              accept="video/mp4,video/mov"
-              className="hidden"
-              onChange={handleVideoUpload}
-            />
-          </label>
-
+                <Upload className="w-5 h-5 text-gray-700" />
+                <span className="text-sm text-gray-700 font-medium">Upload Video</span>
+                <input
+                  type="file"
+                  accept="video/mp4,video/mov"
+                  className="hidden"
+                  onChange={handleVideoUpload}
+                />
+              </label>
+              <ProfileDropdown />
             </div>
           </div>
         </div>

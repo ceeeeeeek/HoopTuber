@@ -2,7 +2,8 @@ import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import './globals.css'
-import RoutePrefetcher from "./app-components/RoutePrefetcher";
+import RoutePrefetcher from "./app-components/RoutePrefetcher"
+import SessionProvider from "./app-components/SessionProvider"
 
 export const metadata: Metadata = {
   title: 'HoopTuber',
@@ -30,8 +31,10 @@ html {
         `}</style>
       </head>
       <body>
-        <RoutePrefetcher />
-        {children}
+        <SessionProvider>
+          <RoutePrefetcher />
+          {children}
+        </SessionProvider>
       </body>
     </html>
   );

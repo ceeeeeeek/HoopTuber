@@ -55,7 +55,7 @@ def process_video_and_summarize(file_path):
 
         prompt4 = prompt_4() # prompts are saved in prompts.py
         resp = client.models.generate_content(
-            model="gemini-2.5-pro",
+            model="gemini-2.5-flash",
             contents=[uploaded_file, prompt4]
             #,generation_config={"response_mime_type": "application/json,"}
         )
@@ -65,11 +65,11 @@ def process_video_and_summarize(file_path):
             try:
                 raw_text = resp.candidates[0].content.parts[0].text
             except Exception as e:
-                return {"ok": False, "error": f"No text in Gemini response: {e}"}
+                return json.dumps({"ok": False, "error": f"No text in Gemini response: {e}"})
 
+        clean_text = strip_code_fences(raw_text).strip() # return output as a string for now
         print("RAW GEMINI OUTPUT:", strip_code_fences(raw_text))
-
-        return raw_text # return output as a string for now
+        return clean_text
         
         parsed = None
         try:
@@ -85,6 +85,14 @@ def process_video_and_summarize(file_path):
         return {"ok": False, "error": str(e)}
 
 def timestamp_maker(gem_output):
+    # Handle dict input (error responses)
+    if isinstance(gem_output, dict):
+        error_msg = gem_output.get("error", "Unknown error")
+        raise ValueError(f"Cannot extract timestamps from error response: {error_msg}")
+
+    # Ensure we have a string
+    if not isinstance(gem_output, str):
+        raise TypeError(f"Expected string input, got {type(gem_output)}")
 
     try:
         gem_output_stripped = strip_code_fences(gem_output)
@@ -92,7 +100,7 @@ def timestamp_maker(gem_output):
         if isinstance(parsed, str):
             parsed = json.loads(parsed) # try to parse again if it's a string
     except json.JSONDecodeError:
-        return("Gemini output is a str but not valid JSON")  
+        return("Gemini output is a str but not valid JSON")
 
     if isinstance(parsed, list):
         timestamps = [shot["TimeStamp"] for shot in parsed if "TimeStamp" in shot] # ALL TIMESTAMPS
