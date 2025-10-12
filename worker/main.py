@@ -2,9 +2,11 @@
 
 import os, json, time, tempfile, shutil
 from google.cloud import pubsub_v1, storage, firestore
-from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker
+from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker, strip_code_fences
+import subprocess
+import logging # for render logs
 
-
+logging.basicConfig(level=logging.INFO)
 PROJECT_ID         = os.environ["GCP_PROJECT_ID"]
 SUBSCRIPTION_ID    = os.environ["PUBSUB_SUB"]          # e.g. video-jobs-worker
 RAW_BUCKET         = os.environ["GCS_RAW_BUCKET"]
@@ -29,6 +31,7 @@ def download_from_gcs(gcs_uri: str, dest_path: str):
     assert gcs_uri.startswith("gs://")
     _, _, rest = gcs_uri.partition("gs://")
     bucket_name, _, blob_name = rest.partition("/")
+    folder_prefix = os.path.dirname(blob_name)
     bucket = storage_client.bucket(bucket_name)
     blob   = bucket.blob(blob_name)
     blob.download_to_filename(dest_path)
@@ -39,14 +42,14 @@ def upload_to_gcs(local_path: str, bucket_name: str, dst_key: str) -> str:
     blob.upload_from_filename(local_path)
     return f"gs://{bucket_name}/{dst_key}"
 
-def make_highlight(in_path: str, out_path: str):
+def make_highlight(in_path: str, out_path: str, gemini_output):
     highlighter = CreateHighlightVideo2()
     """
     Replace this with your real highlight pipeline (ffmpeg, moviepy, Gemini, etc).
     For now, just copy the file to simulate work.
     """
     # REAL HIGHLIGHT PIPELINE:
-    gemini_output = process_video_and_summarize(in_path) # gemini output
+    
     make_timestamps = timestamp_maker(gemini_output) # list of make timestamps
     clip_files = highlighter.create_highlights_ffmpeg(make_timestamps, in_path, out_path) # create highlight clips
     if not clip_files:
@@ -59,23 +62,66 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
         user_id       = payload.get("userId")
         input_gcs_uri = payload["videoGcsUri"]     # gs://...
         out_key       = f"{job_id}/highlight.mp4"
+        json_key      = f"{job_id}/analysis.json"
 
         update_job(job_id, {"status": "processing", "startedAt": firestore.SERVER_TIMESTAMP})
 
         with tempfile.TemporaryDirectory() as td:
             in_path  = os.path.join(td, "input.mp4")
             out_path = os.path.join(td, "highlight.mp4")
+            json_path = os.path.join(td, "output.json")
 
             download_from_gcs(input_gcs_uri, in_path)
+            # handling .mov files, will be better in the long run
+            converted_path = in_path
+            """
+            try:
+                if not in_path.lower.endswith(".mp4"):
+                    converted_path = os.path.join(td, "converted.mp4")
+                    logging.info("Converting .MOV file to .mp4")
+                    subprocess.run([
+                        "ffmpeg", "-i", in_path, "-c:v", "libx264", "-c:a", "aac", "-y", converted_path
+                    ], check=True)
+                else:
+                    logging.info(f"{in_path} is an .mp4 file")
+            except Exception as E:
+                logging.error("Conversion failed, contintuing with original file")
+            
+            """
+            raw_gemini_output = process_video_and_summarize(converted_path) # gemini output
+            print(f"DEBUG: gemini is outputting: {type(raw_gemini_output)}, coming from worker/main.py")
+            print(f"DEBUG: Gem output: {raw_gemini_output}")
 
-            # TODO: your real pipeline here (person selection, makes/misses, etc.)
-            make_highlight(in_path, out_path)
+            # Handle dict error responses from process_video_and_summarize
+            if isinstance(raw_gemini_output, dict):
+                # Check if it's an error response
+                if not raw_gemini_output.get("ok", True):
+                    error_msg = raw_gemini_output.get("error", "Unknown error from Gemini")
+                    logging.error(f"Gemini processing failed: {error_msg}")
+                    raise RuntimeError(f"Gemini processing failed: {error_msg}")
+                parsed_data = raw_gemini_output
+                logging.info("Gemini is returning a dict object")
+            elif isinstance(raw_gemini_output, str):
+                if '```json' in raw_gemini_output or r"```json\n" in raw_gemini_output:
+                    json_start = raw_gemini_output.find('[')
+                    json_end = raw_gemini_output.rfind(']') + 1
+                    clean_data = strip_code_fences(raw_gemini_output[json_start:json_end])
+                    parsed_data = json.loads(clean_data)
+                else:
+                    parsed_data = json.loads(raw_gemini_output)
+                #else:
+            else:
+                raise TypeError(f"Gemini output is neither dict nor string, it is: {type(raw_gemini_output)}")
+            with open(json_path, "w") as f:
+                json.dump(parsed_data, f,indent=2)
+            make_highlight(in_path, out_path, raw_gemini_output)
 
             out_gcs_uri = upload_to_gcs(out_path, OUT_BUCKET, out_key)
-
+            analysis_gcs_uri = upload_to_gcs(json_path, OUT_BUCKET, json_key)
         update_job(job_id, {
             "status": "done",
             "outputGcsUri": out_gcs_uri,
+            "analysisGcsUri": analysis_gcs_uri,
             "finishedAt": firestore.SERVER_TIMESTAMP,
         })
         msg.ack()

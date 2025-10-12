@@ -2,12 +2,16 @@ import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import './globals.css'
-import RoutePrefetcher from "./app-components/RoutePrefetcher";
+import RoutePrefetcher from "./app-components/RoutePrefetcher"
+import SessionProvider from "./app-components/SessionProvider"
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
+  title: 'HoopTuber',
+  description: 'Create your own basketball highlights in seconds!',
   generator: 'v0.dev',
+  icons: {
+    icon: "/hooptuberlogo1.png"
+  }
 }
 
 export default function RootLayout({
@@ -16,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en-US">
       <head>
         <style>{`
 html {
@@ -27,8 +31,10 @@ html {
         `}</style>
       </head>
       <body>
-        <RoutePrefetcher />
-        {children}
+        <SessionProvider>
+          <RoutePrefetcher />
+          {children}
+        </SessionProvider>
       </body>
     </html>
   );

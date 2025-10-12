@@ -1,3 +1,5 @@
+//Remove cases of /api/me
+
 "use client";
 
 import * as React from "react";
@@ -24,16 +26,40 @@ export default function TryFreeUploadButton({
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
 
+  //My onClick function (from Friday 10-10-2025)
+  // const onClick = async () => {
+  //   try {
+  //     setPending(true);
+  
+  //     const r = await fetch("/api/auth/session", {
+  //       method: "GET",
+  //       credentials: "include",
+  //       headers: { Accept: "application/json" },
+  //       cache: "no-store",
+  //     });
+  
+  //     const data = await r.json().catch(() => null);
+  //     const isAuthed = !!data?.user;         // <- the *only* reliable check
+  
+  //     router.push(isAuthed ? "/upload" : "/login?next=/upload");
+  //   } finally {
+  //     setPending(false);
+  //   }
+  // };
+
   const onClick = async () => {
     try {
       setPending(true);
       // Ask your Node/Express server if a session exists
-      const r = await fetch("/api/me", {
+      const r = await fetch("/api/auth/session", {
         method: "GET",
         credentials: "include",
         headers: { Accept: "application/json" },
       });
       // Take the user to login and include a `next=/upload` so we can bounce them back
+      const data = await r.json()
+      const isLoggedIn = !!data?.user;
+      
       router.push(r.ok ? "/upload" : "/login?next=/upload");
     } catch {
       router.push("/login?next=/upload");

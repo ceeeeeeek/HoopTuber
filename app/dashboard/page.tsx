@@ -1,5 +1,8 @@
 "use client"
 
+//useEffect import from version 2 using getSession edit 2 (from 10-10-25 Friday this morning):
+//import { getSession } from "next-auth/react";
+//useEffect import from version 2 using getSession edit 2 (from 10-10-25 Friday this morning):
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -7,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Play, Upload, BarChart3, Users, Clock, Download, Share } from "lucide-react"
 import Link from "next/link"
+import ProfileDropdown from "../app-components/ProfileDropdown"
 
 interface UserVideo {
   id: string
@@ -39,28 +43,109 @@ export default function DashboardPage() {
       setLoading(false)
     }
   }
+  //useEffect version 1 using getSession edit 1 (remmoved /api/me; from 10-10-25 Friday this morning):
+  // useEffect(() => {
+  //   let cancelled = false;
+  
+  //   (async () => {
+  //     const r = await fetch("/api/me");
+  //     if (!r.ok) {
+  //       window.location.href = "/login";
+  //       return;
+  //     }
+  //     const j = await r.json();
+  //     if (cancelled) return;
+  
+  //     setMe(j.user);
+  //     // now that we know the user is authenticated, load their data
+  //     await fetchUserVideos();
+  //   })();
+  
+  //   return () => {
+  //     cancelled = true;
+  //   };
+  // }, [fetchUserVideos]);
+  
+  //useEffect version 2 using getSession edit 2 (from 10-10-25 Friday this morning):
+  // useEffect(() => {
+  //   let cancelled = false;
+  //   (async () => {
+  //     const s = await getSession();
+  //     if (!s?.user) {
+  //       window.location.href = "/login?next=/dashboard";
+  //       return;
+  //     }
+  //     if (cancelled) return;
+  
+  //     setMe({ name: s.user.name ?? undefined, photo: (s.user as any).image ?? undefined });
+  //     await fetchUserVideos();
+  //   })();
+  //   return () => { cancelled = true; };
+  // }, []);
+
+  //useEffect version 3 using getSession edit 3 (from 10-10-25 Friday this morning):
+  // useEffect(() => {
+  //   let cancelled = false;
+  //   (async () => {
+  //     const r = await fetch("/api/auth/session", {
+  //       method: "GET",
+  //       credentials: "include",
+  //       headers: { Accept: "application/json" },
+  //       cache: "no-store",
+  //     });
+  //     const j = await r.json().catch(() => null);
+  
+  //     if (!j?.user) {
+  //       window.location.href = "/login?next=/dashboard";
+  //       return;
+  //     }
+  //     if (cancelled) return;
+  
+  //     setMe(j.user);
+  //     await fetchUserVideos();
+  //   })();
+  
+  //   return () => { cancelled = true; };
+  // }, []);
+
+  //useEffect version 4 MOST RECENT EDIT 10-10-25 Friday - fetch /api/auth/session - removes reliance on /api/me and aligns with NextAuth
+  // useEffect(() => {
+  //   let cancelled = false;
+  //   (async () => {
+  //     const r = await fetch("/api/auth/session", { cache: "no-store" });
+  //     const data = await r.json().catch(() => null);
+  //     if (cancelled) return;
+  
+  //     if (!data?.user) {
+  //       window.location.href = "/login?next=/dashboard";
+  //       return;
+  //     }
+  
+  //     // setMe(data.user);
+  //     await fetchUserVideos();
+  //   })();
+  //   return () => { cancelled = true; };
+  // }, []);
 
   useEffect(() => {
     let cancelled = false;
   
     (async () => {
-      const r = await fetch("/api/me");
-      if (!r.ok) {
+      const r = await fetch("/api/auth/session", { cache: "no-store" });
+      const s = await r.json().catch(() => null);
+  
+      if (!s?.user) {
         window.location.href = "/login";
         return;
       }
-      const j = await r.json();
       if (cancelled) return;
   
-      setMe(j.user);
-      // now that we know the user is authenticated, load their data
+      setMe(s.user);
       await fetchUserVideos();
     })();
   
-    return () => {
-      cancelled = true;
-    };
-  }, [fetchUserVideos]);
+    return () => { cancelled = true; };
+  }, []);
     
   const handleVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
   const file = event.target.files?.[0]
@@ -112,16 +197,16 @@ export default function DashboardPage() {
             </Link>
             <div className="flex items-center space-x-4">
               <label className="flex items-center space-x-2 cursor-pointer">
-            <Upload className="w-5 h-5 text-gray-700" />
-            <span className="text-sm text-gray-700 font-medium">Upload Video</span>
-            <input
-              type="file"
-              accept="video/mp4,video/mov"
-              className="hidden"
-              onChange={handleVideoUpload}
-            />
-          </label>
-
+              <Upload className="w-5 h-5 text-gray-700" />
+                <span className="text-sm text-gray-700 font-medium">Upload Video</span>
+                <input
+                  type="file"
+                  accept="video/mp4,video/mov"
+                  className="hidden"
+                  onChange={handleVideoUpload}
+                />
+              </label>
+              <ProfileDropdown />
             </div>
           </div>
         </div>

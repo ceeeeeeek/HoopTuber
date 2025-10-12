@@ -8,7 +8,7 @@ import glob
 import tempfile
 load_dotenv()
 from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
-from prompts import prompt_4
+from prompts import prompt_4, json_input
 
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
@@ -65,11 +65,11 @@ def process_video_and_summarize(file_path):
             try:
                 raw_text = resp.candidates[0].content.parts[0].text
             except Exception as e:
-                return {"ok": False, "error": f"No text in Gemini response: {e}"}
+                return json.dumps({"ok": False, "error": f"No text in Gemini response: {e}"})
 
+        clean_text = strip_code_fences(raw_text).strip() # return output as a string for now
         print("RAW GEMINI OUTPUT:", strip_code_fences(raw_text))
-
-        return raw_text # return output as a string for now
+        return clean_text
         
         parsed = None
         try:
@@ -85,6 +85,14 @@ def process_video_and_summarize(file_path):
         return {"ok": False, "error": str(e)}
 
 def timestamp_maker(gem_output):
+    # Handle dict input (error responses)
+    if isinstance(gem_output, dict):
+        error_msg = gem_output.get("error", "Unknown error")
+        raise ValueError(f"Cannot extract timestamps from error response: {error_msg}")
+
+    # Ensure we have a string
+    if not isinstance(gem_output, str):
+        raise TypeError(f"Expected string input, got {type(gem_output)}")
 
     try:
         gem_output_stripped = strip_code_fences(gem_output)
@@ -92,7 +100,7 @@ def timestamp_maker(gem_output):
         if isinstance(parsed, str):
             parsed = json.loads(parsed) # try to parse again if it's a string
     except json.JSONDecodeError:
-        return("Gemini output is a str but not valid JSON")  
+        return("Gemini output is a str but not valid JSON")
 
     if isinstance(parsed, list):
         timestamps = [shot["TimeStamp"] for shot in parsed if "TimeStamp" in shot] # ALL TIMESTAMPS
@@ -148,7 +156,7 @@ class CreateHighlightVideo:
                     print(f"✗ Error creating clip {i+1}: {result.stderr}")
 
         except Exception as e:
-            print(f"✗ General error: {e}")
+            print(f"General error: {e}")
 
     def clear_folder(self, folder_path):
         for filename in os.listdir(folder_path):
@@ -237,7 +245,13 @@ class CreateHighlightVideo2:
                         '-y',                           # Overwrite
                         clip_path
                     ]
-
+                    """
+                    EDGE CASE NOT REALLY: HANDLE
+                    will be times that the highlight times overlap.
+                    In that case, maybe start the next highlight at the end of the previous highlight?
+                    H
+                    
+                    """
                     result = subprocess.run(cmd, capture_output=True, text=True)
 
                     if result.returncode == 0:
@@ -301,7 +315,25 @@ class CreateHighlightVideo2:
             print(f"✗ Error combining clips: {e}")
             return False
 
+def check_json(json_input):
+    json_stripped_str = strip_code_fences(json_input)
 
+    try:
+        parsed_stripped = json.loads(json_stripped_str)
+        parsed_regular = json.loads(json_input)
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "Input is not valid JSON"}
+    if isinstance(parsed_regular, str):
+        return (f"Regular json output is a str: {parsed_regular}")
+    if isinstance(parsed_stripped, str):
+        return (f"Stripped json output is a str: {parsed_stripped}")
+    
+    if isinstance(parsed_regular, json):
+        return ("Regular json output is a json object: ", parsed_regular)
+    if isinstance(parsed_stripped, json):
+        return (f"Stripped json output is a json object: {parsed_stripped}")
+    
+    return ("Input is not a str or json object:", parsed_stripped, parsed_regular)
 if __name__ == "__main__":
     file_name = "meshooting2.mp4"
     file_path = f"videoDataset/{file_name}"
@@ -311,11 +343,14 @@ if __name__ == "__main__":
 
     #slowed_file_path = f"videoDataset/{file_name.split('.')[0]}_slowed.mp4"
     #slow_down_video(file_path, slowed_file_path, speed_factor=0.5)
-    res = process_video_and_summarize(file_path)
-    make_timestamps = timestamp_maker(res)
+    #res = process_video_and_summarize(file_path)
+    #make_timestamps = timestamp_maker(res)
 
     #make_timestamps_mock = ['00:00:11', '00:00:26', '00:00:48'] # timestamps for testing
-    highlighter.create_highlights_ffmpeg(make_timestamps)
-    highlighter.combine_clips_ffmpeg(output_filename=f"{file_name}_combined_video.mp4")
+    #highlighter.create_highlights_ffmpeg(make_timestamps)
+    #highlighter.combine_clips_ffmpeg(output_filename=f"{file_name}_combined_video.mp4")
     #highlighter.clear_folder("clips")
-    print(make_timestamps)
+    #print(make_timestamps)
+    json_inp = json_input()
+    res = check_json(json_inp)
+    print(res)
