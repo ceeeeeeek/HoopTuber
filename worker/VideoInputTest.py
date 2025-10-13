@@ -50,15 +50,36 @@ def process_video_and_summarize(file_path):
         print("File processing complete.")
 
         print("Generating summary...")
-        
-        # CHANGE SCRIPT IN CONTENTS ARRAY 
+
+        # CHANGE SCRIPT IN CONTENTS ARRAY
 
         prompt4 = prompt_4() # prompts are saved in prompts.py
-        resp = client.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=[uploaded_file, prompt4]
-            #,generation_config={"response_mime_type": "application/json,"}
-        )
+
+        # Retry logic with exponential backoff for 503 errors
+        max_retries = 3
+        retry_delay = 5  # Start with 5 seconds
+
+        for attempt in range(max_retries):
+            try:
+                resp = client.models.generate_content(
+                    model="gemini-2.5-pro",
+                    contents=[uploaded_file, prompt4]
+                    #,generation_config={"response_mime_type": "application/json,"}
+                )
+                break  # Success, exit retry loop
+            except Exception as e:
+                error_str = str(e)
+                if "503" in error_str or "UNAVAILABLE" in error_str or "timed out" in error_str.lower():
+                    if attempt < max_retries - 1:
+                        print(f"Attempt {attempt + 1} failed with timeout/503. Retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        print(f"All {max_retries} attempts failed.")
+                        return {"ok": False, "error": f"Gemini API timeout after {max_retries} attempts: {error_str}"}
+                else:
+                    # Different error, don't retry
+                    return {"ok": False, "error": error_str}
         text_respone = resp.text
         raw_text = getattr(resp, "text", None)
         if not raw_text:

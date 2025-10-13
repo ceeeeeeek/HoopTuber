@@ -76,8 +76,8 @@ def _make_keys(original_name: str, job_id: str) -> tuple[str, str, str]:
     """
     # Keep user uploads grouped by job; you can also include userId if you pass it
     safe_name = original_name or "upload.mp4"
-    now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
-    date_str = now_pst.strftime("%Y-%m-%d")
+    #now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
+    #date_str = now_pst.strftime("%Y-%m-%d")
     blob_name = f"uploads/{job_id}/{safe_name}"
     gcs_uri   = f"gs://{RAW_BUCKET}/{blob_name}"
     print(f"DEBUG: uploading to blob_name={blob_name}")

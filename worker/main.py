@@ -102,6 +102,10 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
                 parsed_data = raw_gemini_output
                 logging.info("Gemini is returning a dict object")
             elif isinstance(raw_gemini_output, str):
+                if not raw_gemini_output.get("ok", True):
+                    error_msg = raw_gemini_output.get("error", "Unknown gemini output")
+                    logging.error(f"Gemini processing failed: {error_msg}")
+                
                 if '```json' in raw_gemini_output or r"```json\n" in raw_gemini_output:
                     json_start = raw_gemini_output.find('[')
                     json_end = raw_gemini_output.rfind(']') + 1
