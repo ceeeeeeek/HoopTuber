@@ -57,12 +57,21 @@ export default function LandingPage() {
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </div>
           <nav className="hidden md:flex items-center space-x-6">
+          <Link href="/about" className="text-gray-600 hover:text-orange-500">
+              About Us
+            </Link>            
             <Link href="#features" className="text-gray-600 hover:text-orange-500">
               Features
             </Link>
-            <Link href="#pricing" className="text-gray-600 hover:text-orange-500">
+            <Link href="/terms" className="text-gray-600 hover:text-orange-500">
+              Terms & Conditions
+            </Link>   
+            <Link href="/privacy" className="text-gray-600 hover:text-orange-500">
+              Privacy
+            </Link>   
+            {/* <Link href="#pricing" className="text-gray-600 hover:text-orange-500">
               Pricing
-            </Link>
+            </Link> */}
             {status === "authenticated" && session ? (
               <>
                 <TryFreeUploadButton
@@ -375,7 +384,7 @@ export default function LandingPage() {
               <h4 className="font-semibold mb-4">Company</h4>
               <ul className="space-y-2 text-gray-400">
                 <li>
-                  <Link href="/about">About</Link>
+                  <Link href="/about">About Us</Link>
                 </li>
                 <li>
                   <Link href="/contact">Contact</Link>
