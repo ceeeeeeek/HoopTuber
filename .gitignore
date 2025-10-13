@@ -93,3 +93,4 @@ hooptuberdev.json
 worker/videoDataset/
 worker/combined
 worker/clips/
+*.mp4
