@@ -3,7 +3,7 @@ import subprocess
 import google.genai as genai
 from dotenv import load_dotenv
 import time
-import json, re
+import json, re, requests
 import glob
 import tempfile
 load_dotenv()
@@ -103,39 +103,53 @@ def process_video_and_summarize(file_path):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
-def process_video_and_summarize2(gcs_uri, mime_type="video/mp4"):
+def process_video_and_summarize2(gcs_uri):
     """
     Uploads a video file and asks a Gemini model to summarize it.
     This method is for all file sizes.
     """
-    video_file = genai.Part.from_uri(
-        uri_gcs=gcs_uri,
-        mime_type=mime_type
+    PROJECT_ID = os.getenv["GCP_PROJECT_ID"]
+    LOCATION = os.getenv["VERTEX_LOCATION"]
+    VERTEX_API_KEY = os.getenv["VERTEX_API_KEY"]
+    prompt = prompt_4()
+    endpoint = (
+        f"https://{LOCATION}-aiplatform.googleapis.com/v1/projects/"
+        f"{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/gemini-2.5-pro-vision:generateContent"
     )
 
-    # file_path = gcs_uri
+    headers = {
+        "Authorization": f"Bearer {VERTEX_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    # Your same structured prompt
+
+    body = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {"file_data": {"mime_type": "video/mp4", "file_uri": gcs_uri}},
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
+
     try:
+        print(f"Sending request to Vertex API for video: {gcs_uri}")
+        resp = requests.post(endpoint, headers=headers, json=body, timeout=600)
+        resp.raise_for_status()
+
+        data = resp.json()
+        output = data["candidates"][0]["content"]["parts"][0]["text"]
+        print("RAW GEMINI OUTPUT:", output)
         
-        print("Generating summary")
+        return output
 
-
-        # CHANGE SCRIPT IN CONTENTS ARRAY
-
-        prompt4 = prompt_4() # prompts are saved in prompts.py
-        resp = genai.GenerativeModel('gemini-1.5-pro-latest').generate_content(
-            contents=[video_file, prompt4])
-        text_respone = resp.text
-        raw_text = resp.text
-        print("RAW GEMINI OUTPUT:", raw_text)
-
-        # Example of parsing, assuming you expect JSON
-        # parsed = json.loads(strip_code_fences(raw_text))
-        # return {"ok": True, "results": parsed}
-
-        return raw_text # Return output as a string for now
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    except requests.exceptions.RequestException as e:
+        print(f"Vertex API request failed: {e}")
+        print("Full response:", getattr(e.response, "text", None))
         return {"ok": False, "error": str(e)}
         
 def timestamp_maker(gem_output):

@@ -2,7 +2,7 @@
 
 import os, json, time, tempfile, shutil
 from google.cloud import pubsub_v1, storage, firestore
-from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker, strip_code_fences
+from VideoInputTest import process_video_and_summarize,process_video_and_summarize2, client, CreateHighlightVideo2, timestamp_maker, strip_code_fences
 import subprocess
 import logging # for render logs
 
@@ -88,13 +88,13 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
                 logging.error("Conversion failed, contintuing with original file")
             
             """
-            raw_gemini_output = process_video_and_summarize(converted_path) # gemini output
+            raw_gemini_output = process_video_and_summarize2(input_gcs_uri) # gemini output
             print(f"DEBUG: gemini is outputting: {type(raw_gemini_output)}, coming from worker/main.py")
             print(f"DEBUG: Gem output: {raw_gemini_output}")
 
             # Handle dict error responses from process_video_and_summarize
             if isinstance(raw_gemini_output, dict):
-                # Check if it's an error response
+    # This means Gemini returned an error or structured response
                 if not raw_gemini_output.get("ok", True):
                     error_msg = raw_gemini_output.get("error", "Unknown error from Gemini")
                     logging.error(f"Gemini processing failed: {error_msg}")
@@ -102,17 +102,13 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
                 parsed_data = raw_gemini_output
                 logging.info("Gemini is returning a dict object")
             elif isinstance(raw_gemini_output, str):
-                if not raw_gemini_output.get("ok", True):
-                    error_msg = raw_gemini_output.get("error", "Unknown gemini output")
-                    logging.error(f"Gemini processing failed: {error_msg}")
-                
-                if '```json' in raw_gemini_output or r"```json\n" in raw_gemini_output:
-                    json_start = raw_gemini_output.find('[')
-                    json_end = raw_gemini_output.rfind(']') + 1
-                    clean_data = strip_code_fences(raw_gemini_output[json_start:json_end])
-                    parsed_data = json.loads(clean_data)
-                else:
-                    parsed_data = json.loads(raw_gemini_output)
+                # Clean up and parse JSON safely
+                clean_output = strip_code_fences(raw_gemini_output)
+                try:
+                    parsed_data = json.loads(clean_output)
+                except json.JSONDecodeError:
+                    logging.warning("Gemini output is not valid JSON; saving raw text instead")
+                    parsed_data = {"raw_text": clean_output}
                 #else:
             else:
                 raise TypeError(f"Gemini output is neither dict nor string, it is: {type(raw_gemini_output)}")
