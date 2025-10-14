@@ -50,6 +50,8 @@ next-env.d.ts
 # py cache folder
 fastapi/__pycache__/
 fastapi/api/__pycache__/
+worker/__pycache__/
+*__pycache__/
 # data folders
 fastapi/api/videoDataset
 fastapi/api/clips
