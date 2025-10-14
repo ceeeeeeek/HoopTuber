@@ -9,6 +9,8 @@ import tempfile
 load_dotenv()
 from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
 from prompts import prompt_4, json_input
+from google.cloud import storage
+from datetime import timedelta
 
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
@@ -30,12 +32,27 @@ class SlowVideo:
 def strip_code_fences(s):
     # removes json fences if present
     return re.sub(r"^```[a-zA-Z]*\n|\n```$", "", s.strip())
+def return_signed_url(gcs_uri, expiration_hours=1):
+    """
+    Returns signed url
+    """
+    storage_client = storage.Client()
+    bucket_name, _, blob_name = file_path.replace("gs://", "").partition("/")
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+    signed_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(hours=1),
+        method="GET")
+    return signed_url
 
 def process_video_and_summarize(file_path):
     """
     Uploads a video file and asks a Gemini model to summarize it.
     This method is for all file sizes.
     """
+
+    # file_path = gcs_uri
     try:
         print(f"Uploading file: {file_path}...")
         uploaded_file = client.files.upload(file=file_path)
@@ -50,47 +67,28 @@ def process_video_and_summarize(file_path):
         print("File processing complete.")
 
         print("Generating summary...")
+        
+
 
         # CHANGE SCRIPT IN CONTENTS ARRAY
 
         prompt4 = prompt_4() # prompts are saved in prompts.py
-
-        # Retry logic with exponential backoff for 503 errors
-        max_retries = 3
-        retry_delay = 5  # Start with 5 seconds
-
-        for attempt in range(max_retries):
-            try:
-                resp = client.models.generate_content(
-                    model="gemini-2.5-pro",
-                    contents=[uploaded_file, prompt4]
-                    #,generation_config={"response_mime_type": "application/json,"}
-                )
-                break  # Success, exit retry loop
-            except Exception as e:
-                error_str = str(e)
-                if "503" in error_str or "UNAVAILABLE" in error_str or "timed out" in error_str.lower():
-                    if attempt < max_retries - 1:
-                        print(f"Attempt {attempt + 1} failed with timeout/503. Retrying in {retry_delay} seconds...")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
-                    else:
-                        print(f"All {max_retries} attempts failed.")
-                        return {"ok": False, "error": f"Gemini API timeout after {max_retries} attempts: {error_str}"}
-                else:
-                    # Different error, don't retry
-                    return {"ok": False, "error": error_str}
+        resp = client.models.generate_content(
+            model="gemini-2.5-pro",
+            contents=[uploaded_file, prompt4]
+            #,generation_config={"response_mime_type": "application/json,"}
+        )
         text_respone = resp.text
         raw_text = getattr(resp, "text", None)
         if not raw_text:
             try:
                 raw_text = resp.candidates[0].content.parts[0].text
             except Exception as e:
-                return json.dumps({"ok": False, "error": f"No text in Gemini response: {e}"})
+                return {"ok": False, "error": f"No text in Gemini response: {e}"}
 
-        clean_text = strip_code_fences(raw_text).strip() # return output as a string for now
         print("RAW GEMINI OUTPUT:", strip_code_fences(raw_text))
-        return clean_text
+
+        return raw_text # return output as a string for now
         
         parsed = None
         try:
@@ -105,6 +103,41 @@ def process_video_and_summarize(file_path):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+def process_video_and_summarize2(gcs_uri, mime_type="video/mp4"):
+    """
+    Uploads a video file and asks a Gemini model to summarize it.
+    This method is for all file sizes.
+    """
+    video_file = genai.Part.from_uri(
+        uri_gcs=gcs_uri,
+        mime_type=mime_type
+    )
+
+    # file_path = gcs_uri
+    try:
+        
+        print("Generating summary")
+
+
+        # CHANGE SCRIPT IN CONTENTS ARRAY
+
+        prompt4 = prompt_4() # prompts are saved in prompts.py
+        resp = genai.GenerativeModel('gemini-1.5-pro-latest').generate_content(
+            contents=[video_file, prompt4])
+        text_respone = resp.text
+        raw_text = resp.text
+        print("RAW GEMINI OUTPUT:", raw_text)
+
+        # Example of parsing, assuming you expect JSON
+        # parsed = json.loads(strip_code_fences(raw_text))
+        # return {"ok": True, "results": parsed}
+
+        return raw_text # Return output as a string for now
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return {"ok": False, "error": str(e)}
+        
 def timestamp_maker(gem_output):
     # Handle dict input (error responses)
     if isinstance(gem_output, dict):
