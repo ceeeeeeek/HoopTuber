@@ -35,7 +35,6 @@ export default function LandingPage() {
     setEnded(false);
   }
 
-  // Optional nicety: when we hide the video, stop & reset it
   useEffect(() => {
     if (!playing && videoRef.current) {
       try {
@@ -63,15 +62,6 @@ export default function LandingPage() {
             <Link href="#features" className="text-gray-600 hover:text-orange-500">
               Features
             </Link>
-            <Link href="/terms" className="text-gray-600 hover:text-orange-500">
-              Terms & Conditions
-            </Link>   
-            <Link href="/privacy" className="text-gray-600 hover:text-orange-500">
-              Privacy
-            </Link>   
-            {/* <Link href="#pricing" className="text-gray-600 hover:text-orange-500">
-              Pricing
-            </Link> */}
             {status === "authenticated" && session ? (
               <>
                 <TryFreeUploadButton
@@ -114,7 +104,7 @@ export default function LandingPage() {
             <span className="text-orange-500"> Epic Highlights</span>
           </h1>
           <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-            Upload your basketball footage and let AI automatically detect every basket, creating TikTok-style reels
+            Upload your basketball footage and let AI automatically detect every basket, creating highlight-style reels
             that showcase your best moments.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -139,7 +129,6 @@ export default function LandingPage() {
             </Link>
           </Button>
           </div>
-          <p className="text-sm text-gray-500 mt-4">No credit card required • 1 free video analysis</p>
         </div>
       </section>
 
@@ -155,8 +144,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Record & Upload</h3>
                 <p className="text-gray-600">
-                  Use our mobile app to record your game with optimal settings for AI analysis, or upload existing
-                  footage.
+                  Upload any game footage.
                 </p>
               </CardContent>
             </Card>
@@ -186,20 +174,6 @@ export default function LandingPage() {
         </div>
       </section>
           
-      {/* Demo Section */}
-      {/* <section id="demo" className="py-20 px-4 bg-gray-50">
-        <div className="container mx-auto text-center">
-          <h2 className="text-3xl font-bold mb-8">See HoopTuber in Action</h2>
-          <div className="max-w-4xl mx-auto">
-            <div className="aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
-              <Button size="lg" variant="secondary">
-                <Play className="w-8 h-8 mr-2" />
-                Play Demo Video
-              </Button>
-            </div>
-          </div>
-        </div>
-      </section> */}
       {/* Demo Section (INLINE video with poster + replay overlay) */}
       <section id="demo" className="py-20 px-4 bg-gray-50">
         <div className="container mx-auto text-center">
@@ -391,6 +365,9 @@ export default function LandingPage() {
                 </li>
                 <li>
                   <Link href="/privacy">Privacy</Link>
+                </li>
+                <li>
+                  <Link href="/terms">Terms & Conditions</Link>
                 </li>
               </ul>
             </div>
