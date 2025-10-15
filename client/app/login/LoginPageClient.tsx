@@ -13,6 +13,10 @@ import { useSearchParams, useRouter } from "next/navigation"
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true)
+<<<<<<< HEAD
+=======
+  const [name, setName] = useState("");
+>>>>>>> origin/vercelbranchtest
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const router = useRouter()
@@ -23,6 +27,7 @@ export default function LoginPage() {
   async function handleCredentialsSignIn(e: React.FormEvent) {
     e.preventDefault()
 
+<<<<<<< HEAD
     const res = await signIn("credentials", {
       redirect: false, // don't auto-redirect, handle manually
       email,
@@ -37,6 +42,59 @@ export default function LoginPage() {
     }
   }
 
+=======
+//     const res = await signIn("credentials", {
+//       redirect: false, // don't auto-redirect, handle manually
+//       email,
+//       password,
+//       callbackUrl: next,
+//     })
+
+//     if (res?.ok) {
+//       router.push(next)
+//     } else {
+//       alert("Invalid email or password")
+//     }
+//   }
+
+if (isLogin) {
+    // **Sign In** via NextAuth credentials
+    const res = await signIn("credentials", {
+      redirect: false,
+      email,
+      password,
+      callbackUrl: next,
+    });
+    if (res?.ok) router.push(next);
+    else alert("Invalid email or password");
+    return;
+  }
+
+  // **Create Account** via your signup API, then auto sign in
+  const r = await fetch("/api/auth/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, email, password }),
+  });
+
+  if (!r.ok) {
+    const msg = await r.json().catch(() => ({}));
+    alert(msg?.error || "Signup failed");
+    return;
+  }
+
+  // Immediately sign in the new user
+  const res = await signIn("credentials", {
+    redirect: false,
+    email,
+    password,
+    callbackUrl: next,
+  });
+  if (res?.ok) router.push(next);
+  else router.push("/login?next=" + encodeURIComponent(next));
+}
+
+>>>>>>> origin/vercelbranchtest
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -66,13 +124,35 @@ export default function LoginPage() {
           </CardHeader>
 
           <CardContent className="space-y-4">
+<<<<<<< HEAD
             <form onSubmit={handleCredentialsSignIn} className="space-y-4">
+=======
+
+            {/* <form onSubmit={handleCredentialsSignIn} className="space-y-4">
+>>>>>>> origin/vercelbranchtest
               {!isLogin && (
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
                   <Input id="name" placeholder="Enter your full name" />
                 </div>
+<<<<<<< HEAD
               )}
+=======
+              )} */}
+
+        <form onSubmit={handleCredentialsSignIn} className="space-y-4">
+            {!isLogin && (
+                <div className="space-y-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input
+                    id="name"
+                    placeholder="Enter your full name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                />
+                </div>
+            )}
+>>>>>>> origin/vercelbranchtest
 
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -150,7 +230,11 @@ export default function LoginPage() {
             <Button
               variant="outline"
               className="w-full"
+<<<<<<< HEAD
               onClick={() => signIn("google", { callbackUrl: "/" })}
+=======
+              onClick={() => signIn("google", { callbackUrl: next })}
+>>>>>>> origin/vercelbranchtest
             >
               <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
                 <path
@@ -211,4 +295,8 @@ export default function LoginPage() {
       </div>
     </div>
   )
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> origin/vercelbranchtest

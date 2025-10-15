@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+=======
+//Remove cases of /api/me
+
+>>>>>>> origin/vercelbranchtest
 "use client";
 
 import * as React from "react";
@@ -24,9 +29,37 @@ export default function TryFreeUploadButton({
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
 
+<<<<<<< HEAD
   const onClick = async () => {
     try {
       setPending(true);
+=======
+  //My onClick function (from Friday 10-10-2025)
+  // const onClick = async () => {
+  //   try {
+  //     setPending(true);
+  
+  //     const r = await fetch("/api/auth/session", {
+  //       method: "GET",
+  //       credentials: "include",
+  //       headers: { Accept: "application/json" },
+  //       cache: "no-store",
+  //     });
+  
+  //     const data = await r.json().catch(() => null);
+  //     const isAuthed = !!data?.user;         // <- the *only* reliable check
+  
+  //     router.push(isAuthed ? "/upload" : "/login?next=/upload");
+  //   } finally {
+  //     setPending(false);
+  //   }
+  // };
+
+  const onClick = async () => {
+    try {
+      setPending(true);
+      // Ask your Node/Express server if a session exists
+>>>>>>> origin/vercelbranchtest
       const r = await fetch("/api/auth/session", {
         method: "GET",
         credentials: "include",

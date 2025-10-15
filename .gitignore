@@ -25,7 +25,24 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# virtualenvs (anywhere)
+.venv/
+.venv-*/
+venv/
+venv-*/
+**.venv/
+**/.venv*
+worker/.venv
+fastapi/.venv*/
+worker/.venv*/
+
+worker/.venv/
+fastapi/api/.env
+
 # env files
+**/.env
+**/.env.*
+.env
 **/.env
 **/.env.*
 .env
@@ -39,7 +56,19 @@ fastapi/api/.env
 worker/.venv/
 **.venv/
 **/.venv*
-worker/.venv
+worker/.venv*.env
+env/*.json
+
+# python bytecode
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS junk
+.DS_Store
+Thumbs.db
+
 # vercel
 .vercel
 
@@ -56,6 +85,28 @@ worker/__pycache__/
 fastapi/api/videoDataset
 fastapi/api/clips
 fastapi/api/combined
+worker/__pycache__/
+
+# json service accounts & secrets 
+# from #Google Cloud Services/GCS IAM & Admin Service Accounts
+fastapi/api-sa.json
+worker/worker-sa.json
+api-sa.json
+worker-sa.json
+hooptuberdev.json
+.keys/
+*leads*.json
+*.key.json
+*.sa.json
+*.pem
+*.p12
+
+# video folders
+worker/videoDataset/
+worker/combined
+worker/clips/
+*.mp4
+
 worker/__pycache__/
 # json service accounts
 api-sa.json
