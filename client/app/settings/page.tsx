@@ -429,8 +429,4 @@ export default function SettingsPage() {
       </div>
     </div>
   )
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> origin/vercelbranchtest

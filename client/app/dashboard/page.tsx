@@ -43,8 +43,6 @@ export default function DashboardPage() {
       setLoading(false)
     }
   }
-<<<<<<< HEAD
-=======
   //useEffect version 1 using getSession edit 1 (remmoved /api/me; from 10-10-25 Friday this morning):
   // useEffect(() => {
   //   let cancelled = false;
@@ -128,31 +126,11 @@ export default function DashboardPage() {
   //   })();
   //   return () => { cancelled = true; };
   // }, []);
->>>>>>> origin/vercelbranchtest
 
   useEffect(() => {
     let cancelled = false;
   
     (async () => {
-<<<<<<< HEAD
-      const r = await fetch("/api/me");
-      if (!r.ok) {
-        window.location.href = "/login";
-        return;
-      }
-      const j = await r.json();
-      if (cancelled) return;
-  
-      setMe(j.user);
-      // now that we know the user is authenticated, load their data
-      await fetchUserVideos();
-    })();
-  
-    return () => {
-      cancelled = true;
-    };
-  }, [fetchUserVideos]);
-=======
       const r = await fetch("/api/auth/session", { cache: "no-store" });
       const s = await r.json().catch(() => null);
   
@@ -168,7 +146,6 @@ export default function DashboardPage() {
   
     return () => { cancelled = true; };
   }, []);
->>>>>>> origin/vercelbranchtest
     
   const handleVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
   const file = event.target.files?.[0]
@@ -220,11 +197,7 @@ export default function DashboardPage() {
             </Link>
             <div className="flex items-center space-x-4">
               <label className="flex items-center space-x-2 cursor-pointer">
-<<<<<<< HEAD
-                <Upload className="w-5 h-5 text-gray-700" />
-=======
               <Upload className="w-5 h-5 text-gray-700" />
->>>>>>> origin/vercelbranchtest
                 <span className="text-sm text-gray-700 font-medium">Upload Video</span>
                 <input
                   type="file"
