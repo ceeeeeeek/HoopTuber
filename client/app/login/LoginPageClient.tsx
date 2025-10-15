@@ -13,10 +13,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true)
-<<<<<<< HEAD
-=======
   const [name, setName] = useState("");
->>>>>>> origin/vercelbranchtest
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const router = useRouter()
@@ -27,22 +24,6 @@ export default function LoginPage() {
   async function handleCredentialsSignIn(e: React.FormEvent) {
     e.preventDefault()
 
-<<<<<<< HEAD
-    const res = await signIn("credentials", {
-      redirect: false, // don't auto-redirect, handle manually
-      email,
-      password,
-      callbackUrl: next,
-    })
-
-    if (res?.ok) {
-      router.push(next)
-    } else {
-      alert("Invalid email or password")
-    }
-  }
-
-=======
 //     const res = await signIn("credentials", {
 //       redirect: false, // don't auto-redirect, handle manually
 //       email,
@@ -94,7 +75,6 @@ if (isLogin) {
   else router.push("/login?next=" + encodeURIComponent(next));
 }
 
->>>>>>> origin/vercelbranchtest
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -124,20 +104,13 @@ if (isLogin) {
           </CardHeader>
 
           <CardContent className="space-y-4">
-<<<<<<< HEAD
-            <form onSubmit={handleCredentialsSignIn} className="space-y-4">
-=======
 
             {/* <form onSubmit={handleCredentialsSignIn} className="space-y-4">
->>>>>>> origin/vercelbranchtest
               {!isLogin && (
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
                   <Input id="name" placeholder="Enter your full name" />
                 </div>
-<<<<<<< HEAD
-              )}
-=======
               )} */}
 
         <form onSubmit={handleCredentialsSignIn} className="space-y-4">
@@ -152,7 +125,6 @@ if (isLogin) {
                 />
                 </div>
             )}
->>>>>>> origin/vercelbranchtest
 
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -230,11 +202,7 @@ if (isLogin) {
             <Button
               variant="outline"
               className="w-full"
-<<<<<<< HEAD
-              onClick={() => signIn("google", { callbackUrl: "/" })}
-=======
               onClick={() => signIn("google", { callbackUrl: next })}
->>>>>>> origin/vercelbranchtest
             >
               <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
                 <path
@@ -295,8 +263,4 @@ if (isLogin) {
       </div>
     </div>
   )
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> origin/vercelbranchtest

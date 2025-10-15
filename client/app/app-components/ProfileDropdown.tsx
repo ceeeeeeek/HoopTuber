@@ -46,13 +46,9 @@ export default function ProfileDropdown() {
   const handleLogout = async () => {
     await signOut({ callbackUrl: "/" })
   }
-<<<<<<< HEAD
 const handleCheckIn = async () => {
   
 }
-=======
-
->>>>>>> origin/vercelbranchtest
   return (
     <div className="relative" ref={dropdownRef}>
       {/* Profile Button */}
@@ -116,20 +112,12 @@ const handleCheckIn = async () => {
           <div className="py-1">
             {/* Profile/Dashboard Link */}
             <Link
-<<<<<<< HEAD
               href="/"
-=======
-              href="/dashboard"
->>>>>>> origin/vercelbranchtest
               onClick={() => setIsOpen(false)}
               className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
             >
               <User className="w-4 h-4 mr-3 text-gray-500" />
-<<<<<<< HEAD
               <span>Profile</span>
-=======
-              Profile
->>>>>>> origin/vercelbranchtest
             </Link>
 
             {/* Settings Link */}
@@ -157,8 +145,4 @@ const handleCheckIn = async () => {
       )}
     </div>
   )
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> origin/vercelbranchtest
