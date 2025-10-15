@@ -185,3 +185,16 @@ def json_input():
     }
     return json_inp
     
+
+def prompt_shot_outcomes_only():
+    prompt = """Act as a world-class basketball analyst with a precise understanding of basketball shot mechanics and video analysis. 
+    Your task is to analyze the entire video and identify every distinct shot attempt. 
+    For each shot, focus only on the following key details:
+    
+        • Time Stamp of Shot (TimeStamp): Identify the exact timestamp of the shot, formatted as HH:MM:SS.
+        • Make/Miss (Outcome): Determine whether the shot was successfully made or missed based on the trajectory, ball contact with the rim, or net movement. 
+          If the outcome is not clearly visible, mark it as 'Undetermined'.
+    
+    Your response should be a structured JSON array of shot events, where each event is represented as an object with the keys 'TimeStamp' and 'Outcome'. 
+    Do not include any explanations, text, or formatting such as code fences—output only the pure JSON."""
+    return prompt

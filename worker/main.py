@@ -12,6 +12,7 @@ SUBSCRIPTION_ID    = os.environ["PUBSUB_SUB"]          # e.g. video-jobs-worker
 RAW_BUCKET         = os.environ["GCS_RAW_BUCKET"]
 OUT_BUCKET         = os.environ["GCS_OUT_BUCKET"]
 COLLECTION         = os.environ.get("FIRESTORE_COLLECTION", "jobs")
+PUBSUB_TOPIC = os.environ.get("PUBSUB_TOPIC", "video-jobs")
 
 # Optional: if you use Gemini here too
 #USE_GEMINI = bool(os.environ.get("GOOGLE_API_KEY"))
@@ -57,14 +58,17 @@ def make_highlight(in_path: str, out_path: str, gemini_output):
     return out_path
 def handle_job(msg: pubsub_v1.subscriber.message.Message):
     try:
+        
         payload = json.loads(msg.data.decode("utf-8"))
         job_id        = payload["jobId"]
         user_id       = payload.get("userId")
         input_gcs_uri = payload["videoGcsUri"]     # gs://...
         out_key       = f"{job_id}/highlight.mp4"
         json_key      = f"{job_id}/analysis.json"
-
+        print(f"DEBUG: Paylod: {payload}, Processing {job_id} for {user_id}, gcs_uri={input_gcs_uri}")
         update_job(job_id, {"status": "processing", "startedAt": firestore.SERVER_TIMESTAMP})
+        print(f"=== handle_job() started for jobId={payload.get('jobId')} ===", flush=True)
+
 
         with tempfile.TemporaryDirectory() as td:
             in_path  = os.path.join(td, "input.mp4")
@@ -89,11 +93,31 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
             
             """
             raw_gemini_output = process_video_and_summarize(converted_path) # gemini output
-            print(f"DEBUG: gemini is outputting: {type(raw_gemini_output)}, coming from worker/main.py")
+            
+            print(f"DEBUG: gemini is outputting: {type(raw_gemini_output)}, coming from worker/main.py", flush=True)
             print(f"DEBUG: Gem output: {raw_gemini_output}")
 
             # Handle dict error responses from process_video_and_summarize
-            if isinstance(raw_gemini_output, dict):
+            
+            if isinstance(raw_gemini_output, str):
+                try:
+                    # Remove code fences and whitespace
+                    #clean_text = strip_code_fences(raw_gemini_output).strip()
+                    clean_text = raw_gemini_output
+                    # If the response includes ```json``` fences, extract the content inside
+                    if "```json" in raw_gemini_output:
+                        json_start = raw_gemini_output.find('[')
+                        json_end = raw_gemini_output.rfind(']') + 1
+                        clean_text = raw_gemini_output[json_start:json_end]
+
+                    # Try parsing the clean JSON string
+                    parsed_data = json.loads(clean_text)
+                    logging.info("Parsed Gemini JSON string successfully")
+
+                except json.JSONDecodeError as e:
+                    raise RuntimeError(f"Gemini returned invalid JSON: {e}")
+
+            elif isinstance(raw_gemini_output, dict):
                 # Check if it's an error response
                 if not raw_gemini_output.get("ok", True):
                     error_msg = raw_gemini_output.get("error", "Unknown error from Gemini")
@@ -101,27 +125,23 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
                     raise RuntimeError(f"Gemini processing failed: {error_msg}")
                 parsed_data = raw_gemini_output
                 logging.info("Gemini is returning a dict object")
-            elif isinstance(raw_gemini_output, str):
-                if not raw_gemini_output.get("ok", True):
-                    error_msg = raw_gemini_output.get("error", "Unknown gemini output")
-                    logging.error(f"Gemini processing failed: {error_msg}")
-                
-                if '```json' in raw_gemini_output or r"```json\n" in raw_gemini_output:
-                    json_start = raw_gemini_output.find('[')
-                    json_end = raw_gemini_output.rfind(']') + 1
-                    clean_data = strip_code_fences(raw_gemini_output[json_start:json_end])
-                    parsed_data = json.loads(clean_data)
-                else:
-                    parsed_data = json.loads(raw_gemini_output)
                 #else:
+            elif isinstance(raw_gemini_output, list):
+                parsed_data = raw_gemini_output
+                logging.info("DEBUG: GEMINI OUTPUT is already a list")
             else:
                 raise TypeError(f"Gemini output is neither dict nor string, it is: {type(raw_gemini_output)}")
+            if isinstance(parsed_data, list) and len(parsed_data) == 1 and isinstance(parsed_data[0], list):
+                parsed_data = parsed_data[0]  # unwrap nested list
             with open(json_path, "w") as f:
-                json.dump(parsed_data, f,indent=2)
-            make_highlight(in_path, out_path, raw_gemini_output)
+               json.dump(parsed_data, f,indent=2)
+            
+
+            make_highlight(in_path, out_path, parsed_data)
 
             out_gcs_uri = upload_to_gcs(out_path, OUT_BUCKET, out_key)
             analysis_gcs_uri = upload_to_gcs(json_path, OUT_BUCKET, json_key)
+            
         update_job(job_id, {
             "status": "done",
             "outputGcsUri": out_gcs_uri,

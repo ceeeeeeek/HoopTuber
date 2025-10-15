@@ -6,9 +6,12 @@ import time
 import json, re
 import glob
 import tempfile
+import logging
 load_dotenv()
 from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
-from prompts import prompt_4, json_input
+from prompts import prompt_4, json_input, prompt_shot_outcomes_only
+
+logging.basicConfig(level=logging.INFO)
 
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
@@ -52,7 +55,7 @@ def process_video_and_summarize(file_path):
         print("Generating summary...")
 
         # CHANGE SCRIPT IN CONTENTS ARRAY
-
+        # prompt_shot_outcomes_only
         prompt4 = prompt_4() # prompts are saved in prompts.py
 
         # Retry logic with exponential backoff for 503 errors
@@ -90,7 +93,13 @@ def process_video_and_summarize(file_path):
 
         clean_text = strip_code_fences(raw_text).strip() # return output as a string for now
         print("RAW GEMINI OUTPUT:", strip_code_fences(raw_text))
-        return clean_text
+        try:
+            parsed = json.loads(clean_text)
+        except json.JSONDecodeError as e:
+            logging.info(f"Failed to parse Gemini output as JSON: {e} ")
+            return clean_text
+        #list_test = json.loads(clean_text)
+        return parsed
         
         parsed = None
         try:
@@ -106,38 +115,41 @@ def process_video_and_summarize(file_path):
         return {"ok": False, "error": str(e)}
 
 def timestamp_maker(gem_output):
+    logging.info(f"DEBUG @ timestamp_maker: gemini output before process is: {type(gem_output)}")
     # Handle dict input (error responses)
-    if isinstance(gem_output, dict):
-        error_msg = gem_output.get("error", "Unknown error")
-        raise ValueError(f"Cannot extract timestamps from error response: {error_msg}")
+    if isinstance(gem_output, list):
+        # Already parsed as a list, use directly
+        parsed = gem_output
+    elif isinstance(gem_output, dict):
+        if "error" in gem_output or not gem_output.get("ok", True):
+            error_msg = gem_output.get("error", "Unknown error")
+            raise ValueError(f"Cannot extract timestamps from error response: {error_msg}")
+        # If dict but not an error, might be a valid response, treat as parsed data
+        parsed = gem_output
+    elif isinstance(gem_output, str):
+        # String input - parse it
+        try:
+            gem_output_stripped = strip_code_fences(gem_output)
+            parsed = json.loads(gem_output_stripped)
+            if isinstance(parsed, str):
+                parsed = json.loads(parsed) # try to parse again if it's a string
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Gemini output is a str but not valid JSON: {e}")
+    
+    # Now process the parsed data
+    #if isinstance(parsed, list):
+    makes_timestamps = [] # ONLY MAKES TIMESTAMPS
 
-    # Ensure we have a string
-    if not isinstance(gem_output, str):
-        raise TypeError(f"Expected string input, got {type(gem_output)}")
-
-    try:
-        gem_output_stripped = strip_code_fences(gem_output)
-        parsed = json.loads(gem_output_stripped)
-        if isinstance(parsed, str):
-            parsed = json.loads(parsed) # try to parse again if it's a string
-    except json.JSONDecodeError:
-        return("Gemini output is a str but not valid JSON")
-
-    if isinstance(parsed, list):
-        timestamps = [shot["TimeStamp"] for shot in parsed if "TimeStamp" in shot] # ALL TIMESTAMPS
-        makes_timestamps = [] # ONLY MAKES TIMESTAMPS
-
-        for shot in parsed:
-            if "TimeStamp" in shot and "Outcome" in shot:
-                if shot["Outcome"].lower() == "make":
-                    makes_timestamps.append(shot["TimeStamp"])
-    elif isinstance(parsed, dict):
-        return("Gemini output is a dict, not a list")
-    elif isinstance(parsed, str):
-        return("Gemini is returning a str")
-    else:
-        return("Gemini is returning neither list or dict or str")
+    for shot in parsed:
+        if "TimeStamp" in shot and "Outcome" in shot:
+            if shot["Outcome"].lower() == "make":
+                makes_timestamps.append(shot["TimeStamp"])
     return makes_timestamps
+    #elif isinstance(parsed, dict):
+        #raise ValueError("Gemini output is a dict, not a list of shots")
+    #else:
+    #    raise TypeError(f"Parsed data is not a list or dict, got {type(parsed)}")
+
 
 class CreateHighlightVideo:
     def __init__(self, video_path, output_dir="clips", combined_dir="combined", clip_duration=6):
@@ -372,6 +384,8 @@ if __name__ == "__main__":
     #highlighter.combine_clips_ffmpeg(output_filename=f"{file_name}_combined_video.mp4")
     #highlighter.clear_folder("clips")
     #print(make_timestamps)
-    json_inp = json_input()
-    res = check_json(json_inp)
-    print(res)
+
+    # Testing different outputs, will be put into actual test file later lol
+    
+
+    
