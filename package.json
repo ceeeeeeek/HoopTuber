@@ -3,14 +3,14 @@
   "private": true,
   "scripts": {
     "frontend": "cd client && npm run dev",
-    "backend": "cd fastapi/api && ../.venv_fastapi/bin/uvicorn main:app --reload",
-    "worker": "cd worker && ./.venv/bin/python main.py",
-    "build": "next build",
-    "dev": "concurrently \"npm run frontend\" \"npm run backend\" \"npm run worker\"",
-    "lint": "next lint",
-    "start": "next start"
+    "backend": "cross-env-shell \"cd fastapi/api && (if exist env\\Scripts\\python.exe (env\\Scripts\\python.exe -m uvicorn main:app --reload) else (env/bin/python -m uvicorn main:app --reload))\"",
+    "worker": "cross-env-shell \"cd worker && (if exist env\\Scripts\\python.exe (env\\Scripts\\python.exe main.py) else (env/bin/python main.py))\"",
+    "dev": "concurrently -k -n FRONTEND,BACKEND,WORKER -c \"cyan,green,yellow\" \"npm run frontend\" \"npm run backend\" \"npm run worker\"",
+    "build": "cd client && npm run build",
+    "start": "cd client && npm run start"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^9.2.1",
+    "cross-env-shell": "^1.0.7"
   }
 }
