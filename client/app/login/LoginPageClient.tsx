@@ -39,7 +39,6 @@ export default function LoginPage() {
 //   }
 
 if (isLogin) {
-    // **Sign In** via NextAuth credentials
     const res = await signIn("credentials", {
       redirect: false,
       email,
@@ -51,7 +50,6 @@ if (isLogin) {
     return;
   }
 
-  // **Create Account** via your signup API, then auto sign in
   const r = await fetch("/api/auth/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
