@@ -105,7 +105,6 @@ hooptuberdev.json
 worker/videoDataset/
 worker/combined
 worker/clips/
-*.mp4
 
 worker/__pycache__/
 # json service accounts
