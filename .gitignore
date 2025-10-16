@@ -120,5 +120,9 @@ hooptuberdev.json
 worker/videoDataset/
 worker/combined
 worker/clips/
+secrets/
+/secrets
+secrets
+__pycache__
 
 *hoopuber-leads.json
