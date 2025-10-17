@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 import {
   Upload,
@@ -292,7 +293,7 @@ export default function UploadPage() {
     setDownloadUrl(null); // NEW: reset signed URL
     stopPolling(); // NEW: stop any active poller
   };
-
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
       {/* Header */}

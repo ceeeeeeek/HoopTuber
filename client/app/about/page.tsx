@@ -1,17 +1,18 @@
-// app/about/page.tsx
+
+"use client"
+
 import Link from "next/link";
 import { Play, Users, Target, Rocket, Trophy, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-export const metadata = {
-  title: "About Us • HoopTuber",
-  description:
-    "Meet the team building AI-powered basketball highlights. Our mission is to help every hooper showcase their game.",
-};
+import { useSession } from "next-auth/react"
+import TryFreeUploadButton from "../app-components/TryFreeUploadButton";
+import ProfileDropdown from "../app-components/ProfileDropdown";
 
 export default function AboutPage() {
+  const { data: session, status } = useSession() 
+  // added dropown menu for profile when logged in 10/17
   return (
     <main className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
       {/* Top Bar */}
@@ -29,10 +30,17 @@ export default function AboutPage() {
             </Link>
             <Link href="/about" className="text-gray-900 font-medium">
               About Us
-            </Link>
+            </Link> 
+            {status === "authenticated" && session ? (
+              <>
+              
+              <ProfileDropdown />
+              </>
+            ) : (
             <Link href="/login" className="text-gray-600 hover:text-orange-500">
               Login
             </Link>
+          )}
           </nav>
         </div>
       </header>
