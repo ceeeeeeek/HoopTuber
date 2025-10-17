@@ -11,6 +11,9 @@ load_dotenv()
 from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
 from prompts import prompt_4, json_input, prompt_shot_outcomes_only
 
+# NEW: turning Gemini call to async, avoid repeated API calls
+import asyncio
+
 logging.basicConfig(level=logging.INFO)
 
 api_key = os.getenv("GEMINI_API_KEY")
@@ -41,7 +44,9 @@ def process_video_and_summarize(file_path):
     """
     try:
         print(f"Uploading file: {file_path}...")
-        uploaded_file = client.files.upload(file=file_path)
+
+        uploaded_file =  client.files.upload(file=file_path)
+        
         print(f"File uploaded successfully with name: {uploaded_file.name}")
 
         print("Waiting for file to be processed...")
@@ -59,16 +64,19 @@ def process_video_and_summarize(file_path):
         prompt4 = prompt_4() # prompts are saved in prompts.py
 
         # Retry logic with exponential backoff for 503 errors
-        max_retries = 3
+        max_retries = 2
         retry_delay = 5  # Start with 5 seconds
 
         for attempt in range(max_retries):
             try:
+                logging.info(f"DEBUG (process_video func): attempt {attempt+1} to call Gemini API")
                 resp = client.models.generate_content(
                     model="gemini-2.5-pro",
                     contents=[uploaded_file, prompt4]
                     #,generation_config={"response_mime_type": "application/json,"}
                 )
+                
+                logging.info(f"DEBUG (process_video): Gemini API call successful on attempt {attempt+1}")
                 break  # Success, exit retry loop
             except Exception as e:
                 error_str = str(e)
