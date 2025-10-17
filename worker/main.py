@@ -133,11 +133,12 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
                 raise TypeError(f"Gemini output is neither dict nor string, it is: {type(raw_gemini_output)}")
             if isinstance(parsed_data, list) and len(parsed_data) == 1 and isinstance(parsed_data[0], list):
                 parsed_data = parsed_data[0]  # unwrap nested list
+            parsed_data2 = []
             with open(json_path, "w") as f:
-               json.dump(parsed_data, f,indent=2)
+               json.dump(parsed_data2, f,indent=2)
             
 
-            make_highlight(in_path, out_path, parsed_data)
+            make_highlight(in_path, out_path, parsed_data2)
 
             out_gcs_uri = upload_to_gcs(out_path, OUT_BUCKET, out_key)
             analysis_gcs_uri = upload_to_gcs(json_path, OUT_BUCKET, json_key)
