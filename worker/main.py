@@ -160,8 +160,10 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
                     "error": str(e),
                     "finishedAt": firestore.SERVER_TIMESTAMP,
                 })
-        except Exception:
-            pass
+        except Exception as inner:
+            logging.error(f"Failed to update job status for: {inner}")
+        finally:
+            msg.ack() # ACKNOWLEDGE TO AVOID INF LOOP
         print("ERROR processing message:", e, flush=True)
 
 def main():
