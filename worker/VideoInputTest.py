@@ -61,7 +61,7 @@ def process_video_and_summarize(file_path):
 
         # CHANGE SCRIPT IN CONTENTS ARRAY
         # prompt_shot_outcomes_only
-        prompt4 = prompt_4() # prompts are saved in prompts.py
+        prompt4 = prompt_shot_outcomes_only() # prompts are saved in prompts.py
 
         # Retry logic with exponential backoff for 503 errors
         max_retries = 2

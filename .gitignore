@@ -100,6 +100,7 @@ hooptuberdev.json
 *.sa.json
 *.pem
 *.p12
+*videoDataset
 
 # video folders
 worker/videoDataset/

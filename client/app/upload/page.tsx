@@ -293,7 +293,38 @@ export default function UploadPage() {
     setDownloadUrl(null); // NEW: reset signed URL
     stopPolling(); // NEW: stop any active poller
   };
-  
+  const [ended, setEnded] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  function startPlayback() {
+    setPlaying(true);
+    setEnded(false);
+    // give the <video> a tick to mount before playing
+    requestAnimationFrame(() => videoRef.current?.play().catch(() => {}));
+  }
+
+  // const handleDownload = async () =>{
+  //   const response = await fetch(downloadUrl);
+  //   const blob = await response.blob();
+  //   const link = document.createElement('a');
+  //   link.href = window.URL.createObjectURL(blob);
+  //   link.download = 'highlight.mp4';
+  //   document.body.appendChild(link);
+  //   link.click();
+  //   document.body.removeChild(link);
+  // };
+
+  // NEW: download handler - Should directly download from signed URL
+  const handleDownload = () => {
+  const link = document.createElement("a");
+  link.href = downloadUrl;
+  link.download = "hooptuber_highlight.mp4";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
       {/* Header */}
@@ -420,24 +451,46 @@ export default function UploadPage() {
                       <CheckCircle className="w-8 h-8 text-green-500" />
                     </div>
 
-                    <div>
+                    <div className="space-y-4">
                       <h3 className="text-lg font-semibold mb-2">AI Analysis Complete!</h3>
                       <p className="text-gray-600 mb-4">
                         {uploadResult.fileName} ({(uploadResult.fileSize! / 1024 / 1024).toFixed(2)} MB)
                       </p>
+                      <div className="relative w-full max-w-md mx-auto">
+
+                     
+                      <video
+                ref={videoRef}
+                className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
+                src={downloadUrl}
+               
+                muted // muted to allow autoplay
+                playsInline
+                controls            // controls appear once playing starts
+                onEnded={() => setEnded(true)}
+              />
 
                       {/* NEW: show highlight download when ready */}
                       {downloadUrl && (
-                        <Button asChild className="bg-orange-500 hover:bg-orange-600">
-                          <a href={downloadUrl} target="_blank" rel="noreferrer">
-                            <Download className="w-4 h-4 mr-2" />
+                        <Button 
+                          onClick={handleDownload}
+                          className="bg-orange-500 hover:bg-orange-600 mt-4"
+                          >
+                          <Download className="w-4 h-4 mr-2" />
                             Download Highlight
-                          </a>
+                          
                         </Button>
                       )}
+                      
+                       </div>
                     </div>
+                    {/*
+                    
+                    UPLOAD RESULTS STATS COMMENTED OUT FOR NOW:
+                    Testing new analysis, will avoid displaying status until verified
+                    */}
 
-                    {uploadResult.gameStats && (
+                    {/* {uploadResult.gameStats && (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
                         <div className="p-4 bg-orange-50 rounded-lg">
                           <div className="text-2xl font-bold text-orange-600">{uploadResult.gameStats.totalShots}</div>
@@ -458,7 +511,7 @@ export default function UploadPage() {
                           <div className="text-sm text-gray-600">Shot Types</div>
                         </div>
                       </div>
-                    )}
+                    )} */}
 
                     <div className="flex flex-col sm:flex-row gap-3 mt-6">
                       <Button className="flex-1" asChild>
@@ -485,7 +538,7 @@ export default function UploadPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-4">
+                    {/* <div className="space-y-4">
                       {uploadResult.shotEvents.map((shot, idx) => (
                         <div key={idx} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                           <div className="flex items-start justify-between mb-3">
@@ -538,7 +591,7 @@ export default function UploadPage() {
                           </div>
                         </div>
                       ))}
-                    </div>
+                    </div> */}
                   </CardContent>
                 </Card>
               )}
