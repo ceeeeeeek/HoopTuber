@@ -29,6 +29,7 @@ import {
 import Link from "next/link"
 import ProfileDropdown from "../app-components/ProfileDropdown"
 // "https://hooptuber-fastapi-web-service-docker.onrender.com"
+// "http://localhost:8000"
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 console.log("API_BASE =", process.env.NEXT_PUBLIC_API_BASE);
 

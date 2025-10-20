@@ -71,8 +71,9 @@ def process_video_and_summarize(file_path):
             try:
                 logging.info(f"DEBUG (process_video func): attempt {attempt+1} to call Gemini API")
                 resp = client.models.generate_content(
-                    model="gemini-2.5-pro",
-                    contents=[uploaded_file, prompt4]
+                    model="gemini-2.5-flash",
+                    contents=[uploaded_file, prompt4],
+                    #request_options = {"timeout": 600} # testing 10 min timeout
                     #,generation_config={"response_mime_type": "application/json,"}
                 )
                 
