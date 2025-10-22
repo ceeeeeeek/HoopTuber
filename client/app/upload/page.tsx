@@ -1,13 +1,12 @@
-//app/upload/page.tsx (app\upload\page.tsx VERSION as of Thursday 09-11-25)
-
+//client/app/upload/page.tsx - 10-22-25 Wendesday Update
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useCallback } from "react"; // UNCHANGED
+import { Button } from "@/components/ui/button"; // UNCHANGED
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"; // UNCHANGED
+import { Progress } from "@/components/ui/progress"; // UNCHANGED
+import { Badge } from "@/components/ui/badge"; // UNCHANGED
+import { useRouter } from "next/navigation"; // UNCHANGED
 
 import {
   Upload,
@@ -23,23 +22,16 @@ import {
   Clock,
   MapPin,
   User,
-  Download, // NEW: icon for download button
-} from "lucide-react";
-import Link from "next/link"
-import ProfileDropdown from "../app-components/ProfileDropdown"
-// "https://hooptuber-fastapi-web-service-docker.onrender.com"
+  Download,
+} from "lucide-react"; // UNCHANGED
+import Link from "next/link" // UNCHANGED
+import ProfileDropdown from "../app-components/ProfileDropdown" // UNCHANGED
+
+// UNCHANGED fallback; works with your FastAPI today
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 console.log("API_BASE =", process.env.NEXT_PUBLIC_API_BASE);
 
-
-interface GeminiShotEvent {
-  Subject: string;
-  Location: string;
-  ShotType: string;
-  TimeStamp: string;
-  Outcome: string;
-}
-
+// UNCHANGED: types
 interface GeminiShotEvent {
   Subject: string
   Location: string
@@ -47,16 +39,15 @@ interface GeminiShotEvent {
   TimeStamp: string
   Outcome: string
 }
-
 interface UploadResult {
   success: boolean;
-  videoUrl?: string; // NEW: signed URL once worker completes
-  processingId?: string; // NEW: mirrors jobId
+  videoUrl?: string;
+  processingId?: string;
   fileName?: string;
   fileSize?: number;
   method?: string;
   verified?: boolean;
-  shotEvents?: GeminiShotEvent[]; // UNCHANGED: legacy immediate analysis support
+  shotEvents?: GeminiShotEvent[];
   gameStats?: {
     totalShots: number;
     madeShots: number;
@@ -65,7 +56,6 @@ interface UploadResult {
     locations: Record<string, number>;
   };
 }
-
 interface JobRecord {
   jobId: string;
   status: "queued" | "processing" | "done" | "error" | "publish_error";
@@ -74,25 +64,24 @@ interface JobRecord {
   error?: string;
 }
 
-
-
 export default function UploadPage() {
   const router = useRouter();
+
+  // NEW: cache logged-in user email for Firestore records via /api routes
+  const [userEmail, setUserEmail] = useState<string | undefined>(undefined)
+
   useEffect(() => {
     const checkSession = async () => {
-      const res = await fetch("/api/auth/session", {
-        method: "GET",
-        credentials: "include",
-      });
-      const data = await res.json();
+      const res = await fetch("/api/auth/session", { method: "GET", credentials: "include", cache: "no-store" })
+      const data = await res.json().catch(() => null)
       if (!data?.user) {
-        router.push("/login?next=/upload");
+        router.push("/login?next=/upload")
+        return
       }
-    };
-
-    checkSession();
-  }, [router]);
-
+      setUserEmail((data.user as any)?.email)
+    }
+    checkSession()
+  }, [router])
 
   // UNCHANGED: base UI states
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete">("idle");
@@ -100,16 +89,14 @@ export default function UploadPage() {
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [progress, setProgress] = useState(0);
 
-  // NEW: track job id and downloadable URL from worker output
-  // Job + download tracking
+  // NEW: job + download tracking
   const [jobId, setJobId] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
-  // CHANGED: browser timers use number, not NodeJS.Timer
-  // keep polling interval id (browser timers return number)
+  // UNCHANGED: timer ref
   const pollRef = useRef<number | null>(null);
 
-  // UNCHANGED: file select handler, with a bit of reset for new states
+  // UNCHANGED: file select
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -121,7 +108,7 @@ export default function UploadPage() {
     setDownloadUrl(null);
   }, []);
 
-  // ---- UNCHANGED helpers for UI ----
+  // UNCHANGED helpers
   const formatTimestamp = (ts: string) => ts || "0:00";
   const getShotOutcomeColor = (outcome: string) =>
     outcome.toLowerCase().includes("make") ? "bg-green-500" : "bg-red-500";
@@ -140,71 +127,107 @@ export default function UploadPage() {
       shotTypes[s.ShotType] = (shotTypes[s.ShotType] || 0) + 1;
       locations[s.Location] = (locations[s.Location] || 0) + 1;
     }
-
     return { totalShots, madeShots, shootingPercentage, shotTypes, locations };
   };
 
-  // NEW: polling helpers for queue-based flow
-  // ---- polling controls ----
+  // UNCHANGED polling helpers
   const stopPolling = () => {
     if (pollRef.current !== null) {
-      window.clearInterval(pollRef.current); // CHANGED: window.clearInterval(number)
+      window.clearInterval(pollRef.current);
       pollRef.current = null;
     }
   };
 
-  const startPolling = (id: string) => {
-  stopPolling();
-  pollRef.current = window.setInterval(async () => {
+  // NEW: when job completes, persist “raw” + “highlight” records via Next.js API
+  const persistResultsToDashboard = async (args: {
+    rawGcsUri?: string; highlightUrl?: string; filename: string; size: number;
+    jobId: string; shotEvents?: GeminiShotEvent[];
+  }) => {
     try {
-      const res = await fetch(`${API_BASE}/jobs/${id}`);
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data: JobRecord = await res.json();
+      // 1) raw video record
+      await fetch("/api/rawVideos", {
+        method: "POST",
+        body: JSON.stringify({
+          fileName: args.filename,
+          size: args.size,
+          sourceUri: args.rawGcsUri ?? null,
+          jobId: args.jobId,
+          ownerEmail: userEmail ?? null,
+        }),
+      })
 
-      if (data.status === "error" || data.status === "publish_error") {
-        stopPolling();
-        setUploadState("idle");
-        console.error("Job failed:", data.error || "unknown");
-        return;
-      }
-
-      if (data.status === "done" && data.outputGcsUri) {
-        // Fetch final download + analysis
-        const dlRes = await fetch(`${API_BASE}/jobs/${id}/download`);
-        if (dlRes.ok) {
-          const j = await dlRes.json();
-
-          const shotEvents: GeminiShotEvent[] = j.shot_events || [];
-          const gameStats = shotEvents.length > 0 ? calculateGameStats(shotEvents) : undefined;
-
-          setDownloadUrl(j.url);
-          setUploadResult((prev) => ({
-            ...(prev || { success: true }),
-            videoUrl: j.url,
-            processingId: id,
-            shotEvents,
-            gameStats,
-          }));
-        }
-        stopPolling();
-        setUploadState("complete");
-      } else {
-        setUploadState("processing");
+      // 2) highlight record (downloadable signed URL)
+      if (args.highlightUrl) {
+        await fetch("/api/highlightVideos", {
+          method: "POST",
+          body: JSON.stringify({
+            jobId: args.jobId,
+            downloadUrl: args.highlightUrl,
+            ownerEmail: userEmail ?? null,
+            stats: args.shotEvents ? calculateGameStats(args.shotEvents) : null,
+          }),
+        })
       }
     } catch (e) {
-      console.warn("Polling error:", e);
+      console.warn("Note: could not persist to Firestore yet:", e)
     }
-  }, 3000);
-};
+  }
 
+  const startPolling = (id: string, filename: string, size: number) => {
+    stopPolling();
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/jobs/${id}`);
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data: JobRecord = await res.json();
 
-  // NEW: cleanup on unmount
-  useEffect(() => {
-    return () => stopPolling();
-  }, []);
+        if (data.status === "error" || data.status === "publish_error") {
+          stopPolling();
+          setUploadState("idle");
+          console.error("Job failed:", data.error || "unknown");
+          return;
+        }
 
-  // ------- CHANGED: upload now talks to FastAPI upload endpoint -------
-  // ---- upload handler ----
+        if (data.status === "done" && data.outputGcsUri) {
+          const dlRes = await fetch(`${API_BASE}/jobs/${id}/download`);
+          if (dlRes.ok) {
+            const j = await dlRes.json();
+            const shotEvents: GeminiShotEvent[] = j.shot_events || [];
+            const gameStats = shotEvents.length > 0 ? calculateGameStats(shotEvents) : undefined;
+
+            setDownloadUrl(j.url);
+            setUploadResult((prev) => ({
+              ...(prev || { success: true }),
+              videoUrl: j.url,
+              processingId: id,
+              shotEvents,
+              gameStats,
+            }));
+
+            // NEW: save to dashboard collections
+            await persistResultsToDashboard({
+              rawGcsUri: data.videoGcsUri,
+              highlightUrl: j.url,
+              filename,
+              size,
+              jobId: id,
+              shotEvents,
+            })
+          }
+          stopPolling();
+          setUploadState("complete");
+        } else {
+          setUploadState("processing");
+        }
+      } catch (e) {
+        console.warn("Polling error:", e);
+      }
+    }, 3000);
+  };
+
+  useEffect(() => () => stopPolling(), []);
+
+  // UNCHANGED upload handler, with a NEW call to startPolling carrying filename/size
   const handleUpload = async () => {
     if (!selectedFile) return
 
@@ -214,15 +237,10 @@ export default function UploadPage() {
     const formData = new FormData();
     formData.append("video", selectedFile);
 
-    // CHANGED: progress interval typed as number
-    // visual progress during POST (client-side only)
     let progressInterval: number | null = window.setInterval(() => {
       setProgress((prev) => {
         if (prev >= 90) {
-          if (progressInterval !== null) {
-            window.clearInterval(progressInterval); // CHANGED
-            progressInterval = null;
-          }
+          if (progressInterval !== null) { window.clearInterval(progressInterval); progressInterval = null; }
           return 90;
         }
         return prev + 10;
@@ -232,17 +250,14 @@ export default function UploadPage() {
     try {
       const response = await fetch(`${API_BASE}/upload`, { method: "POST", body: formData });
 
-      if (progressInterval !== null) {
-        window.clearInterval(progressInterval); // CHANGED
-        progressInterval = null;
-      }
+      if (progressInterval !== null) { window.clearInterval(progressInterval); progressInterval = null; }
       setProgress(100);
 
       if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
 
-      const result = await response.json(); // { ok, jobId, status, videoGcsUri } OR legacy events // NEW: expect { jobId } in queue flow
-      
-      // New queue-based flow – start polling
+      const result = await response.json();
+
+      // NEW: queue job route
       if (result?.jobId) {
         setJobId(result.jobId);
         setUploadState("processing");
@@ -252,14 +267,13 @@ export default function UploadPage() {
           fileSize: selectedFile.size,
           method: "queue_v1",
           verified: true,
-          shotEvents: [], // no immediate events in queue flow
+          shotEvents: [],
         });
-        startPolling(result.jobId);
+        startPolling(result.jobId, selectedFile.name, selectedFile.size); // NEW
         return;
       }
 
-      // UNCHANGED: legacy immediate analysis path (array of events)
-      // Legacy: immediate analysis response (array of shot events)
+      // UNCHANGED: legacy direct analysis path
       const shotEvents: GeminiShotEvent[] =
         result.shot_events || result.results?.shot_events || (Array.isArray(result) ? result : []);
       if (!Array.isArray(shotEvents)) throw new Error("Invalid response format: expected jobId or shot events array");
@@ -282,15 +296,15 @@ export default function UploadPage() {
     }
   };
 
-    // UNCHANGED: reset, with added cleanup of new state
+  // UNCHANGED reset
   const resetUpload = () => {
     setUploadState("idle");
     setSelectedFile(null);
     setUploadResult(null);
     setProgress(0);
-    setJobId(null); // NEW: reset job id
-    setDownloadUrl(null); // NEW: reset signed URL
-    stopPolling(); // NEW: stop any active poller
+    setJobId(null);
+    setDownloadUrl(null);
+    stopPolling();
   };
 
   return (
@@ -361,6 +375,7 @@ export default function UploadPage() {
                     </Button>
                   )}
 
+                  {/* UNCHANGED feature cards */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="p-4 bg-blue-50 rounded-lg text-center">
                       <Target className="w-8 h-8 text-blue-600 mx-auto mb-2" />
@@ -425,7 +440,7 @@ export default function UploadPage() {
                         {uploadResult.fileName} ({(uploadResult.fileSize! / 1024 / 1024).toFixed(2)} MB)
                       </p>
 
-                      {/* NEW: show highlight download when ready */}
+                      {/* NEW: highlight download */}
                       {downloadUrl && (
                         <Button asChild className="bg-orange-500 hover:bg-orange-600">
                           <a href={downloadUrl} target="_blank" rel="noreferrer">
@@ -461,9 +476,9 @@ export default function UploadPage() {
 
                     <div className="flex flex-col sm:flex-row gap-3 mt-6">
                       <Button className="flex-1" asChild>
-                        <Link href="/upload/enhanced">
+                        <Link href="/dashboard">
                           <BarChart3 className="w-4 h-4 mr-2" />
-                          View Detailed Analysis
+                          View in Dashboard
                         </Link>
                       </Button>
                       <Button variant="outline" className="flex-1" onClick={resetUpload}>
@@ -474,7 +489,7 @@ export default function UploadPage() {
                 </CardContent>
               </Card>
 
-              {/* Shot-by-shot (legacy immediate analysis) */}
+              {/* UNCHANGED: legacy shot-by-shot list */}
               {uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
                 <Card>
                   <CardHeader>
@@ -532,8 +547,7 @@ export default function UploadPage() {
 
                           <div className="mt-3 text-sm text-gray-600">
                             <strong>Summary:</strong> Player shoots a {formatShotType(shot.ShotType).toLowerCase()} from{" "}
-                            {shot.Location.toLowerCase()} at {formatTimestamp(shot.TimeStamp)} –{" "}
-                            {shot.Outcome.toLowerCase()}
+                            {shot.Location.toLowerCase()} at {formatTimestamp(shot.TimeStamp)} – {shot.Outcome.toLowerCase()}
                           </div>
                         </div>
                       ))}

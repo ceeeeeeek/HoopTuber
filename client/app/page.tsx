@@ -15,12 +15,12 @@ import { useSession } from "next-auth/react"
 export default function LandingPage() {
   const { data: session, status } = useSession()
 
-  // NEW: inline player state + ref
+  //inline player state + ref
   const [playing, setPlaying] = useState(false);
   const [ended, setEnded] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-    // NEW: helpers
+  //helpers
   function startPlayback() {
     setPlaying(true);
     setEnded(false);
