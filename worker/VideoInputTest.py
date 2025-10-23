@@ -151,7 +151,8 @@ def timestamp_maker(gem_output):
 
     for shot in parsed:
         if "TimeStamp" in shot and "Outcome" in shot:
-            if shot["Outcome"].lower() == "make":
+            
+            if shot["Outcome"].lower() == "make" or shot["Outcome"].lower() == "miss": # TESTING ALL TIMESTAMPSs
                 makes_timestamps.append(shot["TimeStamp"])
     return makes_timestamps
     #elif isinstance(parsed, dict):
