@@ -2,7 +2,7 @@
 //Small component for reusing uploaded files from dashboard.
 //Lets a user pick an existing raw video instead of uploading new.
 
-// NEW — lets a user pick one of their existing Raw videos.
+//NEW — lets a user pick one of their existing Raw videos.
 
 "use client"
 
