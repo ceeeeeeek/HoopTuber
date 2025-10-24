@@ -16,7 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import ProfileDropdown from "../app-components/ProfileDropdown";
 
 //The Raw/Highlights toggle + list
-import { RawVsHighlightsSection } from "./RawVsHighlightsSection";
+//import { RawVsHighlightsSection } from "./RawVsHighlightsSection";
+import RawVsHighlightsSection from "./RawVsHighlightsSection";
 
 //Small helper to fetch counts for cards
 type RawRow = {

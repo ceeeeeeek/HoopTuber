@@ -1,4 +1,4 @@
-//client/app/dashboard/page.tsx - 10-22-25 Wendesday Update
+//client/app/dashboard/page.tsx - 10-22-25 Wednesday Update
 //"use client"
 //No longer need "use client" in page.tsx because DashboardClient.tsx is the client component.
 
