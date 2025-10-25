@@ -122,6 +122,14 @@ def process_video_and_summarize(file_path):
         return {"ok": False, "error": f"File not found: {file_path}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    
+def convert_timestamp_to_seconds(timestamp):
+    parts = timestamp.split(':')
+    hours, minutes, seconds = map(int, parts)
+    total_seconds = (hours * 3600) + (minutes * 60) + seconds
+    
+    
+    return total_seconds
 
 def timestamp_maker(gem_output):
     logging.info(f"DEBUG @ timestamp_maker: gemini output before process is: {type(gem_output)}")
@@ -151,15 +159,17 @@ def timestamp_maker(gem_output):
 
     for shot in parsed:
         if "TimeStamp" in shot and "Outcome" in shot:
-            
             if shot["Outcome"].lower() == "make" or shot["Outcome"].lower() == "miss": # TESTING ALL TIMESTAMPSs
-                makes_timestamps.append(shot["TimeStamp"])
+                # make_timestamps.append(shot["TimeStamp"])
+                test_timestamp = shot["TimeStamp"]
+                timestamp_undefined = convert_timestamp_to_seconds(test_timestamp)
+                print(f"DEBUG for timestamp conversion: converted timestamp: {timestamp_undefined}")
+                makes_timestamps.append(timestamp_undefined)
     return makes_timestamps
     #elif isinstance(parsed, dict):
         #raise ValueError("Gemini output is a dict, not a list of shots")
     #else:
     #    raise TypeError(f"Parsed data is not a list or dict, got {type(parsed)}")
-
 
 class CreateHighlightVideo:
     def __init__(self, video_path, output_dir="clips", combined_dir="combined", clip_duration=6):
@@ -172,17 +182,19 @@ class CreateHighlightVideo:
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.combined_dir, exist_ok=True)
 
-    def create_highlights_ffmpeg(self, timestamps):
+    def create_highlights_ffmpeg(self, timestamps, merge_gap=0):
         try:
-            for i, timestamp_str in enumerate(timestamps):
+            
+            for i, (start, end) in enumerate(timestamps):
+                duration = end - start
                 output_path = os.path.join(
                     self.output_dir,
-                    f"clip_{i+1}_{timestamp_str.replace(':', '-')}.mp4"
+                    f"clip_{i+1}_{start.replace}.mp4"
                 )
 
                 cmd = [
                     'ffmpeg',
-                    '-ss', timestamp_str,           # Start time (HH:MM:SS)
+                    '-ss', str(start),           # Start time (HH:MM:SS)
                     '-i', self.video_path,          # Input video
                     '-t', str(self.clip_duration),  # Duration in seconds
                     '-c', 'copy',                   # No re-encoding
@@ -194,6 +206,7 @@ class CreateHighlightVideo:
                 result = subprocess.run(cmd, capture_output=True, text=True)
 
                 if result.returncode == 0:
+                    timestamp_str = time.strftime('%H:%M:%S', time.gmtime(start)) # converting secodns to HH:MM:SS
                     print(f"✓ Created clip {i+1}: {timestamp_str}")
                 else:
                     print(f"✗ Error creating clip {i+1}: {result.stderr}")
@@ -255,8 +268,33 @@ class CreateHighlightVideo:
 class CreateHighlightVideo2:
     def __init__(self, clip_duration=5):
         self.clip_duration = clip_duration
-
-    def create_highlights_ffmpeg(self, timestamps, in_path, out_path):
+    
+    def converting_tester(self, timestamp_list, merge_gap=0):
+        try:
+            if not timestamp_list:
+                    print(f"No timestamps")
+                    return []
+            timestamps_first = sorted(timestamp_list)
+            timestamps = []
+            curr_start = timestamps_first[0]
+            curr_end = curr_start + self.clip_duration
+            for i in range(1, len(timestamps_first)):
+                start_time = timestamps_first[i]
+                end_time = start_time + self.clip_duration
+                # here we are checking for overlapping timestamps
+                if start_time <= curr_end + merge_gap:
+                    curr_end = max(curr_end, end_time)
+                else:
+                    timestamps.append((curr_start, curr_end))
+                    curr_start, curr_end = start_time, end_time
+            timestamps.append((curr_start, curr_end))
+            print(f"Final merged timestamps (in seconds) with time range: {timestamps}")
+            return timestamps
+        except Exception as e:
+            print(f"Error: {e}")
+            return []
+    
+    def create_highlights_ffmpeg(self, timestamps_input, in_path, out_path):
         """
         Creates highlight video from timestamps and saves to out_path
         
@@ -265,24 +303,26 @@ class CreateHighlightVideo2:
             in_path: Input video file path
             out_path: Output highlight video file path
         """
-        if not timestamps:
+        if not timestamps_input:
             print("No timestamps provided")
             return False
-            
+        
         # Use temporary directory for intermediate clips
         with tempfile.TemporaryDirectory() as temp_dir:
             clip_files = []
             
             try:
+                timestamps = self.converting_tester(timestamps_input)
+                
                 # Create individual clips
-                for i, timestamp_str in enumerate(timestamps):
+                for i, (start, end) in enumerate(timestamps):
                     clip_path = os.path.join(temp_dir, f"clip_{i+1}.mp4")
-                    
+                    duration = end - start
                     cmd = [
                         'ffmpeg',
-                        '-ss', timestamp_str,           # Start time (HH:MM:SS)
+                        '-ss', str(start),           # Start time (HH:MM:SS)
                         '-i', in_path,                  # Input video
-                        '-t', str(self.clip_duration),  # Duration in seconds
+                        '-t', str(duration),  # Duration in seconds
                         '-c', 'copy',                   # No re-encoding
                         '-avoid_negative_ts', 'make_zero',
                         '-y',                           # Overwrite
@@ -299,7 +339,7 @@ class CreateHighlightVideo2:
 
                     if result.returncode == 0:
                         clip_files.append(clip_path)
-                        print(f"✓ Created clip {i+1}: {timestamp_str}")
+                        print(f"✓ Created clip {i+1}: {start} seconds to {end} seconds.")
                     else:
                         print(f"✗ Error creating clip {i+1}: {result.stderr}")
 

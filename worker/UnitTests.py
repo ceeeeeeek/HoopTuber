@@ -1,8 +1,8 @@
-from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker, strip_code_fences
+from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo, CreateHighlightVideo2, timestamp_maker, strip_code_fences, convert_timestamp_to_seconds
 import json
 
 if __name__ == "__main__":
-    
+    Creator = CreateHighlightVideo2()
     file_path = "videoDataset/meshooting2.mp4"
     res = process_video_and_summarize(file_path)
     print(f"DEBUG: gemini is outputting: {type(res)}, coming from worker/VideoInputTest.py")
@@ -28,4 +28,9 @@ if __name__ == "__main__":
     """
     for shot in parsed_data:
         print(shot)
+    print(f"TESTING SECONDS CONVERSION")
+    checking1 = timestamp_maker(parsed_data)
+    checking2 = Creator.converting_tester(checking1)
+    print(checking2)
+    # TESTING TIMESTAMP CONVERSION
     

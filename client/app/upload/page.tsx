@@ -30,7 +30,7 @@ import Link from "next/link"
 import ProfileDropdown from "../app-components/ProfileDropdown"
 // "https://hooptuber-fastapi-web-service-docker.onrender.com"
 // "http://localhost:8000"
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 console.log("API_BASE =", process.env.NEXT_PUBLIC_API_BASE);
 
 
@@ -470,6 +470,77 @@ export default function UploadPage() {
                 controls            // controls appear once playing starts
                 onEnded={() => setEnded(true)}
               />
+
+{/* === Highlight Adjuster UI (timestamps only) === */}
+{uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
+  <div className="mt-8 bg-white rounded-lg shadow p-4">
+    <h3 className="text-lg font-semibold mb-4 flex items-center">
+      <Zap className="w-4 h-4 mr-2 text-orange-500" />
+      Adjust Highlights
+    </h3>
+
+    <p className="text-sm text-gray-600 mb-6">
+      Adjust each highlight’s start and end time below.  
+      This is the preview UI — functionality will be added later.
+    </p>
+
+    <div className="space-y-6">
+      {uploadResult.shotEvents.map((shot, idx) => (
+        <div key={idx} className="border rounded-lg p-3 bg-gray-50">
+          {/* Header row with timestamp and confirm button */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center space-x-2">
+              <Badge variant="secondary">
+                Highlight {idx + 1}
+              </Badge>
+              <span className="text-xs text-gray-500">
+                {shot.TimeStamp}
+              </span>
+            </div>
+            <Button size="sm" variant="outline">
+              Confirm
+            </Button>
+          </div>
+
+          {/* Mock slider for highlight range (visual placeholder) */}
+          <div className="px-2">
+            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+              <span>Start</span>
+              <span>End</span>
+            </div>
+            <div className="w-full relative">
+              {/* Timeline bar */}
+              <div className="h-2 bg-gray-200 rounded-full relative">
+                <div
+                  className="absolute h-2 bg-orange-500 rounded-full"
+                  style={{
+                    left: `${(idx * 15) % 80}%`,
+                    width: "20%",
+                  }}
+                />
+              </div>
+              <div className="flex justify-between mt-2 text-xs text-gray-400">
+                <span>+/- 2s</span>
+                <span>+/- 2s</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <div className="flex justify-end mt-6">
+      <Button variant="outline" className="mr-2">
+        Reset Adjustments
+      </Button>
+      <Button className="bg-orange-500 hover:bg-orange-600 text-white">
+        Save Adjustments
+      </Button>
+    </div>
+  </div>
+)}
+
+
 
                       {/* NEW: show highlight download when ready */}
                       {downloadUrl && (
