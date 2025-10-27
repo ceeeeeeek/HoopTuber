@@ -97,15 +97,15 @@ export default function LandingPage() {
       <section className="py-20 px-4">
         <div className="container mx-auto text-center">
           <Badge className="mb-4 bg-orange-100 text-orange-800 hover:bg-orange-100">
-            AI-Powered Basketball Highlights
+            An AI-Powered Basketball Highlight Maker
           </Badge>
           <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
             Turn Your Game Into
             <span className="text-orange-500"> Epic Highlights</span>
           </h1>
           <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-            Upload your basketball footage and let AI automatically detect every basket, creating highlight-style reels
-            that showcase your best moments.
+            Upload your basketball footage and let HoopTuber's AI automatically detect every basket, creating highlight-style reels
+            that showcase your best plays on the court
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <TryFreeUploadButton
@@ -144,7 +144,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Record & Upload</h3>
                 <p className="text-gray-600">
-                  Upload any game footage.
+                  Record & upload your pickup basketball footage
                 </p>
               </CardContent>
             </Card>
@@ -155,7 +155,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">AI Detection</h3>
                 <p className="text-gray-600">
-                  Our AI automatically detects every basket and captures the 5 seconds leading up to each shot.
+                  Use our AI to automatically detect your team's baskets and key plays
                 </p>
               </CardContent>
             </Card>
@@ -166,7 +166,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Share & Connect</h3>
                 <p className="text-gray-600">
-                  Create TikTok-style reels, share with your team, and connect with the basketball community.
+                  Create highlights, share them with friends, & build your own basketball community
                 </p>
               </CardContent>
             </Card>
@@ -299,7 +299,7 @@ export default function LandingPage() {
         <div className="container mx-auto text-center">
           <h2 className="text-3xl font-bold mb-4">Ready to Elevate Your Game?</h2>
           <p className="text-xl mb-8 opacity-90">
-            Join thousands of players already using HoopTuber to showcase their skills.
+            Join hundreds of local hoopers & support your local hoop
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             {/* <Button size="lg" variant="secondary" asChild>
@@ -335,7 +335,7 @@ export default function LandingPage() {
                 </div>
                 <span className="text-xl font-bold">HoopTuber</span>
               </div>
-              <p className="text-gray-400">AI-powered basketball highlights for every player.</p>
+              <p className="text-gray-400">AI-powered & ready for pickup</p>
             </div>
             <div>
               <h4 className="font-semibold mb-4">Product</h4>
