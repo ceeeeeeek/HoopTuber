@@ -1,44 +1,63 @@
-//client/app/upload/page.tsx - 10-23-25 Thursday Update
+// app/upload/page.tsx
+// UNCHANGED: client component directive
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";                         // PRESERVED
-import { useRouter, useSearchParams } from "next/navigation";                             // NEW: useSearchParams
-import Link from "next/link";                                                             // PRESERVED
+// UNCHANGED: React + hooks
+import { useEffect, useRef, useState, useCallback } from "react";
 
-import { Button } from "@/components/ui/button";                                          // PRESERVED
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";         // PRESERVED
-import { Progress } from "@/components/ui/progress";                                      // PRESERVED
-import { Badge } from "@/components/ui/badge";                                            // PRESERVED
-import SelectFromDashboard from "./SelectFromDashboard";                                  // NEW
+// UNCHANGED: UI kit
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+
+// UNCHANGED: routing helper
+import { useRouter } from "next/navigation";
+
+// NEW: read the signed-in user so we can pass x-owner-email to FastAPI
+import { useSession } from "next-auth/react";
 
 import {
-  Upload, Play, CheckCircle, Zap, ArrowLeft, FileVideo, BarChart3,
-  Brain, Target, TrendingUp, Clock, MapPin, User, Download,
-} from "lucide-react";                                                                    // PRESERVED
+  // UNCHANGED: icons
+  Upload,
+  Play,
+  CheckCircle,
+  Zap,
+  ArrowLeft,
+  FileVideo,
+  BarChart3,
+  Brain,
+  Target,
+  TrendingUp,
+  // Clock, MapPin, User,  // (kept imported in case you re-enable the legacy section)
+  Download, // UNCHANGED in your file: used for the download button
+} from "lucide-react";
 
-import ProfileDropdown from "../app-components/ProfileDropdown";                          // PRESERVED
+import Link from "next/link";
+import ProfileDropdown from "../app-components/ProfileDropdown";
 
-// PRESERVED: API base (works with your FastAPI)
+// UNCHANGED fallback: keep your existing base + default
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 console.log("API_BASE =", process.env.NEXT_PUBLIC_API_BASE);
 
-// PRESERVED: types
+// UNCHANGED: types used by the “legacy immediate analysis” section and job polling
 interface GeminiShotEvent {
-  Subject: string
-  Location: string
-  ShotType: string
-  TimeStamp: string
-  Outcome: string
+  Subject: string;
+  Location: string;
+  ShotType: string;
+  TimeStamp: string;
+  Outcome: string;
 }
+
 interface UploadResult {
   success: boolean;
-  videoUrl?: string;
-  processingId?: string;
-  fileName?: string;
-  fileSize?: number;
-  method?: string;
-  verified?: boolean;
-  shotEvents?: GeminiShotEvent[];
+  videoUrl?: string;      // UNCHANGED
+  processingId?: string;  // UNCHANGED
+  fileName?: string;      // UNCHANGED
+  fileSize?: number;      // UNCHANGED
+  method?: string;        // UNCHANGED
+  verified?: boolean;     // UNCHANGED
+  shotEvents?: GeminiShotEvent[]; // UNCHANGED (legacy)
   gameStats?: {
     totalShots: number;
     madeShots: number;
@@ -47,6 +66,7 @@ interface UploadResult {
     locations: Record<string, number>;
   };
 }
+
 interface JobRecord {
   jobId: string;
   status: "queued" | "processing" | "done" | "error" | "publish_error";
@@ -56,38 +76,36 @@ interface JobRecord {
 }
 
 export default function UploadPage() {
+  // UNCHANGED: protect route; bounce to /login if no session
   const router = useRouter();
-  const searchParams = useSearchParams();                                                // NEW
-
-  // PRESERVED: ensure user is logged in (and cache email for API writes)
-  const [userEmail, setUserEmail] = useState<string | undefined>(undefined)
   useEffect(() => {
     const checkSession = async () => {
-      const res = await fetch("/api/auth/session", { method: "GET", credentials: "include", cache: "no-store" })
-      const data = await res.json().catch(() => null)
-      if (!data?.user) {
-        router.push("/login?next=/upload")
-        return
-      }
-      setUserEmail((data.user as any)?.email)
-    }
-    checkSession()
-  }, [router])
+      const res = await fetch("/api/auth/session", { method: "GET", credentials: "include" });
+      const data = await res.json();
+      if (!data?.user) router.push("/login?next=/upload");
+    };
+    checkSession();
+  }, [router]);
 
-  // PRESERVED: base UI states
-  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete">("idle");
+  // NEW: read session so we can pass x-owner-email on /upload
+  const { data: session } = useSession();                 // NEW
+  const ownerEmail = session?.user?.email ?? undefined;   // NEW
+
+  // UNCHANGED: base UI state
+  const [uploadState, setUploadState] =
+    useState<"idle" | "uploading" | "processing" | "complete">("idle");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [progress, setProgress] = useState(0);
 
-  // PRESERVED + NEW
-  const [jobId, setJobId] = useState<string | null>(null);                                // NEW
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);                    // NEW
+  // UNCHANGED: job + download tracking
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
-  // PRESERVED: timer ref
-  const pollRef = useRef<number | null>(null);
+  // CHANGED: keep a browser-safe interval id (number vs NodeJS.Timer)
+  const pollRef = useRef<number | null>(null); // CHANGED
 
-  // PRESERVED: manual file select
+  // UNCHANGED: file chooser
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -99,69 +117,7 @@ export default function UploadPage() {
     setDownloadUrl(null);
   }, []);
 
-  // NEW: adopt a RAW from a URL (dashboard handoff)
-  const adoptRawFromUrl = useCallback(async (url: string, fileName = "raw-video.mp4") => {
-    try {
-      const res = await fetch(url, { credentials: "omit" }); // signed URLs typically work with omit
-      if (!res.ok) throw new Error(`Failed to fetch RAW: ${res.status}`);
-      const blob = await res.blob();
-      const ext = (fileName.split(".").pop() || "mp4").toLowerCase();
-      const mime = blob.type || (ext === "mov" ? "video/quicktime" : "video/mp4");
-      const file = new File([blob], fileName, { type: mime });
-      setSelectedFile(file);
-      setUploadState("idle");
-      setUploadResult(null);
-      setProgress(0);
-      setJobId(null);
-      setDownloadUrl(null);
-    } catch (e) {
-      console.warn("Unable to auto-select RAW (CORS or URL issue).", e);
-    }
-  }, []);
-
-  // NEW: when navigating from dashboard, auto-select the chosen RAW
-  useEffect(() => {
-    (async () => {
-      // 1) Highest priority: explicit URL + optional filename
-      const rawUrl = searchParams.get("rawUrl");
-      const rawName = searchParams.get("fileName") || undefined;
-      if (rawUrl) {
-        await adoptRawFromUrl(rawUrl, rawName);
-        return;
-      }
-
-      // 2) Next: rawId -> resolve via GET /api/rawVideos (no API change required)
-      const rawId = searchParams.get("rawId");
-      if (rawId) {
-        try {
-          const r = await fetch("/api/rawVideos?limit=200", { cache: "no-store" });
-          const j = await r.json();
-          if (j?.success) {
-            const hit = (j.videos as any[]).find((x) => x.id === rawId);
-            if (hit?.url) {
-              await adoptRawFromUrl(hit.url, hit.fileName || "raw-video.mp4");
-              return;
-            }
-          }
-        } catch {}
-      }
-
-      // 3) Fallback: sessionStorage “stash” created by the dashboard
-      try {
-        const stash = sessionStorage.getItem("ht:rawForUpload");
-        if (stash) {
-          const it = JSON.parse(stash) as { url: string; fileName?: string };
-          if (it?.url) {
-            await adoptRawFromUrl(it.url, it.fileName || "raw-video.mp4");
-            sessionStorage.removeItem("ht:rawForUpload");
-          }
-        }
-      } catch {}
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, adoptRawFromUrl]);
-
-  // PRESERVED helpers
+  // UNCHANGED: a few helpers still used in optional/legacy render
   const formatTimestamp = (ts: string) => ts || "0:00";
   const getShotOutcomeColor = (outcome: string) =>
     outcome.toLowerCase().includes("make") ? "bg-green-500" : "bg-red-500";
@@ -173,7 +129,6 @@ export default function UploadPage() {
     const totalShots = shotEvents.length;
     const madeShots = shotEvents.filter((s) => s.Outcome.toLowerCase().includes("make")).length;
     const shootingPercentage = totalShots > 0 ? Math.round((madeShots / totalShots) * 100) : 0;
-
     const shotTypes: Record<string, number> = {};
     const locations: Record<string, number> = {};
     for (const s of shotEvents) {
@@ -183,47 +138,15 @@ export default function UploadPage() {
     return { totalShots, madeShots, shootingPercentage, shotTypes, locations };
   };
 
-  // PRESERVED polling
+  // ---- polling controls (browser-safe) ----
   const stopPolling = () => {
     if (pollRef.current !== null) {
-      window.clearInterval(pollRef.current);
+      window.clearInterval(pollRef.current);   // CHANGED
       pollRef.current = null;
     }
   };
 
-  // NEW: persist to dashboard via your Next.js API routes
-  const persistResultsToDashboard = async (args: {
-    rawGcsUri?: string; highlightUrl?: string; filename: string; size: number;
-    jobId: string; shotEvents?: GeminiShotEvent[];
-  }) => {
-    try {
-      await fetch("/api/rawVideos", {
-        method: "POST",
-        body: JSON.stringify({
-          fileName: args.filename,
-          size: args.size,
-          sourceUri: args.rawGcsUri ?? null,
-          jobId: args.jobId,
-          ownerEmail: userEmail ?? null,
-        }),
-      })
-      if (args.highlightUrl) {
-        await fetch("/api/highlightVideos", {
-          method: "POST",
-          body: JSON.stringify({
-            jobId: args.jobId,
-            downloadUrl: args.highlightUrl,
-            ownerEmail: userEmail ?? null,
-            stats: args.shotEvents ? calculateGameStats(args.shotEvents) : null,
-          }),
-        })
-      }
-    } catch (e) {
-      console.warn("Note: could not persist to Firestore yet:", e)
-    }
-  }
-
-  const startPolling = (id: string, filename: string, size: number) => {
+  const startPolling = (id: string) => {
     stopPolling();
     pollRef.current = window.setInterval(async () => {
       try {
@@ -239,13 +162,15 @@ export default function UploadPage() {
         }
 
         if (data.status === "done" && data.outputGcsUri) {
+          // fetch signed URL + (optional) shot events
           const dlRes = await fetch(`${API_BASE}/jobs/${id}/download`);
           if (dlRes.ok) {
             const j = await dlRes.json();
             const shotEvents: GeminiShotEvent[] = j.shot_events || [];
-            const gameStats = shotEvents.length > 0 ? calculateGameStats(shotEvents) : undefined;
+            const gameStats =
+              shotEvents.length > 0 ? calculateGameStats(shotEvents) : undefined;
 
-            setDownloadUrl(j.url);
+            setDownloadUrl(j.url ?? null);
             setUploadResult((prev) => ({
               ...(prev || { success: true }),
               videoUrl: j.url,
@@ -253,16 +178,6 @@ export default function UploadPage() {
               shotEvents,
               gameStats,
             }));
-
-            // NEW: write raw + highlight entries used by /dashboard
-            await persistResultsToDashboard({
-              rawGcsUri: data.videoGcsUri,
-              highlightUrl: j.url,
-              filename,
-              size,
-              jobId: id,
-              shotEvents,
-            })
           }
           stopPolling();
           setUploadState("complete");
@@ -275,11 +190,12 @@ export default function UploadPage() {
     }, 3000);
   };
 
+  // NEW: cleanup any live poller on unmount
   useEffect(() => () => stopPolling(), []);
 
-  // PRESERVED upload handler (now calls startPolling with filename/size)
+  // ------- Upload → enqueue job (now with identity header) -------
   const handleUpload = async () => {
-    if (!selectedFile) return
+    if (!selectedFile) return;
 
     setUploadState("uploading");
     setProgress(15);
@@ -287,10 +203,14 @@ export default function UploadPage() {
     const formData = new FormData();
     formData.append("video", selectedFile);
 
+    // CHANGED: progress interval typed as number (browser)
     let progressInterval: number | null = window.setInterval(() => {
       setProgress((prev) => {
         if (prev >= 90) {
-          if (progressInterval !== null) { window.clearInterval(progressInterval); progressInterval = null; }
+          if (progressInterval !== null) {
+            window.clearInterval(progressInterval);
+            progressInterval = null;
+          }
           return 90;
         }
         return prev + 10;
@@ -298,13 +218,23 @@ export default function UploadPage() {
     }, 500);
 
     try {
-      const response = await fetch(`${API_BASE}/upload`, { method: "POST", body: formData });
+      // NEW: pass x-owner-email when we have it so the worker
+      //      can create the Highlights doc with the right owner.
+      const response = await fetch(`${API_BASE}/upload`, {
+        method: "POST",
+        body: formData,
+        headers: ownerEmail ? { "x-owner-email": ownerEmail } : undefined, // NEW
+      });
 
-      if (progressInterval !== null) { window.clearInterval(progressInterval); progressInterval = null; }
+      if (progressInterval !== null) {
+        window.clearInterval(progressInterval);
+        progressInterval = null;
+      }
       setProgress(100);
 
       if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
 
+      // NEW: expect { ok, jobId } in queue flow, but support legacy events array too
       const result = await response.json();
 
       if (result?.jobId) {
@@ -316,13 +246,13 @@ export default function UploadPage() {
           fileSize: selectedFile.size,
           method: "queue_v1",
           verified: true,
-          shotEvents: [],
+          shotEvents: [], // no immediate events in queue flow
         });
-        startPolling(result.jobId, selectedFile.name, selectedFile.size); // NEW
+        startPolling(result.jobId);
         return;
       }
 
-      // Legacy direct analysis path
+      // UNCHANGED: legacy immediate-analysis fallback
       const shotEvents: GeminiShotEvent[] =
         result.shot_events || result.results?.shot_events || (Array.isArray(result) ? result : []);
       if (!Array.isArray(shotEvents)) throw new Error("Invalid response format: expected jobId or shot events array");
@@ -345,7 +275,7 @@ export default function UploadPage() {
     }
   };
 
-  // PRESERVED reset
+  // UNCHANGED: reset UX
   const resetUpload = () => {
     setUploadState("idle");
     setSelectedFile(null);
@@ -356,9 +286,31 @@ export default function UploadPage() {
     stopPolling();
   };
 
+  // UNCHANGED: simple player helpers
+  const [ended, setEnded] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  function startPlayback() {
+    setPlaying(true);
+    setEnded(false);
+    requestAnimationFrame(() => videoRef.current?.play().catch(() => {}));
+  }
+
+  // UNCHANGED: direct browser download via signed URL
+  const handleDownload = () => {
+    if (!downloadUrl) return;
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = "hooptuber_highlight.mp4";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // ======== UI (preserved styling) ========
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
-      {/* Header */}
+      {/* Header (UNCHANGED look) */}
       <header className="border-b bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
@@ -379,7 +331,9 @@ export default function UploadPage() {
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-4">Upload Basketball Video</h1>
-            <p className="text-gray-600">Upload your basketball footage for AI-powered analysis and highlight generation</p>
+            <p className="text-gray-600">
+              Upload your basketball footage for AI-powered analysis and highlight generation
+            </p>
           </div>
 
           {/* Upload Form */}
@@ -393,20 +347,6 @@ export default function UploadPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-
-                  {/* NEW: pick an existing RAW from your dashboard */}
-                  <SelectFromDashboard
-                    onSelect={async (item) => {
-                      if (!item) return;
-                      sessionStorage.setItem("ht:rawForUpload", JSON.stringify({ url: item.url, fileName: item.fileName }));
-                      await adoptRawFromUrl(item.url, item.fileName);
-                    }}
-                  />
-
-                  {/* Divider */}
-                  <div className="text-center text-sm text-gray-500">or upload from your computer</div>
-
-                  {/* PRESERVED: dropzone + input */}
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-orange-300 transition-colors">
                     <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold mb-2">
@@ -427,7 +367,7 @@ export default function UploadPage() {
                         <div className="text-left">
                           <p className="text-sm text-blue-800 font-medium">{selectedFile.name}</p>
                           <p className="text-sm text-blue-600">
-                            {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • {selectedFile.type || "video/mp4"}
+                            {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • {selectedFile.type}
                           </p>
                           <p className="text-sm text-green-600 mt-1">✅ Ready for AI analysis</p>
                         </div>
@@ -435,25 +375,806 @@ export default function UploadPage() {
                     )}
                   </div>
 
-                  {/* PRESERVED: analyze button */}
                   {selectedFile && (
-                    <Button onClick={handleUpload} className="w-full bg-orange-500 hover:bg-orange-600" size="lg">
+                    <Button
+                      onClick={handleUpload}
+                      className="w-full bg-orange-500 hover:bg-orange-600"
+                      size="lg"
+                    >
                       <Brain className="w-4 h-4 mr-2" />
                       Analyze Basketball Video
                     </Button>
                   )}
 
-                  {/* PRESERVED: feature cards */}
-                  {/* ... unchanged marketing cards ... */}
+
+                  {/* UNCHANGED: 3 feature cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-4 bg-blue-50 rounded-lg text-center">
+                      <Target className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+                      <h4 className="font-semibold text-blue-900 mb-1">Shot Detection</h4>
+                      <p className="text-sm text-blue-700">AI identifies every shot attempt with precision</p>
+                    </div>
+                    <div className="p-4 bg-green-50 rounded-lg text-center">
+                      <TrendingUp className="w-8 h-8 text-green-600 mx-auto mb-2" />
+                      <h4 className="font-semibold text-green-900 mb-1">Performance Stats</h4>
+                      <p className="text-sm text-green-700">Detailed shooting percentages and analytics</p>
+                    </div>
+                    <div className="p-4 bg-purple-50 rounded-lg text-center">
+                      <Zap className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+                      <h4 className="font-semibold text-purple-900 mb-1">Auto Highlights</h4>
+                      <p className="text-sm text-purple-700">Best moments automatically identified</p>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Uploading / Processing / Complete sections stay the same as you had */}
-          {/* ... (unchanged sections omitted here for brevity) ... */}
+          {/* Uploading / Processing */}
+          {(uploadState === "uploading" || uploadState === "processing") && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Brain className="w-5 h-5 mr-2 text-orange-500" />
+                  {uploadState === "uploading" ? "Uploading Video" : "Processing Video"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <Progress value={progress} className="w-full" />
+                  <p className="text-center text-gray-600">
+                    {uploadState === "uploading" ? "Uploading" : "Analyzing"} {selectedFile?.name}
+                    … {progress}%
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Complete */}
+          {uploadState === "complete" && uploadResult && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <CheckCircle className="w-5 h-5 mr-2 text-green-500" />
+                    Basketball Analysis Complete!
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center space-y-4">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                      <CheckCircle className="w-8 h-8 text-green-500" />
+                    </div>
+
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold mb-2">AI Analysis Complete!</h3>
+                      <p className="text-gray-600 mb-4">
+                        {uploadResult.fileName} ({(uploadResult.fileSize! / 1024 / 1024).toFixed(2)} MB)
+                      </p>
+
+                      {/* UNCHANGED: preview */}
+                      <div className="relative w-full max-w-md mx-auto">
+                        <video
+                          ref={videoRef}
+                          className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
+                          src={downloadUrl ?? undefined}
+                          muted
+                          playsInline
+                          controls
+                          onEnded={() => setEnded(true)}
+                        />
+                        {downloadUrl && (
+                          <Button onClick={handleDownload} className="bg-orange-500 hover:bg-orange-600 mt-4">
+                            <Download className="w-4 h-4 mr-2" />
+                            Download Highlight
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* UNCHANGED: optional legacy “Adjust Highlights” block left intact */}
+                    {/*
+                      If you later want to re-enable the shot-by-shot adjuster,
+                      uploadResult.shotEvents already carries those events.
+                    */}
+
+                    <div className="flex flex-col sm:flex-row gap-3 mt-6">
+                      <Button className="flex-1" asChild>
+                        <Link href="/upload/enhanced">
+                          <BarChart3 className="w-4 h-4 mr-2" />
+                          View Detailed Analysis
+                        </Link>
+                      </Button>
+                      <Button variant="outline" className="flex-1" onClick={resetUpload}>
+                        Analyze Another Video
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
+
+//------------------------------------------------------------------------
+// //app/upload/page.tsx (app\upload\page.tsx VERSION as of Thursday 09-11-25)
+
+// "use client";
+
+// import { useEffect, useRef, useState, useCallback } from "react";
+// import { Button } from "@/components/ui/button";
+// import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// import { Progress } from "@/components/ui/progress";
+// import { Badge } from "@/components/ui/badge";
+// import { useRouter } from "next/navigation";
+// import { useSession } from "next-auth/react";
+
+// import {
+//   Upload,
+//   Play,
+//   CheckCircle,
+//   Zap,
+//   ArrowLeft,
+//   FileVideo,
+//   BarChart3,
+//   Brain,
+//   Target,
+//   TrendingUp,
+//   Clock,
+//   MapPin,
+//   User,
+//   Download, // NEW: icon for download button
+// } from "lucide-react";
+// import Link from "next/link"
+// import ProfileDropdown from "../app-components/ProfileDropdown"
+// // "https://hooptuber-fastapi-web-service-docker.onrender.com"
+// // "http://localhost:8000"
+// const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+// console.log("API_BASE =", process.env.NEXT_PUBLIC_API_BASE);
+
+
+// interface GeminiShotEvent {
+//   Subject: string;
+//   Location: string;
+//   ShotType: string;
+//   TimeStamp: string;
+//   Outcome: string;
+// }
+
+// interface GeminiShotEvent {
+//   Subject: string
+//   Location: string
+//   ShotType: string
+//   TimeStamp: string
+//   Outcome: string
+// }
+
+// interface UploadResult {
+//   success: boolean;
+//   videoUrl?: string; // NEW: signed URL once worker completes
+//   processingId?: string; // NEW: mirrors jobId
+//   fileName?: string;
+//   fileSize?: number;
+//   method?: string;
+//   verified?: boolean;
+//   shotEvents?: GeminiShotEvent[]; // UNCHANGED: legacy immediate analysis support
+//   gameStats?: {
+//     totalShots: number;
+//     madeShots: number;
+//     shootingPercentage: number;
+//     shotTypes: Record<string, number>;
+//     locations: Record<string, number>;
+//   };
+// }
+
+// interface JobRecord {
+//   jobId: string;
+//   status: "queued" | "processing" | "done" | "error" | "publish_error";
+//   videoGcsUri?: string;
+//   outputGcsUri?: string;
+//   error?: string;
+// }
+
+
+
+// export default function UploadPage() {
+//   const router = useRouter();
+//   useEffect(() => {
+//     const checkSession = async () => {
+//       const res = await fetch("/api/auth/session", {
+//         method: "GET",
+//         credentials: "include",
+//       });
+//       const data = await res.json();
+//       if (!data?.user) {
+//         router.push("/login?next=/upload");
+//       }
+//     };
+
+//     checkSession();
+//   }, [router]);
+
+
+//   // UNCHANGED: base UI states
+//   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete">("idle");
+//   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+//   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+//   const [progress, setProgress] = useState(0);
+
+//   // NEW: track job id and downloadable URL from worker output
+//   // Job + download tracking
+//   const [jobId, setJobId] = useState<string | null>(null);
+//   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+
+//   // CHANGED: browser timers use number, not NodeJS.Timer
+//   // keep polling interval id (browser timers return number)
+//   const pollRef = useRef<number | null>(null);
+
+//   // UNCHANGED: file select handler, with a bit of reset for new states
+//   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+//     const file = event.target.files?.[0];
+//     if (!file) return;
+//     setSelectedFile(file);
+//     setUploadState("idle");
+//     setUploadResult(null);
+//     setProgress(0);
+//     setJobId(null);
+//     setDownloadUrl(null);
+//   }, []);
+
+//   // ---- UNCHANGED helpers for UI ----
+//   const formatTimestamp = (ts: string) => ts || "0:00";
+//   const getShotOutcomeColor = (outcome: string) =>
+//     outcome.toLowerCase().includes("make") ? "bg-green-500" : "bg-red-500";
+//   const getShotOutcomeBadge = (outcome: string): "default" | "secondary" =>
+//     outcome.toLowerCase().includes("make") ? "default" : "secondary";
+//   const formatShotType = (shotType: string) => shotType.replace(/([A-Z])/g, " $1").trim();
+
+//   const calculateGameStats = (shotEvents: GeminiShotEvent[]) => {
+//     const totalShots = shotEvents.length;
+//     const madeShots = shotEvents.filter((s) => s.Outcome.toLowerCase().includes("make")).length;
+//     const shootingPercentage = totalShots > 0 ? Math.round((madeShots / totalShots) * 100) : 0;
+
+//     const shotTypes: Record<string, number> = {};
+//     const locations: Record<string, number> = {};
+//     for (const s of shotEvents) {
+//       shotTypes[s.ShotType] = (shotTypes[s.ShotType] || 0) + 1;
+//       locations[s.Location] = (locations[s.Location] || 0) + 1;
+//     }
+
+//     return { totalShots, madeShots, shootingPercentage, shotTypes, locations };
+//   };
+
+//   // NEW: polling helpers for queue-based flow
+//   // ---- polling controls ----
+//   const stopPolling = () => {
+//     if (pollRef.current !== null) {
+//       window.clearInterval(pollRef.current); // CHANGED: window.clearInterval(number)
+//       pollRef.current = null;
+//     }
+//   };
+
+//   const startPolling = (id: string) => {
+//   stopPolling();
+//   pollRef.current = window.setInterval(async () => {
+//     try {
+//       const res = await fetch(`${API_BASE}/jobs/${id}`);
+//       if (!res.ok) throw new Error(`status ${res.status}`);
+//       const data: JobRecord = await res.json();
+
+//       if (data.status === "error" || data.status === "publish_error") {
+//         stopPolling();
+//         setUploadState("idle");
+//         console.error("Job failed:", data.error || "unknown");
+//         return;
+//       }
+
+//       if (data.status === "done" && data.outputGcsUri) {
+//         // Fetch final download + analysis
+//         const dlRes = await fetch(`${API_BASE}/jobs/${id}/download`);
+//         if (dlRes.ok) {
+//           const j = await dlRes.json();
+
+//           const shotEvents: GeminiShotEvent[] = j.shot_events || [];
+//           const gameStats = shotEvents.length > 0 ? calculateGameStats(shotEvents) : undefined;
+
+//           setDownloadUrl(j.url);
+//           setUploadResult((prev) => ({
+//             ...(prev || { success: true }),
+//             videoUrl: j.url,
+//             processingId: id,
+//             shotEvents,
+//             gameStats,
+//           }));
+//         }
+//         stopPolling();
+//         setUploadState("complete");
+//       } else {
+//         setUploadState("processing");
+//       }
+//     } catch (e) {
+//       console.warn("Polling error:", e);
+//     }
+//   }, 3000);
+// };
+
+
+//   // NEW: cleanup on unmount
+//   useEffect(() => {
+//     return () => stopPolling();
+//   }, []);
+
+//   // ------- CHANGED: upload now talks to FastAPI upload endpoint -------
+//   // ---- upload handler ----
+//   const handleUpload = async () => {
+//     if (!selectedFile) return
+
+//     setUploadState("uploading");
+//     setProgress(15);
+
+//     const formData = new FormData();
+//     formData.append("video", selectedFile);
+
+//     // CHANGED: progress interval typed as number
+//     // visual progress during POST (client-side only)
+//     let progressInterval: number | null = window.setInterval(() => {
+//       setProgress((prev) => {
+//         if (prev >= 90) {
+//           if (progressInterval !== null) {
+//             window.clearInterval(progressInterval); // CHANGED
+//             progressInterval = null;
+//           }
+//           return 90;
+//         }
+//         return prev + 10;
+//       });
+//     }, 500);
+
+//     try {
+//       const response = await fetch(`${API_BASE}/upload`, { method: "POST", body: formData });
+
+//       if (progressInterval !== null) {
+//         window.clearInterval(progressInterval); // CHANGED
+//         progressInterval = null;
+//       }
+//       setProgress(100);
+
+//       if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
+
+//       const result = await response.json(); // { ok, jobId, status, videoGcsUri } OR legacy events // NEW: expect { jobId } in queue flow
+      
+//       // New queue-based flow – start polling
+//       if (result?.jobId) {
+//         setJobId(result.jobId);
+//         setUploadState("processing");
+//         setUploadResult({
+//           success: true,
+//           fileName: selectedFile.name,
+//           fileSize: selectedFile.size,
+//           method: "queue_v1",
+//           verified: true,
+//           shotEvents: [], // no immediate events in queue flow
+//         });
+//         startPolling(result.jobId);
+//         return;
+//       }
+
+//       // UNCHANGED: legacy immediate analysis path (array of events)
+//       // Legacy: immediate analysis response (array of shot events)
+//       const shotEvents: GeminiShotEvent[] =
+//         result.shot_events || result.results?.shot_events || (Array.isArray(result) ? result : []);
+//       if (!Array.isArray(shotEvents)) throw new Error("Invalid response format: expected jobId or shot events array");
+
+//       const gameStats = calculateGameStats(shotEvents);
+//       setUploadResult({
+//         success: true,
+//         videoUrl: "",
+//         fileName: selectedFile.name,
+//         fileSize: selectedFile.size,
+//         method: "gemini_ai",
+//         verified: true,
+//         shotEvents,
+//         gameStats,
+//       });
+//       setUploadState("complete");
+//     } catch (err) {
+//       console.error("Upload error:", err);
+//       setUploadState("idle");
+//     }
+//   };
+
+//     // UNCHANGED: reset, with added cleanup of new state
+//   const resetUpload = () => {
+//     setUploadState("idle");
+//     setSelectedFile(null);
+//     setUploadResult(null);
+//     setProgress(0);
+//     setJobId(null); // NEW: reset job id
+//     setDownloadUrl(null); // NEW: reset signed URL
+//     stopPolling(); // NEW: stop any active poller
+//   };
+//   const [ended, setEnded] = useState(false);
+//   const [playing, setPlaying] = useState(false);
+//   const videoRef = useRef<HTMLVideoElement>(null);
+
+//   function startPlayback() {
+//     setPlaying(true);
+//     setEnded(false);
+//     // give the <video> a tick to mount before playing
+//     requestAnimationFrame(() => videoRef.current?.play().catch(() => {}));
+//   }
+
+//   // const handleDownload = async () =>{
+//   //   const response = await fetch(downloadUrl);
+//   //   const blob = await response.blob();
+//   //   const link = document.createElement('a');
+//   //   link.href = window.URL.createObjectURL(blob);
+//   //   link.download = 'highlight.mp4';
+//   //   document.body.appendChild(link);
+//   //   link.click();
+//   //   document.body.removeChild(link);
+//   // };
+
+//   // NEW: download handler - Should directly download from signed URL
+//   const handleDownload = () => {
+//   const link = document.createElement("a");
+//   link.href = downloadUrl;
+//   link.download = "hooptuber_highlight.mp4";
+//   document.body.appendChild(link);
+//   link.click();
+//   document.body.removeChild(link);
+// };
+
+//   return (
+//     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
+//       {/* Header */}
+//       <header className="border-b bg-white/80 backdrop-blur-sm">
+//         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+//           <Link href="/" className="flex items-center space-x-2">
+//             <ArrowLeft className="w-5 h-5" />
+//             <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+//               <Play className="w-4 h-4 text-white fill-white" />
+//             </div>
+//             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
+//           </Link>
+//           <div className="flex items-center space-x-4">
+//             <Badge variant="secondary">Basketball AI</Badge>
+//             <ProfileDropdown />
+//           </div>
+//         </div>
+//       </header>
+
+//       <div className="container mx-auto px-4 py-12">
+//         <div className="max-w-2xl mx-auto">
+//           <div className="text-center mb-8">
+//             <h1 className="text-3xl font-bold text-gray-900 mb-4">Upload Basketball Video</h1>
+//             <p className="text-gray-600">Upload your basketball footage for AI-powered analysis and highlight generation</p>
+//           </div>
+
+//           {/* Upload Form */}
+//           {uploadState === "idle" && (
+//             <Card>
+//               <CardHeader>
+//                 <CardTitle className="flex items-center">
+//                   <Upload className="w-5 h-5 mr-2" />
+//                   Select Basketball Video
+//                 </CardTitle>
+//               </CardHeader>
+//               <CardContent>
+//                 <div className="space-y-4">
+//                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-orange-300 transition-colors">
+//                     <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+//                     <h3 className="text-lg font-semibold mb-2">{selectedFile ? selectedFile.name : "Choose Basketball Video"}</h3>
+//                     <p className="text-gray-600 mb-4">MP4, MOV, AVI - Any size supported</p>
+
+//                     <input
+//                       type="file"
+//                       accept="video/*"
+//                       onChange={handleFileSelect}
+//                       className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100 file:cursor-pointer cursor-pointer"
+//                     />
+
+//                     {selectedFile && (
+//                       <div className="mt-4 p-3 bg-blue-50 rounded-lg flex items-start space-x-3">
+//                         <FileVideo className="w-5 h-5 text-blue-600 mt-0.5" />
+//                         <div className="text-left">
+//                           <p className="text-sm text-blue-800 font-medium">{selectedFile.name}</p>
+//                           <p className="text-sm text-blue-600">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB • {selectedFile.type}</p>
+//                           <p className="text-sm text-green-600 mt-1">✅ Ready for AI analysis</p>
+//                         </div>
+//                       </div>
+//                     )}
+//                   </div>
+
+//                   {selectedFile && (
+//                     <Button onClick={handleUpload} className="w-full bg-orange-500 hover:bg-orange-600" size="lg">
+//                       <Brain className="w-4 h-4 mr-2" />
+//                       Analyze Basketball Video
+//                     </Button>
+//                   )}
+
+//                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+//                     <div className="p-4 bg-blue-50 rounded-lg text-center">
+//                       <Target className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+//                       <h4 className="font-semibold text-blue-900 mb-1">Shot Detection</h4>
+//                       <p className="text-sm text-blue-700">AI identifies every shot attempt with precision</p>
+//                     </div>
+//                     <div className="p-4 bg-green-50 rounded-lg text-center">
+//                       <TrendingUp className="w-8 h-8 text-green-600 mx-auto mb-2" />
+//                       <h4 className="font-semibold text-green-900 mb-1">Performance Stats</h4>
+//                       <p className="text-sm text-green-700">Detailed shooting percentages and analytics</p>
+//                     </div>
+//                     <div className="p-4 bg-purple-50 rounded-lg text-center">
+//                       <Zap className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+//                       <h4 className="font-semibold text-purple-900 mb-1">Auto Highlights</h4>
+//                       <p className="text-sm text-purple-700">Best moments automatically identified</p>
+//                     </div>
+//                   </div>
+//                 </div>
+//               </CardContent>
+//             </Card>
+//           )}
+
+//           {/* Uploading / Processing */}
+//           {(uploadState === "uploading" || uploadState === "processing") && (
+//             <Card>
+//               <CardHeader>
+//                 <CardTitle className="flex items-center">
+//                   <Brain className="w-5 h-5 mr-2 text-orange-500" />
+//                   {uploadState === "uploading" ? "Uploading Video" : "Processing Video"}
+//                 </CardTitle>
+//               </CardHeader>
+//               <CardContent>
+//                 <div className="space-y-4">
+//                   <Progress value={progress} className="w-full" />
+//                   <p className="text-center text-gray-600">
+//                     {uploadState === "uploading" ? "Uploading" : "Analyzing"} {selectedFile?.name}... {progress}%
+//                   </p>
+//                 </div>
+//               </CardContent>
+//             </Card>
+//           )}
+
+//           {/* Complete */}
+//           {uploadState === "complete" && uploadResult && (
+//             <div className="space-y-6">
+//               <Card>
+//                 <CardHeader>
+//                   <CardTitle className="flex items-center">
+//                     <CheckCircle className="w-5 h-5 mr-2 text-green-500" />
+//                     Basketball Analysis Complete!
+//                   </CardTitle>
+//                 </CardHeader>
+//                 <CardContent>
+//                   <div className="text-center space-y-4">
+//                     <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+//                       <CheckCircle className="w-8 h-8 text-green-500" />
+//                     </div>
+
+//                     <div className="space-y-4">
+//                       <h3 className="text-lg font-semibold mb-2">AI Analysis Complete!</h3>
+//                       <p className="text-gray-600 mb-4">
+//                         {uploadResult.fileName} ({(uploadResult.fileSize! / 1024 / 1024).toFixed(2)} MB)
+//                       </p>
+//                       <div className="relative w-full max-w-md mx-auto">
+
+                     
+//                       <video
+//                 ref={videoRef}
+//                 className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
+//                 src={downloadUrl}
+               
+//                 muted // muted to allow autoplay
+//                 playsInline
+//                 controls            // controls appear once playing starts
+//                 onEnded={() => setEnded(true)}
+//               />
+
+// {/* === Highlight Adjuster UI (timestamps only) === */}
+// {uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
+//   <div className="mt-8 bg-white rounded-lg shadow p-4">
+//     <h3 className="text-lg font-semibold mb-4 flex items-center">
+//       <Zap className="w-4 h-4 mr-2 text-orange-500" />
+//       Adjust Highlights
+//     </h3>
+
+//     <p className="text-sm text-gray-600 mb-6">
+//       Adjust each highlight’s start and end time below.  
+//       This is the preview UI — functionality will be added later.
+//     </p>
+
+//     <div className="space-y-6">
+//       {uploadResult.shotEvents.map((shot, idx) => (
+//         <div key={idx} className="border rounded-lg p-3 bg-gray-50">
+//           {/* Header row with timestamp and confirm button */}
+//           <div className="flex items-center justify-between mb-2">
+//             <div className="flex items-center space-x-2">
+//               <Badge variant="secondary">
+//                 Highlight {idx + 1}
+//               </Badge>
+//               <span className="text-xs text-gray-500">
+//                 {shot.TimeStamp}
+//               </span>
+//             </div>
+//             <Button size="sm" variant="outline">
+//               Confirm
+//             </Button>
+//           </div>
+
+//           {/* Mock slider for highlight range (visual placeholder) */}
+//           <div className="px-2">
+//             <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+//               <span>Start</span>
+//               <span>End</span>
+//             </div>
+//             <div className="w-full relative">
+//               {/* Timeline bar */}
+//               <div className="h-2 bg-gray-200 rounded-full relative">
+//                 <div
+//                   className="absolute h-2 bg-orange-500 rounded-full"
+//                   style={{
+//                     left: `${(idx * 15) % 80}%`,
+//                     width: "20%",
+//                   }}
+//                 />
+//               </div>
+//               <div className="flex justify-between mt-2 text-xs text-gray-400">
+//                 <span>+/- 2s</span>
+//                 <span>+/- 2s</span>
+//               </div>
+//             </div>
+//           </div>
+//         </div>
+//       ))}
+//     </div>
+
+//     <div className="flex justify-end mt-6">
+//       <Button variant="outline" className="mr-2">
+//         Reset Adjustments
+//       </Button>
+//       <Button className="bg-orange-500 hover:bg-orange-600 text-white">
+//         Save Adjustments
+//       </Button>
+//     </div>
+//   </div>
+// )}
+
+
+
+//                       {/* NEW: show highlight download when ready */}
+//                       {downloadUrl && (
+//                         <Button 
+//                           onClick={handleDownload}
+//                           className="bg-orange-500 hover:bg-orange-600 mt-4"
+//                           >
+//                           <Download className="w-4 h-4 mr-2" />
+//                             Download Highlight
+                          
+//                         </Button>
+//                       )}
+                      
+//                        </div>
+//                     </div>
+//                     {/*
+                    
+//                     UPLOAD RESULTS STATS COMMENTED OUT FOR NOW:
+//                     Testing new analysis, will avoid displaying status until verified
+//                     */}
+
+//                     {/* {uploadResult.gameStats && (
+//                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+//                         <div className="p-4 bg-orange-50 rounded-lg">
+//                           <div className="text-2xl font-bold text-orange-600">{uploadResult.gameStats.totalShots}</div>
+//                           <div className="text-sm text-gray-600">Shots Detected</div>
+//                         </div>
+//                         <div className="p-4 bg-green-50 rounded-lg">
+//                           <div className="text-2xl font-bold text-green-600">{uploadResult.gameStats.shootingPercentage}%</div>
+//                           <div className="text-sm text-gray-600">Shooting %</div>
+//                         </div>
+//                         <div className="p-4 bg-blue-50 rounded-lg">
+//                           <div className="text-2xl font-bold text-blue-600">{uploadResult.gameStats.madeShots}</div>
+//                           <div className="text-sm text-gray-600">Makes</div>
+//                         </div>
+//                         <div className="p-4 bg-purple-50 rounded-lg">
+//                           <div className="text-2xl font-bold text-purple-600">
+//                             {Object.keys(uploadResult.gameStats.shotTypes).length}
+//                           </div>
+//                           <div className="text-sm text-gray-600">Shot Types</div>
+//                         </div>
+//                       </div>
+//                     )} */}
+
+//                     <div className="flex flex-col sm:flex-row gap-3 mt-6">
+//                       <Button className="flex-1" asChild>
+//                         <Link href="/upload/enhanced">
+//                           <BarChart3 className="w-4 h-4 mr-2" />
+//                           View Detailed Analysis
+//                         </Link>
+//                       </Button>
+//                       <Button variant="outline" className="flex-1" onClick={resetUpload}>
+//                         Analyze Another Video
+//                       </Button>
+//                     </div>
+//                   </div>
+//                 </CardContent>
+//               </Card>
+
+//               {/* Shot-by-shot (legacy immediate analysis) */}
+//               {uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
+//                 <Card>
+//                   <CardHeader>
+//                     <CardTitle className="flex items-center">
+//                       <Target className="w-5 h-5 mr-2" />
+//                       Shot-by-Shot Analysis
+//                     </CardTitle>
+//                   </CardHeader>
+//                   <CardContent>
+//                     {/* <div className="space-y-4">
+//                       {uploadResult.shotEvents.map((shot, idx) => (
+//                         <div key={idx} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+//                           <div className="flex items-start justify-between mb-3">
+//                             <div className="flex items-center space-x-3">
+//                               <div className={`w-4 h-4 rounded-full ${getShotOutcomeColor(shot.Outcome)}`} />
+//                               <div className="font-semibold text-gray-900">
+//                                 Shot #{idx + 1} - {formatShotType(shot.ShotType)}
+//                               </div>
+//                             </div>
+//                             <Badge variant={getShotOutcomeBadge(shot.Outcome)}>{shot.Outcome}</Badge>
+//                           </div>
+
+//                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+//                             <div className="flex items-center space-x-2">
+//                               <Clock className="w-4 h-4 text-gray-500" />
+//                               <span className="text-gray-700">
+//                                 <strong>Time:</strong> {formatTimestamp(shot.TimeStamp)}
+//                               </span>
+//                             </div>
+//                             <div className="flex items-center space-x-2">
+//                               <MapPin className="w-4 h-4 text-gray-500" />
+//                               <span className="text-gray-700">
+//                                 <strong>Location:</strong> {shot.Location}
+//                               </span>
+//                             </div>
+//                             <div className="flex items-center space-x-2">
+//                               <User className="w-4 h-4 text-gray-500" />
+//                               <span className="text-gray-700">
+//                                 <strong>Type:</strong> {formatShotType(shot.ShotType)}
+//                               </span>
+//                             </div>
+//                           </div>
+
+//                           {shot.Subject && (
+//                             <div className="mt-3 p-3 bg-white rounded border">
+//                               <div className="flex items-start space-x-2">
+//                                 <User className="w-4 h-4 text-gray-500 mt-0.5" />
+//                                 <div>
+//                                   <div className="font-medium text-gray-900 mb-1">Player Description:</div>
+//                                   <div className="text-sm text-gray-700">{shot.Subject}</div>
+//                                 </div>
+//                               </div>
+//                             </div>
+//                           )}
+
+//                           <div className="mt-3 text-sm text-gray-600">
+//                             <strong>Summary:</strong> Player shoots a {formatShotType(shot.ShotType).toLowerCase()} from{" "}
+//                             {shot.Location.toLowerCase()} at {formatTimestamp(shot.TimeStamp)} –{" "}
+//                             {shot.Outcome.toLowerCase()}
+//                           </div>
+//                         </div>
+//                       ))}
+//                     </div> */}
+//                   </CardContent>
+//                 </Card>
+//               )}
+//             </div>
+//           )}
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }

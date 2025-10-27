@@ -1,76 +1,75 @@
-#fastapi/api/main.py - Thursday 10-23-25 Version
-
-# PRESERVED: FastAPI basics and CORS
-from fastapi import FastAPI, UploadFile, File, HTTPException, Header
+# fastapi/api/main.py
+# Sunday 10-26-25 Version – adapted to Highlights-only
+# UNCHANGED: imports you already had
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request  # CHANGED: add Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
-
-# PRESERVED: stdlib
 from typing import Optional
 from datetime import timedelta
 import os, uuid, json
-
-# PRESERVED: env loader (useful locally)
 from dotenv import load_dotenv
-load_dotenv()
-
-# NEW: Google Cloud clients
 from google.cloud import storage, firestore
 from google.cloud import pubsub_v1
 
-# --- CONFIG -------------------------------------------------------
+load_dotenv()
 
-# PRESERVED: environment-driven config
+# UNCHANGED: debug prints
+print("DEBUGGING:")
+print(f"GCP_PROJECT_ID: {os.environ.get('GCP_PROJECT_ID')}")
+print(f"GOOGLE_APP_CREDS: {os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')}")
+print(f"Credentials file exists: {os.path.exists(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', ''))}")
+
+# UNCHANGED: env
 PROJECT_ID   = os.environ["GCP_PROJECT_ID"]
-RAW_BUCKET   = os.environ["GCS_RAW_BUCKET"]
+RAW_BUCKET   = os.environ["GCS_RAW_BUCKET"]   # UNCHANGED: still used as temp ingest bucket
 OUT_BUCKET   = os.environ["GCS_OUT_BUCKET"]
 TOPIC_NAME   = os.environ["PUBSUB_TOPIC"]
-JOBS_COL     = os.getenv("FIRESTORE_COLLECTION", "jobs")
+COLLECTION   = os.getenv("FIRESTORE_COLLECTION", "jobs")  # UNCHANGED: jobs only; no Raw collection anymore
 
-# NEW: collections for your dashboard
-RAW_COL       = os.getenv("FIRESTORE_RAW_COL", "Raw")
-HIGHLIGHT_COL = os.getenv("FIRESTORE_HIGHLIGHT_COL", "Highlights")
-
-# NEW: clients
+# UNCHANGED: clients
 storage_client   = storage.Client(project=PROJECT_ID)
 firestore_client = firestore.Client(project=PROJECT_ID)
 publisher        = pubsub_v1.PublisherClient()
 topic_path       = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
 
-# --- APP ----------------------------------------------------------
-
 app = FastAPI()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://app.hooptuber.com"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://app.hooptuber.com",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- HELPERS ------------------------------------------------------
-
+# UNCHANGED: Firestore doc handle helper
 def _job_doc(job_id: str):
-    return firestore_client.collection(JOBS_COL).document(job_id)
+    return firestore_client.collection(COLLECTION).document(job_id)
 
-# NEW: consistent object names & URIs
+# UNCHANGED: name the ingest object (temporary “raw” file in GCS)
 def _make_keys(original_name: str, job_id: str) -> tuple[str, str, str]:
     safe_name = original_name or "upload.mp4"
     blob_name = f"uploads/{job_id}/{safe_name}"
     gcs_uri   = f"gs://{RAW_BUCKET}/{blob_name}"
+    print(f"DEBUG: uploading to blob_name={blob_name}")
     return blob_name, gcs_uri, safe_name
 
-# NEW: publish work to the background worker
-def _publish_job(job_id: str, raw_gcs_uri: str, user_id: Optional[str]):
+# CHANGED: include ownerEmail in payload
+def _publish_job(job_id: str, raw_gcs_uri: str, *, owner_email: Optional[str], user_id: Optional[str] = None):
     payload = {
         "jobId": job_id,
         "videoGcsUri": raw_gcs_uri,
         "outBucket": OUT_BUCKET,
-        "userId": user_id,
+        "ownerEmail": owner_email,    # NEW
+        "userId": user_id,            # UNCHANGED (optional)
+        "visibility": "private",      # NEW: default; dashboard can change later
     }
     publisher.publish(topic_path, json.dumps(payload).encode("utf-8")).result(timeout=10)
 
-# NEW: stream file to GCS without writing to disk
+# UNCHANGED: upload helper
 def _upload_filelike_to_gcs(bucket: storage.Bucket, blob_name: str, file_obj, content_type: str):
     blob = bucket.blob(blob_name)
     try:
@@ -79,82 +78,76 @@ def _upload_filelike_to_gcs(bucket: storage.Bucket, blob_name: str, file_obj, co
         pass
     blob.upload_from_file(file_obj, content_type=content_type, timeout=600)
 
-# NEW: split gs:// URIs and sign download links (used by /jobs/{id}/download)
+# UNCHANGED: gs:// parsing + GET signer (used by /jobs/{id}/download)
 def _parse_gs_uri(gs_uri: str) -> tuple[str, str]:
     assert gs_uri.startswith("gs://"), "Not a gs:// URI"
     rest = gs_uri[len("gs://"):]
     bucket, _, key = rest.partition("/")
     return bucket, key
 
-def _sign_get_url(gs_uri: str, minutes: int = 30) -> str:
+def _sign_get_url(gs_uri: str, minutes: int = 15) -> str:
     bucket_name, blob_name = _parse_gs_uri(gs_uri)
     blob = storage_client.bucket(bucket_name).blob(blob_name)
-    return blob.generate_signed_url(version="v4", expiration=timedelta(minutes=minutes), method="GET")
+    return blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=minutes),
+        method="GET",
+    )
 
-# --- ROUTES -------------------------------------------------------
-
+# NEW/CHANGED: Highlights-only ingest endpoint
 @app.post("/upload")
 async def upload_video(
-    video: UploadFile = File(...),
-    userId: Optional[str] = None,                       # PRESERVED: optional query param
-    x_owner_email: Optional[str] = Header(default=None) # NEW: identity forwarded by Next.js route
+    request: Request,                                  # NEW: to read headers
+    video: UploadFile = File(...),                     # UNCHANGED
+    userId: Optional[str] = None,                      # UNCHANGED (optional – keep for compatibility)
 ):
     """
-    NEW cloud-native flow:
-      1) Stream the uploaded file directly to GCS (RAW bucket)
-      2) Create a Firestore Job (status=queued)
-      3) Publish a Pub/Sub message for the Worker
-      4) ALSO create/update the 'Raw' document so the dashboard updates immediately
-      5) Return { ok, jobId, status, videoGcsUri }
+    UNCHANGED: Ingest + enqueue flow
+    NEW: Read 'x-owner-email' header and send to Worker (no Raw collection write)
     """
-    if not video or not video.filename:
-        raise HTTPException(status_code=400, detail="Missing file/filename")
-
     try:
+        owner_email = request.headers.get("x-owner-email")  # NEW: pass identity to worker
+        if not video or not video.filename:
+            raise HTTPException(status_code=400, detail="Missing file/filename")
+
         job_id = str(uuid.uuid4())
         blob_name, raw_gcs_uri, original_name = _make_keys(video.filename, job_id)
 
-        # 1) RAW -> GCS
         bucket = storage_client.bucket(RAW_BUCKET)
         await run_in_threadpool(
             _upload_filelike_to_gcs, bucket, blob_name, video.file, (video.content_type or "video/mp4")
         )
 
-        # 2) job doc
+        # UNCHANGED: create jobs doc (NO Raw doc anywhere)
         _job_doc(job_id).set({
             "jobId": job_id,
             "userId": userId,
-            "ownerEmail": x_owner_email,                     # NEW: record owner
+            "ownerEmail": owner_email,               # NEW: store for convenience in job
             "status": "queued",
             "originalFileName": original_name,
             "videoGcsUri": raw_gcs_uri,
             "createdAt": firestore.SERVER_TIMESTAMP,
         }, merge=True)
 
-        # 3) publish to worker
-        _publish_job(job_id, raw_gcs_uri, userId)
-
-        # 4) NEW: upsert a RAW document for the dashboard (<< THIS IS YOUR RAW SCHEMA)
-        firestore_client.collection(RAW_COL).add({
-            "ownerEmail": x_owner_email or userId or "unknown",
-            "fileName": original_name,
-            "url": raw_gcs_uri,                 # gs:// is fine; UI can sign when needed
-            "processed": False,
-            "highlightCount": 0,
-            "uploadedAtIso": firestore.SERVER_TIMESTAMP,
-            "createdAt": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        })
-
-        return {"ok": True, "jobId": job_id, "status": "queued", "videoGcsUri": raw_gcs_uri}
-
-    except Exception as e:
+        # CHANGED: publish with ownerEmail
         try:
-            _job_doc(job_id).set({"status": "error", "error": str(e)}, merge=True)
-        except Exception:
-            pass
+            _publish_job(job_id, raw_gcs_uri, owner_email=owner_email, user_id=userId)
+        except Exception as e:
+            _job_doc(job_id).set({"status": "publish_error", "error": str(e)}, merge=True)
+            raise HTTPException(status_code=502, detail=f"Enqueue failed: {e}")
+
+        return {
+            "ok": True,
+            "jobId": job_id,
+            "status": "queued",
+            "videoGcsUri": raw_gcs_uri,
+        }
+    except Exception as e:
+        import traceback
+        print(f"Upload failed: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
 
+# UNCHANGED: poll job status
 @app.get("/jobs/{job_id}")
 def job_status(job_id: str):
     snap = _job_doc(job_id).get()
@@ -162,6 +155,7 @@ def job_status(job_id: str):
         raise HTTPException(status_code=404, detail="job not found")
     return snap.to_dict()
 
+# UNCHANGED: fetch signed URL for finished highlight
 @app.get("/jobs/{job_id}/download")
 def job_download(job_id: str):
     snap = _job_doc(job_id).get()
@@ -170,31 +164,52 @@ def job_download(job_id: str):
     data = snap.to_dict()
     if data.get("status") != "done" or not data.get("outputGcsUri"):
         raise HTTPException(status_code=409, detail="job not finished")
-    return {"ok": True, "url": _sign_get_url(data["outputGcsUri"], minutes=30), "expiresInMinutes": 30}
+    try:
+        url = _sign_get_url(data["outputGcsUri"], minutes=30)
+        response = {"ok": True, "url": url, "expiresInMinutes": 30}
+        if data.get("analysisGcsUri"):
+            bucket_name, blob_name = _parse_gs_uri(data["analysisGcsUri"])
+            blob = storage_client.bucket(bucket_name).blob(blob_name)
+            json_bytes = blob.download_as_bytes()
+            try:
+                shot_events = json.loads(json_bytes.decode("utf-8"))
+                response["shot_events"] = shot_events
+            except Exception as e:
+                print(f"Warning: failed to parse analysis JSON: {e}")
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"signing failed: {e}")
 
+# UNCHANGED
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
 
-#-------------------------------------------------------
-#fastapi/api/main.py - Wednesday 10-22-25 Version
-#What changed & why:
-#❌ Removed shutil, local DATASET_DIR (for local video uploads), and the import of your on-box pipeline (process_video_and_summarize).
+#-----------------------------------------------------------------------
 
-#Reason: we don’t keep user uploads on Render’s disk or run heavy processing in the API anymore.
-#✅ Added Google Cloud clients + env config.
-#Reason: the API now streams uploads straight to GCS (RAW), creates a job in Firestore, and enqueues work via Pub/Sub.
-#---------------------------------------------------------
+# #fastapi/api/main.py - Sunday 10-26-25 Version (same as on hooptuber-new-merge-oct branch on github)
+
+# # fastapi server as of 10/17/2025
+# # from fastapi import FastAPI, UploadFile, File, HTTPException
+# # from fastapi.middleware.cors import CORSMiddleware
+# # import shutil
+# # import os
+# # import uuid
+# # from VideoInputTest import process_video_and_summarize, client
+# # from typing import List, Dict, Any, Optional
+# # import json
+
 # from fastapi import FastAPI, UploadFile, File, HTTPException
 # from fastapi.middleware.cors import CORSMiddleware
 # from starlette.concurrency import run_in_threadpool
 # from typing import Optional
-# from datetime import timedelta
+# from datetime import timedelta, datetime
 # import os, uuid, json
 # from dotenv import load_dotenv
 # # NEW: Google Cloud clients
 # from google.cloud import storage, firestore
 # from google.cloud import pubsub_v1
+# from zoneinfo import ZoneInfo
 # load_dotenv()
 
 # print("DEBUGGING:")
@@ -220,7 +235,7 @@ def healthz():
 #     CORSMiddleware,
 #     #allow_origins=['http://localhost:3000'],
 #     allow_origins=['http://localhost:3000',
-#     "https://app.hooptuber.com", # add your prod origin
+#     "https://app.hooptuber.com", 
 #     ],
 #     allow_credentials=True,
 #     allow_methods=["*"],
@@ -228,12 +243,8 @@ def healthz():
 # )
 # #BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # directory of current script (main.py)
 # #DATASET_DIR = os.path.join(BASE_DIR, "videoDataset") # directory to save uploaded videos (/videoDataset)
-# #os.makedirs(DATASET_DIR, exist_ok=True)    
+# #os.makedirs(DATASET_DIR, exist_ok=True)
 
-# #What changed & why: 
-# #These helpers encapsulate the cloud handoff: naming, Firestore doc handle, Pub/Sub publish, and streaming the file to GCS.
-# #---------------------------------------------------------
-# # NEW: Helper functions 
 # def _job_doc(job_id: str):
 #     """Return a Firestore doc handle for the job."""
 #     return firestore_client.collection(COLLECTION).document(job_id)
@@ -245,8 +256,11 @@ def healthz():
 #     """
 #     # Keep user uploads grouped by job; you can also include userId if you pass it
 #     safe_name = original_name or "upload.mp4"
+#     #now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
+#     #date_str = now_pst.strftime("%Y-%m-%d")
 #     blob_name = f"uploads/{job_id}/{safe_name}"
 #     gcs_uri   = f"gs://{RAW_BUCKET}/{blob_name}"
+#     print(f"DEBUG: uploading to blob_name={blob_name}")
 #     return blob_name, gcs_uri, safe_name
 
 # def _publish_job(job_id: str, raw_gcs_uri: str, user_id: Optional[str] = None):
@@ -269,6 +283,13 @@ def healthz():
 #         pass
 #     blob.upload_from_file(file_obj, content_type=content_type, timeout=600)
 
+# #What changed & why: 
+# #These helpers encapsulate the cloud handoff: naming, Firestore doc handle, Pub/Sub publish, and streaming the file to GCS.
+# #---------------------------------------------------------
+# # NEW: Helper functions 
+# def _job_doc(job_id: str):
+#     """Return a Firestore doc handle for the job."""
+#     return firestore_client.collection(COLLECTION).document(job_id)
 
 # def _parse_gs_uri(gs_uri: str) -> tuple[str, str]:
 #     """Split 'gs://bucket/path/to/key' -> (bucket, key)."""
@@ -286,7 +307,7 @@ def healthz():
 #         expiration=timedelta(minutes=minutes),
 #         method="GET",
 #     )
-    
+
 # #What changed & why:
 # #❌ Removed: write to videoDataset/… and calling process_video_and_summarize directly in the API.
 # #Reason: the API is now thin: it ingests and enqueues. The heavy work (player choice → makes/misses → highlight) runs in the Worker.
@@ -412,7 +433,17 @@ def healthz():
 #         raise HTTPException(status_code=409, detail="job not finished")
 #     try:
 #         url = _sign_get_url(data["outputGcsUri"], minutes=30)
-#         return {"ok": True, "url": url, "expiresInMinutes": 30}
+#         response =  {"ok": True, "url": url, "expiresInMinutes": 30}
+#         if data.get("analysisGcsUri"):
+#             bucket_name, blob_name = _parse_gs_uri(data["analysisGcsUri"])
+#             blob = storage_client.bucket(bucket_name).blob(blob_name)
+#             json_bytes = blob.download_as_bytes()
+#             try:
+#                 shot_events = json.loads(json_bytes.decode("utf-8"))
+#                 response["shot_events"] = shot_events
+#             except Exception as e:
+#                 print(f"Warning: failed to parse analysis JSON: {e}")
+#         return response
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail=f"signing failed: {e}")
 
@@ -420,4 +451,3 @@ def healthz():
 # def healthz():
 #     """Used by Render for health checks."""
 #     return {"ok": True}
-

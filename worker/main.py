@@ -1,150 +1,160 @@
-#worker/main.py - Thursday 10-23-25 Version
-
-import os, json, time, tempfile
+# worker/main.py
+# Sunday 10-26-25 Version – adapted to Highlights-only
+import os, json, time, tempfile, logging
 from google.cloud import pubsub_v1, storage, firestore
-import logging
-
-# PRESERVED: your real analysis imports
-from VideoInputTest import process_video_and_summarize, CreateHighlightVideo2, timestamp_maker, strip_code_fences
+from VideoInputTest import process_video_and_summarize, CreateHighlightVideo2, timestamp_maker
 
 logging.basicConfig(level=logging.INFO)
 
-# PRESERVED: env
+# UNCHANGED: env
 PROJECT_ID      = os.environ["GCP_PROJECT_ID"]
 SUBSCRIPTION_ID = os.environ["PUBSUB_SUB"]
-RAW_BUCKET      = os.environ["GCS_RAW_BUCKET"]
+RAW_BUCKET      = os.environ["GCS_RAW_BUCKET"]   # UNCHANGED: temporary ingest objects live here and are deleted
 OUT_BUCKET      = os.environ["GCS_OUT_BUCKET"]
-JOBS_COL        = os.environ.get("FIRESTORE_COLLECTION", "jobs")
+COLLECTION      = os.environ.get("FIRESTORE_COLLECTION", "jobs")
 
-# NEW: mirror of the collections the dashboard reads
-RAW_COL       = os.getenv("FIRESTORE_RAW_COL", "Raw")
-HIGHLIGHT_COL = os.getenv("FIRESTORE_HIGHLIGHT_COL", "Highlights")
+# NEW: name for the Highlights collection (single source of truth)
+HIGHLIGHTS_COLL = os.environ.get("FIRESTORE_HIGHLIGHTS_COLLECTION", "Highlights")
 
-# PRESERVED: clients
+# UNCHANGED: clients
 storage_client   = storage.Client(project=PROJECT_ID)
 firestore_client = firestore.Client(project=PROJECT_ID)
 
-# --- helpers ------------------------------------------------------
-
+# UNCHANGED: Firestore helpers
 def update_job(job_id: str, data: dict):
-    firestore_client.collection(JOBS_COL).document(job_id).set(data, merge=True)
+    firestore_client.collection(COLLECTION).document(job_id).set(data, merge=True)
 
-def download_gcs_uri(gcs_uri: str, dest_path: str):
-    assert gcs_uri.startswith("gs://")
-    _, _, rest = gcs_uri.partition("gs://")
-    bucket_name, _, blob_name = rest.partition("/")
-    storage_client.bucket(bucket_name).blob(blob_name).download_to_filename(dest_path)
+def _parse_gs(gs_uri: str):
+    assert gs_uri.startswith("gs://")
+    rest = gs_uri[5:]
+    b, _, k = rest.partition("/")
+    return b, k
+
+# UNCHANGED: GCS helpers
+def download_from_gcs(gcs_uri: str, dest_path: str):
+    b, k = _parse_gs(gcs_uri)
+    storage_client.bucket(b).blob(k).download_to_filename(dest_path)
 
 def upload_to_gcs(local_path: str, bucket_name: str, dst_key: str) -> str:
-    b = storage_client.bucket(bucket_name)
-    b.blob(dst_key).upload_from_filename(local_path)
+    blob = storage_client.bucket(bucket_name).blob(dst_key)
+    blob.upload_from_filename(local_path)
     return f"gs://{bucket_name}/{dst_key}"
 
+# UNCHANGED: build highlight from Gemini timestamps
 def make_highlight(in_path: str, out_path: str, gemini_output):
-    highlighter = CreateHighlightVideo2()
-    makes = timestamp_maker(gemini_output)
-    clip_files = highlighter.create_highlights_ffmpeg(makes, in_path, out_path)
+    hl = CreateHighlightVideo2()
+    make_ts = timestamp_maker(gemini_output)
+    clip_files = hl.create_highlights_ffmpeg(make_ts, in_path, out_path)
     if not clip_files:
         raise RuntimeError("No highlight clips were created.")
     return out_path
 
-# --- core ---------------------------------------------------------
-
 def handle_job(msg: pubsub_v1.subscriber.message.Message):
     try:
-        payload = json.loads(msg.data.decode("utf-8"))
-        job_id        = payload["jobId"]
-        input_gcs_uri = payload["videoGcsUri"]
-        user_id       = payload.get("userId")
+        payload        = json.loads(msg.data.decode("utf-8"))
+        job_id         = payload["jobId"]                  # UNCHANGED
+        input_gcs_uri  = payload["videoGcsUri"]            # UNCHANGED
+        out_key        = f"{job_id}/highlight.mp4"         # UNCHANGED
+        json_key       = f"{job_id}/analysis.json"         # UNCHANGED
 
+        owner_email    = payload.get("ownerEmail")         # NEW
+        visibility     = payload.get("visibility", "private")  # NEW
+        user_id        = payload.get("userId")             # UNCHANGED (optional)
+
+        logging.info(f"Worker: start {job_id} owner={owner_email} uri={input_gcs_uri}")
         update_job(job_id, {"status": "processing", "startedAt": firestore.SERVER_TIMESTAMP})
 
         with tempfile.TemporaryDirectory() as td:
-            src = os.path.join(td, "input.mp4")
-            out = os.path.join(td, "highlight.mp4")
-            jsn = os.path.join(td, "analysis.json")
+            in_path   = os.path.join(td, "input.mp4")
+            out_path  = os.path.join(td, "highlight.mp4")
+            json_path = os.path.join(td, "analysis.json")
 
-            download_gcs_uri(input_gcs_uri, src)
+            # UNCHANGED: download source
+            download_from_gcs(input_gcs_uri, in_path)
 
-            # PRESERVED: your Gemini + highlight pipeline
-            gem = process_video_and_summarize(src)
-            if isinstance(gem, dict):
-                if not gem.get("ok", True):
-                    raise RuntimeError(gem.get("error", "Gemini processing failed"))
-                parsed = gem
-            elif isinstance(gem, str):
-                if "```json" in gem:
-                    s = gem.find("["); e = gem.rfind("]")+1
-                    parsed = json.loads(strip_code_fences(gem[s:e]))
+            # UNCHANGED: get Gemini events
+            raw = process_video_and_summarize(in_path)
+
+            # UNCHANGED: tolerant parse
+            if isinstance(raw, str):
+                # try to extract a JSON array even if the model adds fences
+                if "```json" in raw:
+                    js = raw[raw.find("["): raw.rfind("]") + 1]
+                    parsed = json.loads(js)
                 else:
-                    parsed = json.loads(gem)
+                    parsed = json.loads(raw)
+            elif isinstance(raw, dict):
+                if not raw.get("ok", True):
+                    raise RuntimeError(raw.get("error", "Gemini error"))
+                parsed = raw
+            elif isinstance(raw, list):
+                parsed = raw
             else:
-                raise TypeError(f"Unexpected Gemini output type: {type(gem)}")
+                raise TypeError(f"Unexpected Gemini output type: {type(raw)}")
+            if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], list):
+                parsed = parsed[0]
 
-            with open(jsn, "w") as f:
+            with open(json_path, "w") as f:
                 json.dump(parsed, f, indent=2)
 
-            make_highlight(src, out, parsed)
+            # UNCHANGED: create highlight file
+            make_highlight(in_path, out_path, parsed)
 
-            out_key  = f"{job_id}/highlight.mp4"
-            json_key = f"{job_id}/analysis.json"
-            out_uri  = upload_to_gcs(out, OUT_BUCKET, out_key)
-            jsn_uri  = upload_to_gcs(jsn, OUT_BUCKET, json_key)
+            # UNCHANGED: upload outputs
+            out_gcs_uri     = upload_to_gcs(out_path, OUT_BUCKET, out_key)
+            analysis_gcs_uri= upload_to_gcs(json_path, OUT_BUCKET, json_key)
 
-        # NEW: mark job done
+        # NEW: write a Highlight document (single collection)
+        # id = jobId (easy joins), or you can use a random id—jobId keeps it simple
+        highlight_doc = {
+            "ownerEmail": owner_email,
+            "jobId": job_id,
+            "downloadUrl": out_gcs_uri,      # gs://… (UI can exchange for a signed URL when needed)
+            "title": None,                   # user can rename in dashboard later
+            "isPublic": (visibility == "public"),
+            "visibility": visibility,        # "private" | "unlisted" | "public"
+            "stats": None,                   # reserve for your computed stats
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        }
+        firestore_client.collection(HIGHLIGHTS_COLL).document(job_id).set(highlight_doc, merge=True)
+
+        # NEW: delete the temporary raw object to save storage (you asked to stop storing raws)
+        try:
+            b, k = _parse_gs(input_gcs_uri)
+            storage_client.bucket(b).blob(k).delete()
+            logging.info(f"Deleted temp raw object: {input_gcs_uri}")
+        except Exception as d_err:
+            logging.warning(f"Could not delete temp raw object: {d_err}")
+
+        # UNCHANGED: finalize job
         update_job(job_id, {
             "status": "done",
-            "outputGcsUri": out_uri,
-            "analysisGcsUri": jsn_uri,
+            "outputGcsUri": out_gcs_uri,
+            "analysisGcsUri": analysis_gcs_uri,
             "finishedAt": firestore.SERVER_TIMESTAMP,
         })
-
-        # NEW: create a Highlights doc (<< THIS IS YOUR HIGHLIGHT SCHEMA)
-        #      and update the corresponding Raw doc
-        owner = "unknown"
-        job_snap = firestore_client.collection(JOBS_COL).document(job_id).get()
-        if job_snap.exists:
-            owner = (job_snap.to_dict().get("ownerEmail") or
-                     job_snap.to_dict().get("userId") or "unknown")
-
-        firestore_client.collection(HIGHLIGHT_COL).add({
-            "ownerEmail": owner,
-            "jobId": job_id,
-            "downloadUrl": out_uri,          # gs:// is fine; UI can sign
-            "title": f"Highlight for {job_id}",
-            "isPublic": False,
-            "createdAt": firestore.SERVER_TIMESTAMP,
-            "stats": None,
-        })
-
-        # Flip processed=true + increment highlightCount on the RAW entry
-        raws = (firestore_client.collection(RAW_COL)
-                .where("url", "==", input_gcs_uri)
-                .limit(1).stream())
-        for doc in raws:
-            doc.reference.set({
-                "processed": True,
-                "highlightCount": firestore.Increment(1),
-                "updatedAt": firestore.SERVER_TIMESTAMP,
-            }, merge=True)
-
         msg.ack()
-
     except Exception as e:
         try:
             job_id = json.loads(msg.data.decode("utf-8")).get("jobId")
             if job_id:
-                update_job(job_id, {"status": "error", "error": str(e),
-                                    "finishedAt": firestore.SERVER_TIMESTAMP})
-        except Exception:
-            pass
-        logging.exception("ERROR processing message")
+                update_job(job_id, {
+                    "status": "error",
+                    "error": str(e),
+                    "finishedAt": firestore.SERVER_TIMESTAMP,
+                })
+        except Exception as inner:
+            logging.error(f"Failed to update job status: {inner}")
+        finally:
+            msg.ack()  # CHANGED: ack to avoid infinite retries during dev
+        logging.exception("ERROR processing message:")
 
 def main():
     subscriber = pubsub_v1.SubscriberClient()
     subscription_path = subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_ID)
-    print(f"Worker listening on {subscription_path}", flush=True)
     streaming_pull_future = subscriber.subscribe(subscription_path, callback=handle_job)
+    print(f"Worker listening on {subscription_path}", flush=True)
     try:
         while True:
             time.sleep(60)
@@ -155,9 +165,10 @@ if __name__ == "__main__":
     main()
 
 
-#-------------------------------------------------------
-#worker/main.py - Wednesday 10-22-25 Version
-#worker/main.py downloads from GCS, “processes” the file, uploads back to GCS, and updates Firestore
+#---------------------------------------------------------
+# #worker/main.py - Sunday 10-26-25 Version (same as on hooptuber-new-merge-oct branch on github)
+
+# #worker/main.py -downloads from GCS, “processes” the file, uploads back to GCS, and updates Firestore
 
 # import os, json, time, tempfile, shutil
 # from google.cloud import pubsub_v1, storage, firestore
@@ -171,6 +182,7 @@ if __name__ == "__main__":
 # RAW_BUCKET         = os.environ["GCS_RAW_BUCKET"]
 # OUT_BUCKET         = os.environ["GCS_OUT_BUCKET"]
 # COLLECTION         = os.environ.get("FIRESTORE_COLLECTION", "jobs")
+# PUBSUB_TOPIC = os.environ.get("PUBSUB_TOPIC", "video-jobs")
 
 # # Optional: if you use Gemini here too
 # #USE_GEMINI = bool(os.environ.get("GOOGLE_API_KEY"))
@@ -216,14 +228,17 @@ if __name__ == "__main__":
 #     return out_path
 # def handle_job(msg: pubsub_v1.subscriber.message.Message):
 #     try:
+        
 #         payload = json.loads(msg.data.decode("utf-8"))
 #         job_id        = payload["jobId"]
 #         user_id       = payload.get("userId")
 #         input_gcs_uri = payload["videoGcsUri"]     # gs://...
 #         out_key       = f"{job_id}/highlight.mp4"
 #         json_key      = f"{job_id}/analysis.json"
-
+#         print(f"DEBUG: Paylod: {payload}, Processing {job_id} for {user_id}, gcs_uri={input_gcs_uri}")
 #         update_job(job_id, {"status": "processing", "startedAt": firestore.SERVER_TIMESTAMP})
+#         print(f"=== handle_job() started for jobId={payload.get('jobId')} ===", flush=True)
+
 
 #         with tempfile.TemporaryDirectory() as td:
 #             in_path  = os.path.join(td, "input.mp4")
@@ -248,11 +263,31 @@ if __name__ == "__main__":
             
 #             """
 #             raw_gemini_output = process_video_and_summarize(converted_path) # gemini output
-#             print(f"DEBUG: gemini is outputting: {type(raw_gemini_output)}, coming from worker/main.py")
+            
+#             print(f"DEBUG: gemini is outputting: {type(raw_gemini_output)}, coming from worker/main.py", flush=True)
 #             print(f"DEBUG: Gem output: {raw_gemini_output}")
 
 #             # Handle dict error responses from process_video_and_summarize
-#             if isinstance(raw_gemini_output, dict):
+            
+#             if isinstance(raw_gemini_output, str):
+#                 try:
+#                     # Remove code fences and whitespace
+#                     #clean_text = strip_code_fences(raw_gemini_output).strip()
+#                     clean_text = raw_gemini_output
+#                     # If the response includes ```json``` fences, extract the content inside
+#                     if "```json" in raw_gemini_output:
+#                         json_start = raw_gemini_output.find('[')
+#                         json_end = raw_gemini_output.rfind(']') + 1
+#                         clean_text = raw_gemini_output[json_start:json_end]
+
+#                     # Try parsing the clean JSON string
+#                     parsed_data = json.loads(clean_text)
+#                     logging.info("Parsed Gemini JSON string successfully")
+
+#                 except json.JSONDecodeError as e:
+#                     raise RuntimeError(f"Gemini returned invalid JSON: {e}")
+
+#             elif isinstance(raw_gemini_output, dict):
 #                 # Check if it's an error response
 #                 if not raw_gemini_output.get("ok", True):
 #                     error_msg = raw_gemini_output.get("error", "Unknown error from Gemini")
@@ -260,23 +295,24 @@ if __name__ == "__main__":
 #                     raise RuntimeError(f"Gemini processing failed: {error_msg}")
 #                 parsed_data = raw_gemini_output
 #                 logging.info("Gemini is returning a dict object")
-#             elif isinstance(raw_gemini_output, str):
-#                 if '```json' in raw_gemini_output or r"```json\n" in raw_gemini_output:
-#                     json_start = raw_gemini_output.find('[')
-#                     json_end = raw_gemini_output.rfind(']') + 1
-#                     clean_data = strip_code_fences(raw_gemini_output[json_start:json_end])
-#                     parsed_data = json.loads(clean_data)
-#                 else:
-#                     parsed_data = json.loads(raw_gemini_output)
 #                 #else:
+#             elif isinstance(raw_gemini_output, list):
+#                 parsed_data = raw_gemini_output
+#                 logging.info("DEBUG: GEMINI OUTPUT is already a list")
 #             else:
 #                 raise TypeError(f"Gemini output is neither dict nor string, it is: {type(raw_gemini_output)}")
+#             if isinstance(parsed_data, list) and len(parsed_data) == 1 and isinstance(parsed_data[0], list):
+#                 parsed_data = parsed_data[0]  # unwrap nested list
+            
 #             with open(json_path, "w") as f:
-#                 json.dump(parsed_data, f,indent=2)
-#             make_highlight(in_path, out_path, raw_gemini_output)
+#                json.dump(parsed_data, f,indent=2)
+            
+
+#             make_highlight(in_path, out_path, parsed_data)
 
 #             out_gcs_uri = upload_to_gcs(out_path, OUT_BUCKET, out_key)
 #             analysis_gcs_uri = upload_to_gcs(json_path, OUT_BUCKET, json_key)
+            
 #         update_job(job_id, {
 #             "status": "done",
 #             "outputGcsUri": out_gcs_uri,
@@ -294,8 +330,11 @@ if __name__ == "__main__":
 #                     "error": str(e),
 #                     "finishedAt": firestore.SERVER_TIMESTAMP,
 #                 })
-#         except Exception:
-#             pass
+            
+#         except Exception as inner:
+#             logging.error(f"Failed to update job status for: {inner}")
+#         finally:
+#             msg.ack() # ACKNOWLEDGE TO AVOID INF LOOP
 #         print("ERROR processing message:", e, flush=True)
 
 # def main():
