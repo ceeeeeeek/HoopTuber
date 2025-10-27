@@ -1,5 +1,6 @@
 from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo, CreateHighlightVideo2, timestamp_maker, strip_code_fences, convert_timestamp_to_seconds
 import json
+from VideoInputTest import return_enhanced_timestamps
 
 if __name__ == "__main__":
     Creator = CreateHighlightVideo2()
@@ -22,6 +23,10 @@ if __name__ == "__main__":
             print(f"Made shot at: {shot['TimeStamp']}")
         elif shot["Outcome"].lower() == "miss":
             print(f"Missed shot at {shot['TimeStamp']}")
+    
+    print(f"TESTING HIGHLIGHT CREATION WITH FIXED DATA: ")
+    checking69 = return_enhanced_timestamps(parsed_data)
+    print(f"Enhanced timestamps: {checking69}\n")
     """
     WORKING: Using analyze function with only timestamps working
     NEED: 

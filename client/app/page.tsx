@@ -10,7 +10,7 @@ import Link from "next/link"
 import TryFreeUploadButton from "./app-components/TryFreeUploadButton"
 import ProfileDropdown from "./app-components/ProfileDropdown"
 import { useSession } from "next-auth/react"
-
+import Image from "next/image";
 
 export default function LandingPage() {
   const { data: session, status } = useSession()
@@ -50,9 +50,14 @@ export default function LandingPage() {
       <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-              <Play className="w-4 h-4 text-white fill-white" />
-            </div>
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              width={32}
+              height={32}
+              className="object-contain"
+              priority
+            />
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </div>
           <nav className="hidden md:flex items-center space-x-6">
@@ -330,9 +335,14 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center space-x-2 mb-4">
-                <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                  <Play className="w-4 h-4 text-white fill-white" />
-                </div>
+                <Image
+                  src="/hooptubericon2.png"
+                  alt="HoopTuber Logo"
+                  width={32}
+                  height={32}
+                  className="object-contain"
+                  priority
+                />
                 <span className="text-xl font-bold">HoopTuber</span>
               </div>
               <p className="text-gray-400">AI-powered basketball highlights for every player.</p>

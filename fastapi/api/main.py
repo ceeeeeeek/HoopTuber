@@ -1,15 +1,8 @@
 # fastapi server as of 10/17/2025
-# from fastapi import FastAPI, UploadFile, File, HTTPException
-# from fastapi.middleware.cors import CORSMiddleware
-# import shutil
-# import os
-# import uuid
-# from VideoInputTest import process_video_and_summarize, client
-# from typing import List, Dict, Any, Optional
-# import json
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from typing import Optional
 from datetime import timedelta, datetime
@@ -19,6 +12,11 @@ from dotenv import load_dotenv
 from google.cloud import storage, firestore
 from google.cloud import pubsub_v1
 from zoneinfo import ZoneInfo
+# slow api import for rate limiting ai calls
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
 load_dotenv()
 
 print("DEBUGGING:")
@@ -38,7 +36,25 @@ firestore_client = firestore.Client(project=PROJECT_ID)
 publisher        = pubsub_v1.PublisherClient()
 topic_path       = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
 
+
+def user_or_ip_key(request: Request):
+    user_id = request.query_params.get("userID")
+    if user_id:
+        return f"user:{user_id}"
+    return get_remote_address(request)
+
+limiter = Limiter(key_func=user_or_ip_key)
 app = FastAPI()
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request, exc):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded. Try again later."}
+    )
+
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,6 +69,27 @@ app.add_middleware(
 #BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # directory of current script (main.py)
 #DATASET_DIR = os.path.join(BASE_DIR, "videoDataset") # directory to save uploaded videos (/videoDataset)
 #os.makedirs(DATASET_DIR, exist_ok=True)
+
+@app.get("/ratelimit/status")
+async def ratelimit_status(request: Request):
+    # creating an endpoint to check rate limit status
+    try:
+        key = user_or_ip_key(request)
+
+        window_stats = limiter.get_window_stats(
+            limiter._key_prefix(request.endpoint, key),
+            limit = 1,
+            expiry=60,
+        )
+        if not window_stats:
+            return {"allowed": True, "retry_after": 0}
+        remaining = window_stats.reset_in
+        if remaining > 0:
+            return {"allowed": False, "retry_after": remaining}
+        else:
+            return {"allowed": True, "retry_after": 0}
+    except Exception as e:
+        return {"allowed": True, "retry_after": 0, "error": str(e)}
 
 def _job_doc(job_id: str):
     """Return a Firestore doc handle for the job."""
@@ -82,6 +119,7 @@ def _publish_job(job_id: str, raw_gcs_uri: str, user_id: Optional[str] = None):
     }
     # .result() to surface publish errors immediately
     publisher.publish(topic_path, json.dumps(payload).encode("utf-8")).result(timeout=10)
+
 
 def _upload_filelike_to_gcs(bucket: storage.Bucket, blob_name: str, file_obj, content_type: str):
     """Blocking upload of a file-like object to GCS (invoked in a threadpool)."""
@@ -117,51 +155,11 @@ def _sign_get_url(gs_uri: str, minutes: int = 15) -> str:
         method="GET",
     )
 
-#What changed & why:
-#❌ Removed: write to videoDataset/… and calling process_video_and_summarize directly in the API.
-#Reason: the API is now thin: it ingests and enqueues. The heavy work (player choice → makes/misses → highlight) runs in the Worker.
 
-#✅ Added: streaming to GCS RAW, Firestore job record (status="queued"), and Pub/Sub publish.
-#eason: this is the decoupled, reliable pipeline that supports big videos and background processing.
-
-#✅ The response now returns { jobId, status }.
-#Reason: your frontend polls job status and later shows a download link when the Worker finishes.
-#---------------------------------------------------------
-# @app.post("/upload")
-# async def upload_video(video: UploadFile = File(...)):
-#     """
-#     Handles video upload, processing, and returns a structured response
-#     or a specific HTTP error for all failure cases.
-#     """
-
-#     os.makedirs(DATASET_DIR, exist_ok=True) # Making sure dataset directory exists
-#     temp_filename = os.path.join(DATASET_DIR, f"{uuid.uuid4()}.mp4") # creating temporary video file
-#     highlight_filename = os.path.join(DATASET_DIR, f"{uuid.uuid4()}_highlightvid.mp4") # highlight filename
-
-#     with open(temp_filename, "wb") as buffer:
-#         shutil.copyfileobj(video.file, buffer) # saving uploaded video to temp file directory (/videoDataset)
-
-#     results = process_video_and_summarize(temp_filename)
-#     print("DEBUG: returning response to frontend:", results)
-#     print("DEBUG: type of response: :", type(results))
-#     if isinstance(results, str):
-#         try:
-#             results = json.loads(results)
-#         except json.JSONDecodeError:
-#             raise HTTPException(status_code=500, detail="AI model returned invalid JSON")    
-#     #if results.get("ok") is False:
-#      #   return {"ok": False, "error": results.get("error", "Unknown error")}
-#     if isinstance(results, list):
-#         return {"shot_events": results}
-#     elif isinstance(results, dict):
-#         return results
-#     else:
-#         raise HTTPException(status_code=500, detail="Unexpected response format from AI model")
-#---------------------------------------------------------
-# Routes
-# NEW: cloud-native /upload endpoint
 @app.post("/upload")
+@limiter.limit("1/minute")
 async def upload_video(
+    request: Request,
     video: UploadFile = File(...),
     userId: Optional[str] = None,
 ):

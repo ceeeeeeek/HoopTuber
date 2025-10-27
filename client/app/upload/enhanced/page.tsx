@@ -28,7 +28,7 @@ import {
   Download, // NEW: icon for download button
 } from "lucide-react";
 import Link from "next/link"
-import ProfileDropdown from "../app-components/ProfileDropdown"
+import ProfileDropdown from "../../app-components/ProfileDropdown"
 // "https://hooptuber-fastapi-web-service-docker.onrender.com"
 // "http://localhost:8000"
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
@@ -36,20 +36,15 @@ console.log("API_BASE =", process.env.NEXT_PUBLIC_API_BASE);
 
 
 interface GeminiShotEvent {
-  Subject: string;
-  Location: string;
-  ShotType: string;
-  TimeStamp: string;
-  Outcome: string;
+  id: string;
+  timestamp_end: string,
+  timestamp_start: string,
+  outcome: string,
+  subject: string,
+  shot_type: string,
+  shot_location: string
 }
 
-interface GeminiShotEvent {
-  Subject: string
-  Location: string
-  ShotType: string
-  TimeStamp: string
-  Outcome: string
-}
 
 interface UploadResult {
   success: boolean;
@@ -140,14 +135,14 @@ export default function UploadPage() {
 
   const calculateGameStats = (shotEvents: GeminiShotEvent[]) => {
     const totalShots = shotEvents.length;
-    const madeShots = shotEvents.filter((s) => s.Outcome.toLowerCase().includes("make")).length;
+    const madeShots = shotEvents.filter((s) => s.outcome.toLowerCase().includes("make")).length;
     const shootingPercentage = totalShots > 0 ? Math.round((madeShots / totalShots) * 100) : 0;
 
     const shotTypes: Record<string, number> = {};
     const locations: Record<string, number> = {};
     for (const s of shotEvents) {
-      shotTypes[s.ShotType] = (shotTypes[s.ShotType] || 0) + 1;
-      locations[s.Location] = (locations[s.Location] || 0) + 1;
+      shotTypes[s.shot_type] = (shotTypes[s.shot_type] || 0) + 1;
+      locations[s.shot_location] = (locations[s.shot_location] || 0) + 1;
     }
 
     return { totalShots, madeShots, shootingPercentage, shotTypes, locations };
@@ -537,58 +532,87 @@ export default function UploadPage() {
                 onEnded={() => setEnded(true)}
               />
 
-{/* === Highlight Adjuster UI (timestamps only) === */}
+{/* === Enhanced Highlight Editor === */}
 {uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
   <div className="mt-8 bg-white rounded-lg shadow p-4">
     <h3 className="text-lg font-semibold mb-4 flex items-center">
       <Zap className="w-4 h-4 mr-2 text-orange-500" />
-      Adjust Highlights
+      Review Detected Highlights
     </h3>
 
     <p className="text-sm text-gray-600 mb-6">
-      Adjust each highlight’s start and end time below.  
-      This is the preview UI — functionality will be added later.
+      Edit details for each highlight below — customize player info, shot type, and location.
     </p>
 
     <div className="space-y-6">
-      {uploadResult.shotEvents.map((shot, idx) => (
-        <div key={idx} className="border rounded-lg p-3 bg-gray-50">
-          {/* Header row with timestamp and confirm button */}
-          <div className="flex items-center justify-between mb-2">
+      {uploadResult.shotEvents.map((clip, idx) => (
+        <div key={clip.id} className="border rounded-lg p-4 bg-gray-50">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center space-x-2">
-              <Badge variant="secondary">
-                Highlight {idx + 1}
-              </Badge>
+              <Badge variant="secondary">Highlight {idx + 1}</Badge>
               <span className="text-xs text-gray-500">
-                {shot.TimeStamp}
+                {clip.timestamp_start} → {clip.timestamp_end}
               </span>
             </div>
-            <Button size="sm" variant="outline">
-              Confirm
-            </Button>
+            <Badge variant={clip.outcome.toLowerCase().includes("make") ? "default" : "secondary"}>
+              {clip.outcome.toUpperCase()}
+            </Badge>
           </div>
 
-          {/* Mock slider for highlight range (visual placeholder) */}
-          <div className="px-2">
-            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-              <span>Start</span>
-              <span>End</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Subject / Player name */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Player</label>
+              <input
+                type="text"
+                defaultValue={clip.subject || ""}
+                placeholder="Enter player name"
+                className="w-full border border-gray-300 rounded-lg p-2 text-sm"
+              />
             </div>
-            <div className="w-full relative">
-              {/* Timeline bar */}
-              <div className="h-2 bg-gray-200 rounded-full relative">
-                <div
-                  className="absolute h-2 bg-orange-500 rounded-full"
-                  style={{
-                    left: `${(idx * 15) % 80}%`,
-                    width: "20%",
-                  }}
-                />
-              </div>
-              <div className="flex justify-between mt-2 text-xs text-gray-400">
-                <span>+/- 2s</span>
-                <span>+/- 2s</span>
-              </div>
+
+            {/* Shot Type */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Shot Type</label>
+              <select
+                defaultValue={clip.shot_type || ""}
+                className="w-full border border-gray-300 rounded-lg p-2 text-sm"
+              >
+                <option value="">Select type</option>
+                <option value="3-Point">3-Point</option>
+                <option value="Midrange">Midrange</option>
+                <option value="Layup">Layup</option>
+                <option value="Dunk">Dunk</option>
+                <option value="Free Throw">Free Throw</option>
+              </select>
+            </div>
+
+            {/* Location */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Shot Location</label>
+              <select
+                defaultValue={clip.shot_location || ""}
+                className="w-full border border-gray-300 rounded-lg p-2 text-sm"
+              >
+                <option value="">Select location</option>
+                <option value="Left Wing">Left Wing</option>
+                <option value="Right Wing">Right Wing</option>
+                <option value="Top of Key">Top of Key</option>
+                <option value="Corner">Corner</option>
+                <option value="Paint">Paint</option>
+              </select>
+            </div>
+
+            {/* Outcome */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Outcome</label>
+              <select
+                defaultValue={clip.outcome || ""}
+                className="w-full border border-gray-300 rounded-lg p-2 text-sm"
+              >
+                <option value="make">Make</option>
+                <option value="miss">Miss</option>
+              </select>
             </div>
           </div>
         </div>
@@ -597,14 +621,15 @@ export default function UploadPage() {
 
     <div className="flex justify-end mt-6">
       <Button variant="outline" className="mr-2">
-        Reset Adjustments
+        Reset
       </Button>
       <Button className="bg-orange-500 hover:bg-orange-600 text-white">
-        Save Adjustments
+        Save All
       </Button>
     </div>
   </div>
 )}
+
 
 
 
