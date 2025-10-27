@@ -3,10 +3,10 @@
   "private": true,
   "scripts": {
     "frontend": "cd client && npm run dev",
-    "backend": "cd fastapi/api && ../.venv_fastapi/bin/uvicorn main:app --reload",
-    "worker": "cd worker && ./.venv/bin/python main.py",
+    "backend": "backend\\env\\Scripts\\python.exe -m uvicorn --app-dir backend/api main:app --reload --port 8000",
+    "worker":  "worker\\env\\Scripts\\python.exe -u worker\\main.py",    
     "build": "next build",
-    "dev": "concurrently \"npm run frontend\" \"npm run backend\" \"npm run worker\"",
+    "dev": "concurrently -n FRONTEND,BACKEND,WORKER -c blue,green,magenta \"npm run frontend\" \"npm run backend\" \"npm run worker\"",
     "lint": "next lint",
     "start": "next start"
   },
@@ -14,4 +14,3 @@
     "concurrently": "^8.2.2"
   }
 }
-

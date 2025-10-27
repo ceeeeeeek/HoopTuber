@@ -115,7 +115,7 @@ export default function ProfileDropdown() {
               className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
             >
               <User className="w-4 h-4 mr-3 text-gray-500" />
-              Profile
+              Dashboard
             </Link>
 
             {/* Settings Link */}
@@ -125,7 +125,7 @@ export default function ProfileDropdown() {
               className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
             >
               <Settings className="w-4 h-4 mr-3 text-gray-500" />
-              Settings
+              Profile Settings
             </Link>
           </div>
 

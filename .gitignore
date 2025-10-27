@@ -1,3 +1,4 @@
+#.gitignore - Monday 10-27-27 Version
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
@@ -35,10 +36,12 @@ venv-*/
 **/.venv*
 worker/.venv
 fastapi/.venv*/
+backend/.venv*/
 worker/.venv*/
 
 worker/.venv/
 fastapi/api/.env
+backend/api/.env
 
 # env files
 **/.env
@@ -69,18 +72,25 @@ next-env.d.ts
 # py cache folder
 fastapi/__pycache__/
 fastapi/api/__pycache__/
+backend/__pycache__/
+backend/api/__pycache__/
 # data folders
 fastapi/api/videoDataset
 fastapi/api/clips
 fastapi/api/combined
 worker/__pycache__/
+backend/api/videoDataset
+backend/api/clips
+backend/api/combined
 
 # json service accounts & secrets 
 # from #Google Cloud Services/GCS IAM & Admin Service Accounts
 fastapi/api-sa.json
+backend/backend-sa.json
 worker/worker-sa.json
 api-sa.json
 worker-sa.json
+backend-sa.json
 hooptuberdev.json
 .keys/
 *leads*.json

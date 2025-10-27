@@ -3,22 +3,31 @@
 import os, json, time, tempfile, logging
 from google.cloud import pubsub_v1, storage, firestore
 from VideoInputTest import process_video_and_summarize, CreateHighlightVideo2, timestamp_maker
+from dotenv import load_dotenv   # NEW
 
 logging.basicConfig(level=logging.INFO)
 
-# UNCHANGED: env
-PROJECT_ID      = os.environ["GCP_PROJECT_ID"]
-SUBSCRIPTION_ID = os.environ["PUBSUB_SUB"]
-RAW_BUCKET      = os.environ["GCS_RAW_BUCKET"]   # UNCHANGED: temporary ingest objects live here and are deleted
-OUT_BUCKET      = os.environ["GCS_OUT_BUCKET"]
-COLLECTION      = os.environ.get("FIRESTORE_COLLECTION", "jobs")
+# --- NEW: load env file ---
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
-# NEW: name for the Highlights collection (single source of truth)
-HIGHLIGHTS_COLL = os.environ.get("FIRESTORE_HIGHLIGHTS_COLLECTION", "Highlights")
+# UNCHANGED: env
+# PROJECT_ID      = os.environ["GCP_PROJECT_ID"]
+# SUBSCRIPTION_ID = os.environ["PUBSUB_SUB"]
+# RAW_BUCKET      = os.environ["GCS_RAW_BUCKET"]   # UNCHANGED: temporary ingest objects live here and are deleted
+# OUT_BUCKET      = os.environ["GCS_OUT_BUCKET"]
+# COLLECTION      = os.environ.get("FIRESTORE_COLLECTION", "jobs")
+PROJECT_ID = os.getenv("GCP_PROJECT_ID")
+RAW_BUCKET = os.getenv("GCS_RAW_BUCKET")
+OUT_BUCKET = os.getenv("GCS_OUT_BUCKET")
+SUBSCRIPTION_ID = os.getenv("PUBSUB_SUB")
+COLLECTION = os.getenv("FIRESTORE_COLLECTION", "jobs")
+HIGHLIGHT_COL = os.getenv("FIRESTORE_HIGHLIGHT_COL", "Highlights")
+SERVICE_ACCOUNT = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 # UNCHANGED: clients
 storage_client   = storage.Client(project=PROJECT_ID)
 firestore_client = firestore.Client(project=PROJECT_ID)
+publisher = pubsub_v1.PublisherClient() # NEW
 
 # UNCHANGED: Firestore helpers
 def update_job(job_id: str, data: dict):
@@ -117,7 +126,7 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
             "createdAt": firestore.SERVER_TIMESTAMP,
             "updatedAt": firestore.SERVER_TIMESTAMP,
         }
-        firestore_client.collection(HIGHLIGHTS_COLL).document(job_id).set(highlight_doc, merge=True)
+        firestore_client.collection(HIGHLIGHT_COL).document(job_id).set(highlight_doc, merge=True)
 
         # NEW: delete the temporary raw object to save storage (you asked to stop storing raws)
         try:
