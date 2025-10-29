@@ -5,6 +5,7 @@ from google.cloud import pubsub_v1, storage, firestore
 from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker, strip_code_fences
 import subprocess
 import logging # for render logs
+from utils import convert_to_mp4
 
 logging.basicConfig(level=logging.INFO)
 PROJECT_ID         = os.environ["GCP_PROJECT_ID"]
@@ -77,21 +78,8 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
 
             download_from_gcs(input_gcs_uri, in_path)
             # handling .mov files, will be better in the long run
-            converted_path = in_path
-            """
-            try:
-                if not in_path.lower.endswith(".mp4"):
-                    converted_path = os.path.join(td, "converted.mp4")
-                    logging.info("Converting .MOV file to .mp4")
-                    subprocess.run([
-                        "ffmpeg", "-i", in_path, "-c:v", "libx264", "-c:a", "aac", "-y", converted_path
-                    ], check=True)
-                else:
-                    logging.info(f"{in_path} is an .mp4 file")
-            except Exception as E:
-                logging.error("Conversion failed, contintuing with original file")
+            converted_path = convert_to_mp4(in_path, td)
             
-            """
             raw_gemini_output = process_video_and_summarize(converted_path) # gemini output
             
             print(f"DEBUG: gemini is outputting: {type(raw_gemini_output)}, coming from worker/main.py", flush=True)

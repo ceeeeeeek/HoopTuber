@@ -1,6 +1,6 @@
 # fastapi server as of 10/17/2025
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import Body, FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
@@ -91,6 +91,65 @@ async def ratelimit_status(request: Request):
     except Exception as e:
         return {"allowed": True, "retry_after": 0, "error": str(e)}
 
+@app.post("/generate_upload_url")
+def generate_upload_url(request: dict = Body(...)):
+    filename = request.get("filename")
+    user_id = request.get("UserId")
+    content_type = request.get("userId")
+    if not filename:
+        raise HTTPException(status_code=400, detail="Missing filename")
+    
+    job_id = str(uuid.uuid4())
+    blob_name, gcs_uri, safe_name = _make_keys(filename, job_id)
+    bucket = storage_client.bucket(RAW_BUCKET)
+    blob = bucket.blob(blob_name)
+
+    # Generate signed upload URL
+    upload_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=15),
+        method="PUT",
+        content_type=content_type
+    )
+
+    # Create a Firestore entry with status "uploading"
+    _job_doc(job_id).set({
+        "jobId": job_id,
+        "userId": user_id,
+        "status": "uploading",
+        "videoGcsUri": gcs_uri,
+        "originalFileName": safe_name,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    }, merge=True)
+
+    return {
+        "uploadUrl": upload_url,
+        "gcsUri": gcs_uri,
+        "jobId": job_id,
+        "contentType": content_type
+    }
+
+@app.post("/publish_job")
+def publish_job(request: dict = Body(...)):
+    job_id = request.get("jobId")
+    gcs_uri = request.get("videoGcsUri")
+    user_id = request.get("userId")
+
+    if not job_id or not gcs_uri:
+        raise HTTPException(status_code=400, detail="Missing jobId or videoGcsUri")
+
+    # Publish the job to Pub/Sub for the worker to process
+    try:
+        _publish_job(job_id, gcs_uri, user_id=user_id)
+        _job_doc(job_id).set({
+            "status": "queued",
+            "queuedAt": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+        return {"ok": True, "message": "Job queued successfully"}
+    except Exception as e:
+        _job_doc(job_id).set({"status": "publish_error", "error": str(e)}, merge=True)
+        raise HTTPException(status_code=502, detail=f"Publish failed: {e}")
+    
 def _job_doc(job_id: str):
     """Return a Firestore doc handle for the job."""
     return firestore_client.collection(COLLECTION).document(job_id)
@@ -109,13 +168,14 @@ def _make_keys(original_name: str, job_id: str) -> tuple[str, str, str]:
     print(f"DEBUG: uploading to blob_name={blob_name}")
     return blob_name, gcs_uri, safe_name
 
-def _publish_job(job_id: str, raw_gcs_uri: str, user_id: Optional[str] = None):
+def _publish_job(job_id: str, raw_gcs_uri: str, user_id: Optional[str] = None, owner_email: Optional[str] = None):
     """Publish a message the Background Worker will process."""
     payload = {
         "jobId": job_id,
         "videoGcsUri": raw_gcs_uri,
         "outBucket": OUT_BUCKET,
         "userId": user_id,
+        "ownerEmail": owner_email
     }
     # .result() to surface publish errors immediately
     publisher.publish(topic_path, json.dumps(payload).encode("utf-8")).result(timeout=10)
@@ -170,7 +230,7 @@ async def upload_video(
     4) Returns { jobId, status } for the frontend to poll /jobs/{id}
     """
     try:
-
+        owner_email = request.header.get("x-owner-email")
         print(f"Debug: starting upload for {video.filename}")
         if not video or not video.filename:
             raise HTTPException(status_code=400, detail="Missing file/filename")
@@ -189,6 +249,7 @@ async def upload_video(
         _job_doc(job_id).set({
             "jobId": job_id,
             "userId": userId,
+            "ownerEmail": owner_email,
             "status": "queued",
             "originalFileName": original_name,
             "videoGcsUri": raw_gcs_uri,
@@ -197,7 +258,7 @@ async def upload_video(
 
         # 4) Publish to Pub/Sub so the Background Worker starts processing
         try:
-            _publish_job(job_id, raw_gcs_uri, user_id=userId)
+            _publish_job(job_id, raw_gcs_uri, user_id=userId, owner_email=owner_email)
         except Exception as e:
             _job_doc(job_id).set({"status": "publish_error", "error": str(e)}, merge=True)
             raise HTTPException(status_code=502, detail=f"Enqueue failed: {e}")

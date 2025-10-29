@@ -89,6 +89,7 @@ worker/__pycache__/
 
 # json service accounts & secrets 
 # from #Google Cloud Services/GCS IAM & Admin Service Accounts
+cors.json
 fastapi/api-sa.json
 worker/worker-sa.json
 api-sa.json

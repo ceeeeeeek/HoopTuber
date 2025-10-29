@@ -1,10 +1,11 @@
-from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo, CreateHighlightVideo2, timestamp_maker, strip_code_fences, convert_timestamp_to_seconds
+from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker, strip_code_fences, convert_timestamp_to_seconds
 import json
 from VideoInputTest import return_enhanced_timestamps
+from utils import convert_to_mp4
 
 if __name__ == "__main__":
     Creator = CreateHighlightVideo2()
-    file_path = "videoDataset/meshooting2.mp4"
+    file_path = "videoDataset/alivschristian1.MOV"
     res = process_video_and_summarize(file_path)
     print(f"DEBUG: gemini is outputting: {type(res)}, coming from worker/VideoInputTest.py")
     print(f"DEBUG: Gem output: {res}\n")

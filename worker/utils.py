@@ -13,9 +13,8 @@ load_dotenv()
 from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
 from prompts import prompt_4, json_input, prompt_shot_outcomes_only
 from uuid import uuid4 
-from VideoInputTest import strip_code_fences, convert_timestamp_to_seconds, CreateHighlightVideo2
 
-Creator = CreateHighlightVideo2()
+
 
 
 def convert_timestamp_to_seconds2(timestamp):
@@ -39,7 +38,7 @@ def timestamp_maker_2(gem_output, buffer=5):
     elif isinstance(gem_output, str):
         # String input - parse it
         try:
-            gem_output_stripped = strip_code_fences(gem_output)
+            gem_output_stripped = (gem_output)
             parsed = json.loads(gem_output_stripped)
             if isinstance(parsed, str):
                 parsed = json.loads(parsed) # try to parse again if it's a string
@@ -52,7 +51,7 @@ def timestamp_maker_2(gem_output, buffer=5):
 
     for shot in parsed:
         if "TimeStamp" in shot and "Outcome" in shot:
-            start = convert_timestamp_to_seconds(shot["TimeStamp"])
+            start = (shot["TimeStamp"])
             end = start + buffer  # add buffer to define end time
             outcome = shot["Outcome"].lower()
             
@@ -135,3 +134,31 @@ def return_enhanced_timestamps(gem_output):
 
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+def convert_to_mp4(in_path, td):
+    converted_path = in_path
+    try:
+        # Detect by extension or FFmpeg probing
+        ext = os.path.splitext(in_path)[1].lower()
+        if ext != ".mp4":
+            converted_path = os.path.join(td, "converted.mp4")
+            logging.info(f"Converting {ext} to .mp4 ...")
+            print(f"Converting {ext} to .mp4 file...")
+            subprocess.run([
+                "ffmpeg",
+                "-i", in_path,
+                "-c:v", "libx264",
+                "-c:a", "aac",
+                "-movflags", "+faststart",
+                "-y", converted_path
+            ], check=True)
+
+            logging.info(f"Conversion successful: {converted_path}")
+        else:
+            logging.info(f"File already in .mp4 format: {in_path}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"FFmpeg conversion failed: {e}")
+        logging.info("Continuing with original file.")
+        converted_path = in_path
+    
+    return converted_path

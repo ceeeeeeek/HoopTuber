@@ -11,6 +11,7 @@ load_dotenv()
 from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
 from prompts import prompt_4, json_input, prompt_shot_outcomes_only
 from uuid import uuid4 
+from utils import convert_to_mp4
 
 
 # NEW: turning Gemini call to async, avoid repeated API calls
@@ -47,8 +48,9 @@ def process_video_and_summarize(file_path):
     This method is for all file sizes.
     """
     try:
+        #td = "videoDataset/"
         print(f"Uploading file: {file_path}...")
-
+        #tester = convert_to_mp4(file_path, td)
         uploaded_file =  client.files.upload(file=file_path)
         
         print(f"File uploaded successfully with name: {uploaded_file.name}")
@@ -198,17 +200,17 @@ class CreateHighlightVideo2:
     def __init__(self, clip_duration=5):
         self.clip_duration = clip_duration
     
-    def converting_tester(self, timestamp_list, merge_gap=0):
+    def converting_tester(self, timestamp_list, merge_gap=0, start_before=3):
         try:
             if not timestamp_list:
                     print(f"No timestamps")
                     return []
             timestamps_first = sorted(timestamp_list)
             timestamps = []
-            curr_start = timestamps_first[0]
+            curr_start = max(0, timestamps_first[0]-start_before)
             curr_end = curr_start + self.clip_duration
             for i in range(1, len(timestamps_first)):
-                start_time = timestamps_first[i]
+                start_time = max(0, timestamps_first[i]-start_before)
                 end_time = start_time + self.clip_duration
                 # here we are checking for overlapping timestamps
                 if start_time <= curr_end + merge_gap:
@@ -257,13 +259,6 @@ class CreateHighlightVideo2:
                         '-y',                           # Overwrite
                         clip_path
                     ]
-                    """
-                    EDGE CASE NOT REALLY: HANDLE
-                    will be times that the highlight times overlap.
-                    In that case, maybe start the next highlight at the end of the previous highlight?
-                    H
-                    
-                    """
                     result = subprocess.run(cmd, capture_output=True, text=True)
 
                     if result.returncode == 0:
@@ -346,7 +341,7 @@ def check_json(json_input):
         return (f"Stripped json output is a json object: {parsed_stripped}")
     
     return ("Input is not a str or json object:", parsed_stripped, parsed_regular)
-class CreateHighlightVideo:
+#class CreateHighlightVideo:
     def __init__(self, video_path, output_dir="clips", combined_dir="combined", clip_duration=6):
         self.video_path = video_path
         self.output_dir = output_dir
@@ -445,7 +440,7 @@ if __name__ == "__main__":
     file_path = f"videoDataset/{file_name}"
 
     # Create an instance of your class
-    highlighter = CreateHighlightVideo(video_path=file_path, output_dir="clips", combined_dir="combined", clip_duration=5)
+    #highlighter = CreateHighlightVideo(video_path=file_path, output_dir="clips", combined_dir="combined", clip_duration=5)
 
     #slowed_file_path = f"videoDataset/{file_name.split('.')[0]}_slowed.mp4"
     #slow_down_video(file_path, slowed_file_path, speed_factor=0.5)

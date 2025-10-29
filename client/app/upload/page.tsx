@@ -1,4 +1,4 @@
-//app/upload/page.tsx (app\upload\page.tsx VERSION as of Thursday 09-11-25)
+//app/upload/page.tsx (app\upload\page.tsx VERSION as of 10/28/25)
 
 "use client";
 
@@ -122,6 +122,9 @@ export default function UploadPage() {
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!file.name.endsWith(".mp4")) {
+      alert("This file will be converted to an mp4 file.");
+    }
     setSelectedFile(file);
     setUploadState("idle");
     setUploadResult(null);
@@ -213,83 +216,63 @@ export default function UploadPage() {
   }, []);
 
   // ------- CHANGED: upload now talks to FastAPI upload endpoint -------
-  // ---- upload handler ----
+  // ---- upload handler (CHANGED TO SIGNED URL FLOW)----
   const handleUpload = async () => {
-    if (!selectedFile) return
+  if (!selectedFile) return;
 
+  try {
     setUploadState("uploading");
-    setProgress(15);
+    setProgress(10);
 
-    const formData = new FormData();
-    formData.append("video", selectedFile);
+    // 1️⃣ Request a signed upload URL from FastAPI
+    const res = await fetch(`${API_BASE}/generate_upload_url`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: selectedFile.name }),
+    });
+    if (!res.ok) throw new Error("Failed to get signed URL");
+    const { uploadUrl, gcsUri, jobId } = await res.json();
 
-    // CHANGED: progress interval typed as number
-    // visual progress during POST (client-side only)
-    let progressInterval: number | null = window.setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 90) {
-          if (progressInterval !== null) {
-            window.clearInterval(progressInterval); // CHANGED
-            progressInterval = null;
-          }
-          return 90;
-        }
-        return prev + 10;
-      });
-    }, 500);
+    // 2️⃣ Upload directly to GCS
+    const upload = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": selectedFile.type || "video/mp4" },
+      body: selectedFile,
+    });
+    if (!upload.ok) throw new Error("GCS upload failed");
 
-    try {
-      const response = await fetch(`${API_BASE}/upload`, { method: "POST", body: formData });
+    setProgress(75);
 
-      if (progressInterval !== null) {
-        window.clearInterval(progressInterval); // CHANGED
-        progressInterval = null;
-      }
-      setProgress(100);
+    // 3️⃣ Tell FastAPI the upload is complete (publish job to Pub/Sub)
+    const pub = await fetch(`${API_BASE}/publish_job`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId, videoGcsUri: gcsUri }),
+    });
+    if (!pub.ok) throw new Error("Failed to publish job");
 
-      if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
+    setProgress(100);
+    setUploadState("processing");
+    setJobId(jobId);
 
-      const result = await response.json(); // { ok, jobId, status, videoGcsUri } OR legacy events // NEW: expect { jobId } in queue flow
-      
-      // New queue-based flow – start polling
-      if (result?.jobId) {
-        setJobId(result.jobId);
-        setUploadState("processing");
-        setUploadResult({
-          success: true,
-          fileName: selectedFile.name,
-          fileSize: selectedFile.size,
-          method: "queue_v1",
-          verified: true,
-          shotEvents: [], // no immediate events in queue flow
-        });
-        startPolling(result.jobId);
-        return;
-      }
+    // 4️⃣ Initialize frontend state & begin polling job status
+    setUploadResult({
+      success: true,
+      fileName: selectedFile.name,
+      fileSize: selectedFile.size,
+      method: "signed_url_v1",
+      verified: true,
+      shotEvents: [],
+    });
 
-      // UNCHANGED: legacy immediate analysis path (array of events)
-      // Legacy: immediate analysis response (array of shot events)
-      const shotEvents: GeminiShotEvent[] =
-        result.shot_events || result.results?.shot_events || (Array.isArray(result) ? result : []);
-      if (!Array.isArray(shotEvents)) throw new Error("Invalid response format: expected jobId or shot events array");
+    startPolling(jobId);
+  } catch (err) {
+    console.error("Upload error:", err);
+    alert("Upload failed: " + (err as Error).message);
+    setUploadState("idle");
+  }
+};
 
-      const gameStats = calculateGameStats(shotEvents);
-      setUploadResult({
-        success: true,
-        videoUrl: "",
-        fileName: selectedFile.name,
-        fileSize: selectedFile.size,
-        method: "gemini_ai",
-        verified: true,
-        shotEvents,
-        gameStats,
-      });
-      setUploadState("complete");
-    } catch (err) {
-      console.error("Upload error:", err);
-      setUploadState("idle");
-    }
-  };
 
     // UNCHANGED: reset, with added cleanup of new state
   const resetUpload = () => {
@@ -332,6 +315,7 @@ export default function UploadPage() {
   link.click();
   document.body.removeChild(link);
 };
+
 
   // COOLDOWN STATES:
   const [cooldown, setCooldown] = useState<number | null>(null);
