@@ -57,3 +57,8 @@ uvloop==0.21.0
 watchfiles==1.1.0
 websockets==15.0.1
 yarg==0.1.10
+## The following requirements were added by pip freeze:
+Deprecated==1.2.18
+limits==5.6.0
+slowapi==0.1.9
+wrapt==1.17.3
