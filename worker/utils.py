@@ -13,7 +13,32 @@ load_dotenv()
 from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
 from prompts import prompt_4, json_input, prompt_shot_outcomes_only
 from uuid import uuid4 
+from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
 
+
+def add_watermark(
+    video_path,
+    output_path="output_watermarked.mp4",
+    text="HoopTuber",
+    font="Arial-Bold",
+    fontsize=30,
+    color="white",
+    position=("right", "bottom"),
+    opacity=0.5
+):
+    video = VideoFileClip(video_path)
+
+    # Use the built-in 'caption' method instead of ImageMagick
+    watermark = (
+        TextClip(text, fontsize=fontsize, color=color, font=font, method="caption")  # <── add method="caption"
+        .set_opacity(opacity)
+        .set_position(position)
+        .set_duration(video.duration)
+    )
+
+    final = CompositeVideoClip([video, watermark])
+    final.write_videofile(output_path, codec="libx264", fps=video.fps, preset="ultrafast", threads=4, logger=None)
+    return output_path
 
 
 

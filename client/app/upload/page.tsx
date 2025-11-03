@@ -224,7 +224,7 @@ export default function UploadPage() {
     setUploadState("uploading");
     setProgress(10);
 
-    // 1️⃣ Request a signed upload URL from FastAPI
+    // Request a signed upload URL from FastAPI
     const res = await fetch(`${API_BASE}/generate_upload_url`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -233,7 +233,7 @@ export default function UploadPage() {
     if (!res.ok) throw new Error("Failed to get signed URL");
     const { uploadUrl, gcsUri, jobId } = await res.json();
 
-    // 2️⃣ Upload directly to GCS
+    // Upload directly to GCS
     const upload = await fetch(uploadUrl, {
       method: "PUT",
       headers: { "Content-Type": selectedFile.type || "video/mp4" },
@@ -243,7 +243,7 @@ export default function UploadPage() {
 
     setProgress(75);
 
-    // 3️⃣ Tell FastAPI the upload is complete (publish job to Pub/Sub)
+    // Tell FastAPI the upload is complete (publish job to Pub/Sub)
     const pub = await fetch(`${API_BASE}/publish_job`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -255,7 +255,7 @@ export default function UploadPage() {
     setUploadState("processing");
     setJobId(jobId);
 
-    // 4️⃣ Initialize frontend state & begin polling job status
+    // Initialize frontend state & begin polling job status
     setUploadResult({
       success: true,
       fileName: selectedFile.name,

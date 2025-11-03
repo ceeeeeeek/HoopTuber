@@ -200,7 +200,7 @@ class CreateHighlightVideo2:
     def __init__(self, clip_duration=5):
         self.clip_duration = clip_duration
     
-    def converting_tester(self, timestamp_list, merge_gap=0, start_before=3):
+    def converting_tester(self, timestamp_list, start_before=1, merge_gap=0):
         try:
             if not timestamp_list:
                     print(f"No timestamps")
@@ -341,99 +341,7 @@ def check_json(json_input):
         return (f"Stripped json output is a json object: {parsed_stripped}")
     
     return ("Input is not a str or json object:", parsed_stripped, parsed_regular)
-#class CreateHighlightVideo:
-    def __init__(self, video_path, output_dir="clips", combined_dir="combined", clip_duration=6):
-        self.video_path = video_path
-        self.output_dir = output_dir
-        self.combined_dir = combined_dir
-        self.clip_duration = clip_duration
 
-        # Make sure the clip output directory exists
-        os.makedirs(self.output_dir, exist_ok=True)
-        os.makedirs(self.combined_dir, exist_ok=True)
-
-    def create_highlights_ffmpeg(self, timestamps, merge_gap=0):
-        try:
-            
-            for i, (start, end) in enumerate(timestamps):
-                duration = end - start
-                output_path = os.path.join(
-                    self.output_dir,
-                    f"clip_{i+1}_{start.replace}.mp4"
-                )
-
-                cmd = [
-                    'ffmpeg',
-                    '-ss', str(start),           # Start time (HH:MM:SS)
-                    '-i', self.video_path,          # Input video
-                    '-t', str(self.clip_duration),  # Duration in seconds
-                    '-c', 'copy',                   # No re-encoding
-                    '-avoid_negative_ts', 'make_zero',
-                    '-y',                           # Overwrite
-                    output_path
-                ]
-
-                result = subprocess.run(cmd, capture_output=True, text=True)
-
-                if result.returncode == 0:
-                    timestamp_str = time.strftime('%H:%M:%S', time.gmtime(start)) # converting secodns to HH:MM:SS
-                    print(f"✓ Created clip {i+1}: {timestamp_str}")
-                else:
-                    print(f"✗ Error creating clip {i+1}: {result.stderr}")
-
-        except Exception as e:
-            print(f"General error: {e}")
-
-    def clear_folder(self, folder_path):
-        for filename in os.listdir(folder_path):
-            file_path = os.path.join(folder_path, filename)
-            try:
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-                elif os.path.isdir(file_path):
-                    self.clear_folder(file_path)
-                    os.rmdir(file_path)
-            except Exception as e:
-                print(f"Error deleting: {file_path}. Reason: {e}")
-        print(f"Cleared folder: {folder_path}")
-
-    def combine_clips_ffmpeg(self, output_filename="combined_video.mp4"):
-        try:
-            clip_files = sorted(glob.glob(os.path.join(self.output_dir, "*.mp4")))
-
-            if not clip_files:
-                print("No clip files found!")
-                return
-
-            output_path = os.path.join(self.combined_dir, output_filename)
-            filelist_path = "temp_filelist.txt"
-
-            with open(filelist_path, 'w') as f:
-                for clip_file in clip_files:
-                    f.write(f"file '{os.path.abspath(clip_file)}'\n")
-
-            cmd = [
-                'ffmpeg',
-                '-f', 'concat',
-                '-safe', '0',
-                '-i', filelist_path,
-                '-c', 'copy',
-                '-y',
-                output_path
-            ]
-
-            print(f"Combining {len(clip_files)} clips...")
-            result = subprocess.run(cmd, capture_output=True, text=True)
-
-            os.remove(filelist_path)
-
-            if result.returncode == 0:
-                print(f"✓ Combined video saved as: {output_path}")
-            else:
-                print(f"✗ Error combining clips: {result.stderr}")
-
-        except Exception as e:
-            print(f"✗ Error: {e}")
 
 if __name__ == "__main__":
     file_name = "meshooting2.mp4"

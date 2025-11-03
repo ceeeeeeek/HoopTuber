@@ -5,7 +5,7 @@ from google.cloud import pubsub_v1, storage, firestore
 from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker, strip_code_fences
 import subprocess
 import logging # for render logs
-from utils import convert_to_mp4
+from utils import convert_to_mp4, add_watermark
 
 logging.basicConfig(level=logging.INFO)
 PROJECT_ID         = os.environ["GCP_PROJECT_ID"]
@@ -46,10 +46,6 @@ def upload_to_gcs(local_path: str, bucket_name: str, dst_key: str) -> str:
 
 def make_highlight(in_path: str, out_path: str, gemini_output):
     highlighter = CreateHighlightVideo2()
-    """
-    Replace this with your real highlight pipeline (ffmpeg, moviepy, Gemini, etc).
-    For now, just copy the file to simulate work.
-    """
     # REAL HIGHLIGHT PIPELINE:
     
     make_timestamps = timestamp_maker(gemini_output) # list of make timestamps
