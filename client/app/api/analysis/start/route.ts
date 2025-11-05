@@ -21,7 +21,7 @@ export async function POST(req: Request) {
 
   // IMPORTANT: make sure process.env.API_BASE points at your FastAPI,
   // e.g. NEXT_PUBLIC_API_BASE=http://localhost:8000 in .env (backend running)
-  const r = await fetch(process.env.NEXT_PUBLIC_API_BASE + "/upload", {
+  const r = await fetch(process.env.NEXT_PUBLIC_BACKEND_URL + "/upload", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

@@ -1,10 +1,10 @@
 #worker/UnitTest.py Sunday 10-26-25 Version (same as on hooptuber-new-merge-oct branch on github)
-from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo, CreateHighlightVideo2, timestamp_maker, strip_code_fences, convert_timestamp_to_seconds
+from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker, strip_code_fences, convert_timestamp_to_seconds
 import json
 
 if __name__ == "__main__":
     Creator = CreateHighlightVideo2()
-    file_path = "videoDataset/meshooting2.mp4"
+    file_path = "videoDataset/danielShooting.mp4"
     res = process_video_and_summarize(file_path)
     print(f"DEBUG: gemini is outputting: {type(res)}, coming from worker/VideoInputTest.py")
     print(f"DEBUG: Gem output: {res}\n")

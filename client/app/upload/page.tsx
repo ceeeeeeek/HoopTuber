@@ -1,24 +1,19 @@
-// app/upload/page.tsx - Tuesday 10-28-25 Version Update
-// UNCHANGED: client component directive
+//app/upload/page.tsx - - Tuesday 11-04-25 Version
 "use client";
 
-// UNCHANGED: React + hooks
+//React + hooks
 import { useEffect, useRef, useState, useCallback } from "react";
-
-// UNCHANGED: UI kit
+//UI kit
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-
-// UNCHANGED: routing helper
+//routing helper
 import { useRouter } from "next/navigation";
-
-// NEW: read the signed-in user so we can pass x-owner-email to FastAPI
+//read the signed-in user so we can pass x-owner-email to FastAPI
 import { useSession } from "next-auth/react";
-
 import {
-  // UNCHANGED: icons
+  //icons
   Upload,
   Play,
   CheckCircle,
@@ -29,18 +24,19 @@ import {
   Brain,
   Target,
   TrendingUp,
-  // Clock, MapPin, User,  // (kept imported in case you re-enable the legacy section)
-  Download, // UNCHANGED in your file: used for the download button
+  //Clock, MapPin, User,  // (kept imported in case you re-enable the legacy section)
+  Download, //UNCHANGED in your file: used for the download button
 } from "lucide-react";
-
 import Link from "next/link";
 import ProfileDropdown from "../app-components/ProfileDropdown";
 
-// UNCHANGED fallback: keep your existing base + default
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
-console.log("API_BASE =", process.env.NEXT_PUBLIC_API_BASE);
+const API_BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+console.log("[Upload] API_BASE =", API_BASE);
 
-// UNCHANGED: types used by the “legacy immediate analysis” section and job polling
+
+
+
+//types used by the “legacy immediate analysis” section and job polling
 interface GeminiShotEvent {
   Subject: string;
   Location: string;
@@ -51,13 +47,13 @@ interface GeminiShotEvent {
 
 interface UploadResult {
   success: boolean;
-  videoUrl?: string;      // UNCHANGED
-  processingId?: string;  // UNCHANGED
-  fileName?: string;      // UNCHANGED
-  fileSize?: number;      // UNCHANGED
-  method?: string;        // UNCHANGED
-  verified?: boolean;     // UNCHANGED
-  shotEvents?: GeminiShotEvent[]; // UNCHANGED (legacy)
+  videoUrl?: string;     
+  processingId?: string;  
+  fileName?: string;      
+  fileSize?: number;      
+  method?: string;        
+  verified?: boolean;     
+  shotEvents?: GeminiShotEvent[]; 
   gameStats?: {
     totalShots: number;
     madeShots: number;
@@ -76,7 +72,7 @@ interface JobRecord {
 }
 
 export default function UploadPage() {
-  // UNCHANGED: protect route; bounce to /login if no session
+  //protect route; bounce to /login if no session
   const router = useRouter();
   useEffect(() => {
     const checkSession = async () => {
@@ -87,25 +83,25 @@ export default function UploadPage() {
     checkSession();
   }, [router]);
 
-  // NEW: read session so we can pass x-owner-email on /upload
-  const { data: session } = useSession();                 // NEW
-  const ownerEmail = session?.user?.email ?? undefined;   // NEW
+  //read session so we can pass x-owner-email on /upload
+  const { data: session } = useSession();                 
+  const ownerEmail = session?.user?.email ?? undefined;   
 
-  // UNCHANGED: base UI state
+  //base UI state
   const [uploadState, setUploadState] =
     useState<"idle" | "uploading" | "processing" | "complete">("idle");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [progress, setProgress] = useState(0);
 
-  // UNCHANGED: job + download tracking
+  //job + download tracking
   const [jobId, setJobId] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
-  // CHANGED: keep a browser-safe interval id (number vs NodeJS.Timer)
-  const pollRef = useRef<number | null>(null); // CHANGED
+  //keep a browser-safe interval id (number vs NodeJS.Timer)
+  const pollRef = useRef<number | null>(null); 
 
-  // UNCHANGED: file chooser
+  //file chooser
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -117,7 +113,7 @@ export default function UploadPage() {
     setDownloadUrl(null);
   }, []);
 
-  // UNCHANGED: a few helpers still used in optional/legacy render
+  //a few helpers still used in optional/legacy render
   const formatTimestamp = (ts: string) => ts || "0:00";
   const getShotOutcomeColor = (outcome: string) =>
     outcome.toLowerCase().includes("make") ? "bg-green-500" : "bg-red-500";
@@ -141,7 +137,7 @@ export default function UploadPage() {
   // ---- polling controls (browser-safe) ----
   const stopPolling = () => {
     if (pollRef.current !== null) {
-      window.clearInterval(pollRef.current);   // CHANGED
+      window.clearInterval(pollRef.current);   
       pollRef.current = null;
     }
   };
@@ -162,7 +158,7 @@ export default function UploadPage() {
         }
 
         if (data.status === "done" && data.outputGcsUri) {
-          // fetch signed URL + (optional) shot events
+          //fetch signed URL + (optional) shot events
           const dlRes = await fetch(`${API_BASE}/jobs/${id}/download`);
           if (dlRes.ok) {
             const j = await dlRes.json();
@@ -190,10 +186,11 @@ export default function UploadPage() {
     }, 3000);
   };
 
-  // NEW: cleanup any live poller on unmount
+  //cleanup any live poller on unmount
   useEffect(() => () => stopPolling(), []);
 
-  // ------- Upload → enqueue job (now with identity header) -------
+  //This is where the upload logic lives
+  // ------- Upload → enqueue job (now with identity header + error surfacing) -------
   const handleUpload = async () => {
     if (!selectedFile) return;
 
@@ -203,7 +200,7 @@ export default function UploadPage() {
     const formData = new FormData();
     formData.append("video", selectedFile);
 
-    // CHANGED: progress interval typed as number (browser)
+    //progress interval typed as number (browser)
     let progressInterval: number | null = window.setInterval(() => {
       setProgress((prev) => {
         if (prev >= 90) {
@@ -218,13 +215,20 @@ export default function UploadPage() {
     }, 500);
 
     try {
-      // NEW: pass x-owner-email when we have it so the worker
-      //      can create the Highlights doc with the right owner.
-      const response = await fetch(`${API_BASE}/upload`, {
+      const url = `${API_BASE}/upload`;
+      console.log("[Upload] POST", url);
+
+      const res = await fetch(url, {
         method: "POST",
+        headers: { "x-owner-email": session?.user?.email ?? "" },
         body: formData,
-        headers: ownerEmail ? { "x-owner-email": ownerEmail } : undefined, // NEW
       });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`Upload failed (${res.status}): ${txt}`);
+      }
+      const json = await res.json();
+      const jobFromJson = json?.jobId as string | undefined;
 
       if (progressInterval !== null) {
         window.clearInterval(progressInterval);
@@ -232,13 +236,9 @@ export default function UploadPage() {
       }
       setProgress(100);
 
-      if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
-
-      // NEW: expect { ok, jobId } in queue flow, but support legacy events array too
-      const result = await response.json();
-
-      if (result?.jobId) {
-        setJobId(result.jobId);
+      //prefer queue flow if we got a jobId
+      if (jobFromJson) {                       
+        setJobId(jobFromJson);
         setUploadState("processing");
         setUploadResult({
           success: true,
@@ -246,15 +246,15 @@ export default function UploadPage() {
           fileSize: selectedFile.size,
           method: "queue_v1",
           verified: true,
-          shotEvents: [], // no immediate events in queue flow
+          shotEvents: [], //no immediate events in queue flow
         });
-        startPolling(result.jobId);
+        startPolling(jobFromJson);
         return;
       }
 
-      // UNCHANGED: legacy immediate-analysis fallback
+      //legacy immediate-analysis fallback
       const shotEvents: GeminiShotEvent[] =
-        result.shot_events || result.results?.shot_events || (Array.isArray(result) ? result : []);
+        json?.shot_events || json?.results?.shot_events || (Array.isArray(json) ? json : []);
       if (!Array.isArray(shotEvents)) throw new Error("Invalid response format: expected jobId or shot events array");
 
       const gameStats = calculateGameStats(shotEvents);
@@ -275,7 +275,7 @@ export default function UploadPage() {
     }
   };
 
-  // UNCHANGED: reset UX
+  //reset UX
   const resetUpload = () => {
     setUploadState("idle");
     setSelectedFile(null);
@@ -286,7 +286,7 @@ export default function UploadPage() {
     stopPolling();
   };
 
-  // UNCHANGED: simple player helpers
+  //simple player helpers
   const [ended, setEnded] = useState(false);
   const [playing, setPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -296,7 +296,7 @@ export default function UploadPage() {
     requestAnimationFrame(() => videoRef.current?.play().catch(() => {}));
   }
 
-  // UNCHANGED: direct browser download via signed URL
+  //direct browser download via signed URL
   const handleDownload = () => {
     if (!downloadUrl) return;
     const link = document.createElement("a");
@@ -307,7 +307,7 @@ export default function UploadPage() {
     document.body.removeChild(link);
   };
 
-  // ======== UI (preserved styling) ========
+  //======== UI (preserved styling) ========
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
       {/* Header (UNCHANGED look) */}
@@ -386,8 +386,7 @@ export default function UploadPage() {
                     </Button>
                   )}
 
-
-                  {/* UNCHANGED: 3 feature cards */}
+                  {/*3 feature cards */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="p-4 bg-blue-50 rounded-lg text-center">
                       <Target className="w-8 h-8 text-blue-600 mx-auto mb-2" />
@@ -410,7 +409,7 @@ export default function UploadPage() {
             </Card>
           )}
 
-          {/* Uploading / Processing */}
+          {/*Uploading / Processing*/}
           {(uploadState === "uploading" || uploadState === "processing") && (
             <Card>
               <CardHeader>
@@ -431,7 +430,7 @@ export default function UploadPage() {
             </Card>
           )}
 
-          {/* Complete */}
+          {/*Complete*/}
           {uploadState === "complete" && uploadResult && (
             <div className="space-y-6">
               <Card>
@@ -453,7 +452,7 @@ export default function UploadPage() {
                         {uploadResult.fileName} ({(uploadResult.fileSize! / 1024 / 1024).toFixed(2)} MB)
                       </p>
 
-                      {/* UNCHANGED: preview */}
+                      {/*Preview */}
                       <div className="relative w-full max-w-md mx-auto">
                         <video
                           ref={videoRef}
@@ -470,21 +469,14 @@ export default function UploadPage() {
                             Download Highlight
                           </Button>
                         )}
-                        {/* NEW: Show in Dashboard button */}
+                        {/*Show in Dashboard Button */}
                         <Link href="/dashboard">
-                          <button className="btn btn-secondary mt-2">
-                            {/* NEW: simple label */}
+                          <Button variant="secondary" className="mt-2">
                             Show in Dashboard
-                          </button>
+                          </Button>
                         </Link>
                       </div>
                     </div>
-
-                    {/* UNCHANGED: optional legacy “Adjust Highlights” block left intact */}
-                    {/*
-                      If you later want to re-enable the shot-by-shot adjuster,
-                      uploadResult.shotEvents already carries those events.
-                    */}
 
                     <div className="flex flex-col sm:flex-row gap-3 mt-6">
                       <Button className="flex-1" asChild>
@@ -507,4 +499,3 @@ export default function UploadPage() {
     </div>
   );
 }
-

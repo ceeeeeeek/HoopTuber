@@ -31,8 +31,6 @@ SERVICE_ACCOUNT = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 storage_client   = storage.Client(project=PROJECT_ID)
 firestore_client = firestore.Client(project=PROJECT_ID)
 
-
-
 def update_job(job_id: str, data: dict):
     firestore_client.collection(COLLECTION).document(job_id).set(data, merge=True)
 

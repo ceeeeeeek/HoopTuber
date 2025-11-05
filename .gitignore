@@ -104,9 +104,4 @@ worker/videoDataset/
 worker/combined
 worker/clips/
 *.mp4
-fastapi/__pycache__/VideoInputTest.cpython-313.pyc
-fastapi/api/__pycache__/__init__.cpython-313.pyc
-fastapi/api/__pycache__/main.cpython-312.pyc
-fastapi/api/__pycache__/main.cpython-313.pyc
-fastapi/api/__pycache__/VideoInputTest.cpython-312.pyc
-fastapi/api/__pycache__/VideoInputTest.cpython-313.pyc
+*.pyc
