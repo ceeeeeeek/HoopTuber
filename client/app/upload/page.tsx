@@ -417,7 +417,9 @@ export default function UploadPage() {
       </header>
 
       <div className="container mx-auto px-4 py-12">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-3xl mx-auto"> 
+
+     
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-4">Upload Basketball Video</h1>
             <p className="text-gray-600">Upload your basketball footage for AI-powered analysis and highlight generation</p>
@@ -501,7 +503,7 @@ export default function UploadPage() {
               </CardContent>
             </Card>
           )}
-
+            </div>
           {/* Uploading / Processing */}
           {(uploadState === "uploading" || uploadState === "processing") && (
             <Card>
@@ -531,10 +533,11 @@ export default function UploadPage() {
               </CardContent>
             </Card>
           )}
-
+          </div>
+          
           {/* Complete */}
           {uploadState === "complete" && uploadResult && (
-            <div className="space-y-6">
+            <div className="space-y-6 w-full max-w-6xl mx-auto">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center">
@@ -567,29 +570,28 @@ export default function UploadPage() {
                 onEnded={() => setEnded(true)}
               />
 
-{uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
-  <div className="mt-8 space-y-4">
-    <h3 className="text-lg font-semibold mb-4 flex items-center">
-      <Zap className="w-4 h-4 mr-2 text-orange-500" />
-      Review & Edit Highlights
-    </h3>
-    {uploadResult.shotEvents.map((shot, idx) => (
-      <HighlightReviewPanel
-        key={idx}
-        index={idx}
-        startTime={shot.timestamp_start}
-        endTime={shot.timestamp_end}
-        videoUrl={`${API_BASE}/stream/${uploadResult.processingId || uploadResult.processingId}#t=${shot.timestamp_start}`}
-        outcome={shot.outcome}
-        shotType={shot.shot_type}
-        shotLocation={shot.shot_location}
-      />
-    ))}
-  </div>
-)}
-
-
-
+                      {uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
+                        <div className="mt-8 space-y-4">
+                          <h3 className="text-lg font-semibold mb-4 flex items-center">
+                            <Zap className="w-4 h-4 mr-2 text-orange-500" />
+                            Review & Edit Highlights
+                          </h3>
+                          <div className="w-full max-w-6xl mx-auto space-y-6"> 
+                          {uploadResult.shotEvents.map((shot, idx) => (
+                            <HighlightReviewPanel
+                              key={idx}
+                              index={idx}
+                              startTime={shot.timestamp_start}
+                              endTime={shot.timestamp_end}
+                              videoUrl={`${API_BASE}/stream/${uploadResult.processingId || uploadResult.processingId}#t=${shot.timestamp_start}`}
+                              outcome={shot.outcome}
+                              shotType={shot.shot_type}
+                              shotLocation={shot.shot_location}
+                            />
+                          ))}
+                          </div>
+                        </div>
+                      )}
                       {/* NEW: show highlight download when ready */}
                       {downloadUrl && (
                         <Button 
@@ -663,67 +665,12 @@ export default function UploadPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {/* <div className="space-y-4">
-                      {uploadResult.shotEvents.map((shot, idx) => (
-                        <div key={idx} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex items-center space-x-3">
-                              <div className={`w-4 h-4 rounded-full ${getShotOutcomeColor(shot.Outcome)}`} />
-                              <div className="font-semibold text-gray-900">
-                                Shot #{idx + 1} - {formatShotType(shot.ShotType)}
-                              </div>
-                            </div>
-                            <Badge variant={getShotOutcomeBadge(shot.Outcome)}>{shot.Outcome}</Badge>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                            <div className="flex items-center space-x-2">
-                              <Clock className="w-4 h-4 text-gray-500" />
-                              <span className="text-gray-700">
-                                <strong>Time:</strong> {formatTimestamp(shot.TimeStamp)}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <MapPin className="w-4 h-4 text-gray-500" />
-                              <span className="text-gray-700">
-                                <strong>Location:</strong> {shot.Location}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <User className="w-4 h-4 text-gray-500" />
-                              <span className="text-gray-700">
-                                <strong>Type:</strong> {formatShotType(shot.ShotType)}
-                              </span>
-                            </div>
-                          </div>
-
-                          {shot.Subject && (
-                            <div className="mt-3 p-3 bg-white rounded border">
-                              <div className="flex items-start space-x-2">
-                                <User className="w-4 h-4 text-gray-500 mt-0.5" />
-                                <div>
-                                  <div className="font-medium text-gray-900 mb-1">Player Description:</div>
-                                  <div className="text-sm text-gray-700">{shot.Subject}</div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="mt-3 text-sm text-gray-600">
-                            <strong>Summary:</strong> Player shoots a {formatShotType(shot.ShotType).toLowerCase()} from{" "}
-                            {shot.Location.toLowerCase()} at {formatTimestamp(shot.TimeStamp)} –{" "}
-                            {shot.Outcome.toLowerCase()}
-                          </div>
-                        </div>
-                      ))}
-                    </div> */}
                   </CardContent>
                 </Card>
               )}
             </div>
           )}
-        </div>
       </div>
-    </div>
+    
   );
 }

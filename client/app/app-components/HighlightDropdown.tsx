@@ -1,5 +1,6 @@
 "use client";
 
+// CLAUDE DROPDOWN VERS 1
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -107,7 +108,7 @@ export default function HighlightReviewPanel({
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select shot type" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="w-[400px]">
                     <SelectItem value="Layup">Layup</SelectItem>
                     <SelectItem value="Midrange">Midrange</SelectItem>
                     <SelectItem value="3-Point Jump Shot">
@@ -127,7 +128,7 @@ export default function HighlightReviewPanel({
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select shot location" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="w-[400px]">
                     <SelectItem value="Left Corner">Left Corner</SelectItem>
                     <SelectItem value="Right Corner">Right Corner</SelectItem>
                     <SelectItem value="Top of Key">Top of Key</SelectItem>

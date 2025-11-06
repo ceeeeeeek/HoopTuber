@@ -1,5 +1,6 @@
 "use client";
 
+// UPDATED DROPDOWN VERS 2
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -88,7 +89,8 @@ export default function HighlightReviewPanel({
   };
 
   return (
-    <div className="border rounded-lg bg-white shadow-sm overflow-hidden">
+    <div className="border rounded-lg bg-white shadow-sm overflow-hidden w-full max-w-5xl mx-auto">
+
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
@@ -183,7 +185,7 @@ export default function HighlightReviewPanel({
                     <SelectTrigger>
                       <SelectValue placeholder="Select shot type" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="w-[400px]">
                       <SelectItem value="Layup">Layup</SelectItem>
                       <SelectItem value="Midrange">Midrange</SelectItem>
                       <SelectItem value="3-Point Jump Shot">
@@ -195,31 +197,72 @@ export default function HighlightReviewPanel({
                 </div>
 
                 {/* Shot Location */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-gray-700">
-                      Shot Location
-                    </label>
-                    <div className="flex items-center space-x-1">
-                      <Checkbox
-                        checked={correctFields.location}
-                        onCheckedChange={() => toggleCorrect("location")}
-                      />
-                      <span className="text-xs text-gray-500">Correct</span>
-                    </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">
+                    Shot Location
+                  </label>
+                  <div className="flex items-center space-x-1">
+                    <Checkbox
+                      checked={correctFields.location}
+                      onCheckedChange={() => toggleCorrect("location")}
+                    />
+                    <span className="text-xs text-gray-500">Correct</span>
                   </div>
-                  <Select value={shotLocation} onValueChange={setShotLocation}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select location" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Left Corner">Left Corner</SelectItem>
-                      <SelectItem value="Right Corner">Right Corner</SelectItem>
-                      <SelectItem value="Top of Key">Top of Key</SelectItem>
-                      <SelectItem value="Paint">Paint</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
+
+                {/* Dropdown */}
+                <Select value={shotLocation} onValueChange={setShotLocation}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select location" />
+                  </SelectTrigger>
+                  <SelectContent className="w-[400px]">
+                    <SelectItem value="Left Corner">Left Corner</SelectItem>
+                    <SelectItem value="Right Corner">Right Corner</SelectItem>
+                    <SelectItem value="Top of Key">Top of Key</SelectItem>
+                    <SelectItem value="Paint">Paint</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Court Thumbnail with Marker */}
+                <div className="relative w-full mt-3 aspect-[2/1.2] border rounded-md bg-gray-100 overflow-hidden">
+                  <img
+                    src="/halfcourt.png"
+                    alt="Half court diagram"
+                    className="object-contain w-full h-full opacity-90"
+                  />
+                  <AnimatePresence>
+                    {shotLocation && (
+                      <motion.div
+                        key={shotLocation}
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, type: "spring" }}
+                        className="absolute w-4 h-4 bg-orange-500 rounded-full border-2 border-white shadow-md"
+                        style={{
+                          // approximate marker coordinates
+                          top:
+                            shotLocation === "Top of Key"
+                              ? "18%"
+                              : shotLocation === "Paint"
+                              ? "45%"
+                              : "72%",
+                          left:
+                            shotLocation === "Left Corner"
+                              ? "22%"
+                              : shotLocation === "Right Corner"
+                              ? "78%"
+                              : "50%",
+                          transform: "translate(-50%, -50%)",
+                        }}
+                      />
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+
 
                 {/* Shot Result */}
                 <div className="space-y-1">
