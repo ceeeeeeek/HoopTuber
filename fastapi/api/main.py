@@ -16,6 +16,10 @@ from zoneinfo import ZoneInfo
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from urllib.parse import urlparse
+
+from typing import Dict, Any, List
+from google.cloud.firestore import Query
 
 load_dotenv()
 
@@ -29,6 +33,8 @@ RAW_BUCKET   = os.environ["GCS_RAW_BUCKET"]
 OUT_BUCKET   = os.environ["GCS_OUT_BUCKET"]
 TOPIC_NAME   = os.environ["PUBSUB_TOPIC"]
 COLLECTION   = os.getenv("FIRESTORE_COLLECTION", "jobs")
+HIGHLIGHT_COL = os.getenv("FIRESTORE_HIGHLIGHT_COL", "Highlights")
+SERVICE_ACCOUNT = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 # NEW: GCP clients
 storage_client   = storage.Client(project=PROJECT_ID)
@@ -54,13 +60,15 @@ async def rate_limit_handler(request, exc):
         content={"detail": "Rate limit exceeded. Try again later."}
     )
 
-
+# backend/backend-sa.json
+# ../backend/backend-sa.json
 
 app.add_middleware(
     CORSMiddleware,
     #allow_origins=['http://localhost:3000'],
     allow_origins=['http://localhost:3000',
-    "https://app.hooptuber.com", 
+    "https://www.hooptuber.com",
+    "https://hooptuber.com" 
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -69,6 +77,10 @@ app.add_middleware(
 #BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # directory of current script (main.py)
 #DATASET_DIR = os.path.join(BASE_DIR, "videoDataset") # directory to save uploaded videos (/videoDataset)
 #os.makedirs(DATASET_DIR, exist_ok=True)
+
+@app.get("/")
+def check_working():
+    return {"detail": "FastAPI server up and running"}
 
 @app.get("/ratelimit/status")
 async def ratelimit_status(request: Request):
@@ -230,13 +242,15 @@ async def upload_video(
     4) Returns { jobId, status } for the frontend to poll /jobs/{id}
     """
     try:
-        owner_email = request.header.get("x-owner-email")
+        owner_email = request.headers.get("x-owner-email")
         print(f"Debug: starting upload for {video.filename}")
         if not video or not video.filename:
             raise HTTPException(status_code=400, detail="Missing file/filename")
 
         # 1) IDs & GCS keys
-        job_id = str(uuid.uuid4())
+        curr_datetime = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+        job_id = str(f"{curr_datetime}--{uuid.uuid4()}")
         blob_name, raw_gcs_uri, original_name = _make_keys(video.filename, job_id)
 
         # 2) Stream to RAW bucket (no large temp files on Render)
@@ -252,6 +266,8 @@ async def upload_video(
             "ownerEmail": owner_email,
             "status": "queued",
             "originalFileName": original_name,
+            "title": original_name,
+            "visibility": "private",
             "videoGcsUri": raw_gcs_uri,
             "createdAt": firestore.SERVER_TIMESTAMP,
         }, merge=True)
@@ -314,6 +330,146 @@ def job_download(job_id: str):
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"signing failed: {e}")
+
+@app.get("/highlights")
+def list_highlights(
+    ownerEmail: Optional[str]=None,
+    userId: Optional[str]=None,
+    limit: int = 20,
+    pageToken: Optional[str] = None,
+    signed: bool = True):
+    """
+    NEW:
+    Returns finished highlight jobs filtered by ownerEmail (preferred) or userId.
+    Ordered by finishedAt desc. pageToken is the last document id from previous page.
+    """
+    if not ownerEmail and not userId:
+        raise HTTPException(status_code=400, detail="ownerEmail or userId required")
+    
+    q = (
+        firestore_client.collection(COLLECTION).where("status","==","done")
+        .order_by("finishedAt", direction=firestore.Query.DESCENDING)
+    )
+    if ownerEmail:
+        q = q.where("ownerEmail", "==", ownerEmail)  
+    elif userId:
+        q = q.where("userId", "==", userId)
+    #clamp limit
+    limit = max(1, min(100, limit))                  
+
+    #pagination by document id
+    if pageToken:
+        last_doc = _job_doc(pageToken).get()         
+        if last_doc.exists:
+            q = q.start_after(last_doc)              
+
+    docs = list(q.limit(limit).stream())             
+
+    items: List[Dict[str, Any]] = []                 
+    for d in docs:
+        data = d.to_dict()
+
+        # fields + NEW: title & visibility (with sensible fallbacks)
+        item = {
+            "jobId": data.get("jobId") or d.id,
+            "originalFileName": data.get("originalFileName"),
+            "title": data.get("title") or data.get("originalFileName"),          
+            "visibility": data.get("visibility") or "private",                    
+            "finishedAt": str(data.get("finishedAt")),
+            "outputGcsUri": data.get("outputGcsUri"),
+            "analysisGcsUri": data.get("analysisGcsUri"),
+            "ownerEmail": data.get("ownerEmail"),
+            "userId": data.get("userId"),
+            "status": data.get("status"),
+        }
+        if signed and data.get("outputGcsUri"):
+            try:
+                item["signedUrl"] = _sign_get_url(data["outputGcsUri"], minutes=30)
+                item["signedUrlExpiresInMinutes"] = 30
+            except Exception as e:
+                item["signedUrlError"] = str(e)
+        items.append(item)
+
+    next_token = docs[-1].id if len(docs) == limit else None  
+    return {"items": items, "nextPageToken": next_token}         
+
+
+@app.patch("/highlights/{job_id}")
+def update_highlight(job_id: str, body: dict = Body(...)):
+    """
+    Body supports:
+      { "title": "New name" }
+      { "visibility": "public"|"unlisted"|"private" }
+    """
+    #doc_ref = db.collection("jobs").document(job_id)
+    doc_ref = _job_doc(job_id) #use _job_doc / firestore_client helper instead
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="highlight not found")
+
+    updates = {}
+    title = body.get("title")
+    if title is not None:
+        updates["title"] = title 
+
+    visibility = body.get("visibility")
+    if visibility in ("public", "unlisted", "private"):
+        updates["visibility"] = visibility 
+        updates["isPublic"] = visibility == "public"  #optional convenience flag
+
+    if not updates:
+        # no-op
+        snap = doc_ref.get()
+        return {"ok": True, "updated": False, "item": snap.to_dict()}
+
+    updates["updatedAt"] = firestore.SERVER_TIMESTAMP
+    doc_ref.update(updates)
+
+    #read back and return the full, fresh document so the UI has title/visibility
+    fresh = doc_ref.get().to_dict() or {}
+    return {"ok": True, "updated": True, "item": {
+        "jobId": fresh.get("jobId") or job_id,
+        "originalFileName": fresh.get("originalFileName"),
+        "title": fresh.get("title"),
+        "visibility": fresh.get("visibility"),
+        "finishedAt": str(fresh.get("finishedAt")),
+        "outputGcsUri": fresh.get("outputGcsUri"),
+        "analysisGcsUri": fresh.get("analysisGcsUri"),
+        "ownerEmail": fresh.get("ownerEmail"),
+        "userId": fresh.get("userId"),
+        "status": fresh.get("status"),
+    }}
+
+
+#soft-delete (and optional hard delete of GCS blob)
+@app.delete("/highlights/{job_id}")
+def delete_highlight(job_id: str):
+    #doc_ref = db.collection("jobs").document(job_id)
+    doc_ref = _job_doc(job_id)  #use _job_doc / firestore_client helper instead
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="highlight not found")
+
+    data = snap.to_dict() or {}
+    # Soft-delete in Firestore
+    doc_ref.update({
+        "status": "deleted",           
+        "deletedAt": firestore.SERVER_TIMESTAMP
+    })
+
+    #remove output file in GCS if you want a hard delete
+    #Comment out if you prefer to keep the file.
+    out_uri = data.get("outputGcsUri")
+    try:
+        if out_uri and out_uri.startswith("gs://"):
+            bucket_name, blob_path = _parse_gs_uri(out_uri)  #reuse use _job_doc / firestore_client helper
+            bucket = storage_client.bucket(bucket_name)
+            blob = bucket.blob(blob_path)
+            blob.delete()  #may raise if not found; safe to ignore below
+    except Exception:
+        pass
+
+    return {"ok": True, "deleted": True}
 
 @app.get("/healthz")
 def healthz():

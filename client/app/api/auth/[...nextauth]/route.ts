@@ -29,7 +29,7 @@ const firestore = new Firestore({
     },
   });
 
-  // --- Local users collection helpers (site-native accounts - so that users can create accounts with email and passwords) ---
+  
   const USERS = () => firestore.collection("users");
 
   function emailKey(email?: string | null) {
@@ -120,20 +120,32 @@ const LoginSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 chars"),
 });
 
-// Compare plaintext password to stored bcrypt hash
-async function verifyUser(email?: string, password?: string) {
-  const parsed = LoginSchema.safeParse({ email, password });
-  if (!parsed.success) return null;
+async function findUserByEmailOrUsername(identifier: string){
+  const byEmail = await USERS().doc(emailKey(identifier)).get();
+  if (byEmail.exists) {
+    return { id: byEmail.id, ...(byEmail.data() as any)}
+  };
+  const snap = await USERS().where("username", "==", identifier).limit(1).get();
+  if (!snap.empty) {
+    const doc = snap.docs[0];
+    return { id: doc.id, ...(doc.data() as any) };
+  }
+  
+  return null;
+}
 
-  const userDoc = await findUserByEmail(parsed.data.email);
+// Compare plaintext password to stored bcrypt hash
+async function verifyUser(identifier?: string, password?: string) {
+  if (!identifier || !password) return null;
+
+    const userDoc = await findUserByEmailOrUsername(identifier);
   if (!userDoc || !userDoc.passwordHash) return null;
 
-  const ok = await bcrypt.compare(parsed.data.password, userDoc.passwordHash);
+  const ok = await bcrypt.compare(password, userDoc.passwordHash);
   if (!ok) return null;
 
-  // What NextAuth expects to treat them as “logged in”
   return {
-    id: userDoc.id,                          // we use emailKey(email) as id
+    id: userDoc.id,
     email: userDoc.email,
     name: userDoc.name ?? null,
   };
@@ -180,8 +192,7 @@ async function verifyUser(email?: string, password?: string) {
         }
         return true; // do not block login if logging fails
       },
-  
-      // UNCHANGED (you can keep your logs if you like)
+
       async session({ session, token }) {
         return session;
       },

@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Image from "next/image";
+import HighlightReviewPanel from "@/app/app-components/HighlightDropdown";
 
 import {
   Upload,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 import Link from "next/link"
 import ProfileDropdown from "../../app-components/ProfileDropdown"
+
 // "https://hooptuber-fastapi-web-service-docker.onrender.com"
 // "http://localhost:8000"
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
@@ -242,7 +244,11 @@ export default function UploadPage() {
       }
       setProgress(100);
 
-      if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        throw new Error('Upload failed: ${response.status} ${errText}');
+
+      }
 
       const result = await response.json(); // { ok, jobId, status, videoGcsUri } OR legacy events // NEW: expect { jobId } in queue flow
       
@@ -394,7 +400,7 @@ export default function UploadPage() {
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">Upload Basketball Video</h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">Upload Basketball Video (Enhanced Version)</h1>
             <p className="text-gray-600">Upload your basketball footage for AI-powered analysis and highlight generation</p>
           </div>
 
@@ -532,105 +538,15 @@ export default function UploadPage() {
                 onEnded={() => setEnded(true)}
               />
 
-{/* === Enhanced Highlight Editor === */}
-{uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
-  <div className="mt-8 bg-white rounded-lg shadow p-4">
-    <h3 className="text-lg font-semibold mb-4 flex items-center">
-      <Zap className="w-4 h-4 mr-2 text-orange-500" />
-      Review Detected Highlights
-    </h3>
-
-    <p className="text-sm text-gray-600 mb-6">
-      Edit details for each highlight below — customize player info, shot type, and location.
-    </p>
-
-    <div className="space-y-6">
-      {uploadResult.shotEvents.map((clip, idx) => (
-        <div key={clip.id} className="border rounded-lg p-4 bg-gray-50">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center space-x-2">
-              <Badge variant="secondary">Highlight {idx + 1}</Badge>
-              <span className="text-xs text-gray-500">
-                {clip.timestamp_start} → {clip.timestamp_end}
-              </span>
-            </div>
-            <Badge variant={clip.outcome.toLowerCase().includes("make") ? "default" : "secondary"}>
-              {clip.outcome.toUpperCase()}
-            </Badge>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Subject / Player name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Player</label>
-              <input
-                type="text"
-                defaultValue={clip.subject || ""}
-                placeholder="Enter player name"
-                className="w-full border border-gray-300 rounded-lg p-2 text-sm"
-              />
-            </div>
-
-            {/* Shot Type */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Shot Type</label>
-              <select
-                defaultValue={clip.shot_type || ""}
-                className="w-full border border-gray-300 rounded-lg p-2 text-sm"
-              >
-                <option value="">Select type</option>
-                <option value="3-Point">3-Point</option>
-                <option value="Midrange">Midrange</option>
-                <option value="Layup">Layup</option>
-                <option value="Dunk">Dunk</option>
-                <option value="Free Throw">Free Throw</option>
-              </select>
-            </div>
-
-            {/* Location */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Shot Location</label>
-              <select
-                defaultValue={clip.shot_location || ""}
-                className="w-full border border-gray-300 rounded-lg p-2 text-sm"
-              >
-                <option value="">Select location</option>
-                <option value="Left Wing">Left Wing</option>
-                <option value="Right Wing">Right Wing</option>
-                <option value="Top of Key">Top of Key</option>
-                <option value="Corner">Corner</option>
-                <option value="Paint">Paint</option>
-              </select>
-            </div>
-
-            {/* Outcome */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Outcome</label>
-              <select
-                defaultValue={clip.outcome || ""}
-                className="w-full border border-gray-300 rounded-lg p-2 text-sm"
-              >
-                <option value="make">Make</option>
-                <option value="miss">Miss</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-
-    <div className="flex justify-end mt-6">
-      <Button variant="outline" className="mr-2">
-        Reset
-      </Button>
-      <Button className="bg-orange-500 hover:bg-orange-600 text-white">
-        Save All
-      </Button>
-    </div>
-  </div>
-)}
-
-
+                  {/* === Enhanced Highlight Editor === */}
+                  {uploadResult.shotEvents.map((shot, idx) => (
+                  <HighlightReviewPanel
+                  key={idx}
+                  index={idx}
+                    timestamp={shot.timestamp_start}
+                    videoUrl={`${API_BASE}/stream/${uploadResult.processingId}#t=${shot.timestamp_start}`} // or signed GCS URL
+                  />
+                ))}
 
 
                       {/* NEW: show highlight download when ready */}

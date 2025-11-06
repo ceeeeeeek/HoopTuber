@@ -637,10 +637,15 @@ export default function UploadPage() {
 
                     <div className="flex flex-col sm:flex-row gap-3 mt-6">
                       <Button className="flex-1" asChild>
-                        <Link href="/upload/enhanced">
-                          <BarChart3 className="w-4 h-4 mr-2" />
-                          View Detailed Analysis
-                        </Link>
+                                                  {jobId && (
+                            <Link href={`/upload/${jobId}`}>
+                              <Button className="flex-1">
+                                <BarChart3 className="w-4 h-4 mr-2" />
+                                View Detailed Analysis
+                              </Button>
+                            </Link>
+                          )}
+
                       </Button>
                       <Button variant="outline" className="flex-1" onClick={resetUpload}>
                         Analyze Another Video

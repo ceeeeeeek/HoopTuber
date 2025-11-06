@@ -14,7 +14,7 @@ client/.next
 .next*
 /client/.next*
 .next*
-
+.DS_Store
 
 # production
 /build
