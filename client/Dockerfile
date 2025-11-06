@@ -12,8 +12,6 @@ RUN npm install
 # Copy the rest of the frontend code
 COPY . .
 
-ARG NEXT_PUBLIC_API_BASE
-ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
 
 RUN npm run build
 
