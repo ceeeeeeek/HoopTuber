@@ -15,8 +15,7 @@ import ProfileDropdown from "../app-components/ProfileDropdown";
 
 type Visibility = "public" | "unlisted" | "private";                    
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 
 type HighlightItem = {
   jobId: string;                                                   
