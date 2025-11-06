@@ -14,7 +14,7 @@ from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
 from prompts import prompt_4, json_input, prompt_shot_outcomes_only
 from uuid import uuid4 
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
-
+import uuid
 
 def add_watermark(
     video_path,
@@ -187,3 +187,40 @@ def convert_to_mp4(in_path, td):
         converted_path = in_path
     
     return converted_path
+
+# NEW: CHANGE GEMINI OUTPUT INTO EXPECTED JSON OUTPUT FOR FRONTEND
+
+def sec_to_timestamp(seconds):
+    # Convert seconds to HH:MM:SS
+    hr = int(seconds // 3600)
+    mi = int((seconds % 3600) // 60)
+    sec = int(seconds % 60)
+    return f"{hr:02}:{mi:02}:{sec:02}"
+
+def format_gemini_output(gem_output, start_end_times):
+
+    normalized = []
+    try:
+    
+
+        for idx, (start_time, end_time) in enumerate(start_end_times):
+            gem = gem_output[idx] if idx < len(gem_output) else {}
+
+            outcome = gem.get("Outcome") or gem.get("outcome")
+            start_ts = sec_to_timestamp(start_time)
+            end_ts = sec_to_timestamp(end_time)
+
+            normalized.append({
+                "id": f"clip{int(idx)+1}_{str(uuid.uuid4())[:4]}",
+                "timestamp_start": start_ts,
+                "timestamp_end": end_ts,
+                "outcome": outcome,
+                "subject": None,
+                "shot_type": None,
+                "shot_location": None,
+            })
+    except Exception as e:
+        print(f"Error has occured: {e}")
+        logging.info(f"Error has occured: {e}")
+        return normalized
+    return normalized

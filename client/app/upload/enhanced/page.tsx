@@ -1,4 +1,4 @@
-//app/upload/page.tsx (app\upload\page.tsx VERSION as of Thursday 09-11-25)
+//app/upload/page.tsx (app\upload\page.tsx VERSION as of 10/28/25)
 
 "use client";
 
@@ -10,7 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Image from "next/image";
-import HighlightReviewPanel from "@/app/app-components/HighlightDropdown";
 
 import {
   Upload,
@@ -30,7 +29,7 @@ import {
 } from "lucide-react";
 import Link from "next/link"
 import ProfileDropdown from "../../app-components/ProfileDropdown"
-
+import HighlightReviewPanel from "../../app-components/HighlightReviewPanel"
 // "https://hooptuber-fastapi-web-service-docker.onrender.com"
 // "http://localhost:8000"
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
@@ -46,7 +45,6 @@ interface GeminiShotEvent {
   shot_type: string,
   shot_location: string
 }
-
 
 interface UploadResult {
   success: boolean;
@@ -105,6 +103,7 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState("");
 
   // NEW: track job id and downloadable URL from worker output
   // Job + download tracking
@@ -119,10 +118,14 @@ export default function UploadPage() {
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!file.name.endsWith(".mp4")) {
+      alert("This file will be converted to an mp4 file.");
+    }
     setSelectedFile(file);
     setUploadState("idle");
     setUploadResult(null);
     setProgress(0);
+    setStatusMessage("");
     setJobId(null);
     setDownloadUrl(null);
   }, []);
@@ -161,8 +164,10 @@ export default function UploadPage() {
 
   const startPolling = (id: string) => {
   stopPolling();
+  let pollCount = 0;
   pollRef.current = window.setInterval(async () => {
     try {
+      pollCount++;
       const res = await fetch(`${API_BASE}/jobs/${id}`);
       if (!res.ok) throw new Error(`status ${res.status}`);
       const data: JobRecord = await res.json();
@@ -170,11 +175,16 @@ export default function UploadPage() {
       if (data.status === "error" || data.status === "publish_error") {
         stopPolling();
         setUploadState("idle");
+        setStatusMessage("");
         console.error("Job failed:", data.error || "unknown");
         return;
       }
 
       if (data.status === "done" && data.outputGcsUri) {
+        // Finalizing stage
+        setProgress(95);
+        setStatusMessage("Applying final touches...");
+
         // Fetch final download + analysis
         const dlRes = await fetch(`${API_BASE}/jobs/${id}/download`);
         if (dlRes.ok) {
@@ -192,10 +202,25 @@ export default function UploadPage() {
             gameStats,
           }));
         }
+
+        setProgress(100);
+        setStatusMessage("Complete!");
         stopPolling();
         setUploadState("complete");
       } else {
+        // Still processing - gradually increase progress from 50% to 90%
         setUploadState("processing");
+        const currentProgress = Math.min(50 + (pollCount * 5), 90);
+        setProgress(currentProgress);
+
+        // Update status messages based on progress
+        if (currentProgress < 65) {
+          setStatusMessage("Analyzing video...");
+        } else if (currentProgress < 80) {
+          setStatusMessage("Detecting shots and movements...");
+        } else {
+          setStatusMessage("Generating highlights...");
+        }
       }
     } catch (e) {
       console.warn("Polling error:", e);
@@ -210,87 +235,70 @@ export default function UploadPage() {
   }, []);
 
   // ------- CHANGED: upload now talks to FastAPI upload endpoint -------
-  // ---- upload handler ----
+  // ---- upload handler (CHANGED TO SIGNED URL FLOW)----
   const handleUpload = async () => {
-    if (!selectedFile) return
+  if (!selectedFile) return;
 
+  try {
     setUploadState("uploading");
-    setProgress(15);
+    setProgress(5);
+    setStatusMessage("Preparing upload...");
 
-    const formData = new FormData();
-    formData.append("video", selectedFile);
+    // Request a signed upload URL from FastAPI
+    const res = await fetch(`${API_BASE}/generate_upload_url`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: selectedFile.name }),
+    });
+    if (!res.ok) throw new Error("Failed to get signed URL");
+    const { uploadUrl, gcsUri, jobId } = await res.json();
 
-    // CHANGED: progress interval typed as number
-    // visual progress during POST (client-side only)
-    let progressInterval: number | null = window.setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 90) {
-          if (progressInterval !== null) {
-            window.clearInterval(progressInterval); // CHANGED
-            progressInterval = null;
-          }
-          return 90;
-        }
-        return prev + 10;
-      });
-    }, 500);
+    setProgress(10);
+    setStatusMessage("Uploading video...");
 
-    try {
-      const response = await fetch(`${API_BASE}/upload`, { method: "POST", body: formData });
+    // Upload directly to GCS
+    const upload = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": selectedFile.type || "video/mp4" },
+      body: selectedFile,
+    });
+    if (!upload.ok) throw new Error("GCS upload failed");
 
-      if (progressInterval !== null) {
-        window.clearInterval(progressInterval); // CHANGED
-        progressInterval = null;
-      }
-      setProgress(100);
+    setProgress(40);
+    setStatusMessage("Processing upload...");
 
-      if (!response.ok) {
-        const errText = await response.text().catch(() => "");
-        throw new Error('Upload failed: ${response.status} ${errText}');
+    // Tell FastAPI the upload is complete (publish job to Pub/Sub)
+    const pub = await fetch(`${API_BASE}/publish_job`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId, videoGcsUri: gcsUri }),
+    });
+    if (!pub.ok) throw new Error("Failed to publish job");
 
-      }
+    setProgress(50);
+    setStatusMessage("Analyzing video...");
+    setUploadState("processing");
+    setJobId(jobId);
 
-      const result = await response.json(); // { ok, jobId, status, videoGcsUri } OR legacy events // NEW: expect { jobId } in queue flow
-      
-      // New queue-based flow – start polling
-      if (result?.jobId) {
-        setJobId(result.jobId);
-        setUploadState("processing");
-        setUploadResult({
-          success: true,
-          fileName: selectedFile.name,
-          fileSize: selectedFile.size,
-          method: "queue_v1",
-          verified: true,
-          shotEvents: [], // no immediate events in queue flow
-        });
-        startPolling(result.jobId);
-        return;
-      }
+    // Initialize frontend state & begin polling job status
+    setUploadResult({
+      success: true,
+      fileName: selectedFile.name,
+      fileSize: selectedFile.size,
+      method: "signed_url_v1",
+      verified: true,
+      shotEvents: [],
+    });
 
-      // UNCHANGED: legacy immediate analysis path (array of events)
-      // Legacy: immediate analysis response (array of shot events)
-      const shotEvents: GeminiShotEvent[] =
-        result.shot_events || result.results?.shot_events || (Array.isArray(result) ? result : []);
-      if (!Array.isArray(shotEvents)) throw new Error("Invalid response format: expected jobId or shot events array");
+    startPolling(jobId);
+  } catch (err) {
+    console.error("Upload error:", err);
+    alert("Upload failed: " + (err as Error).message);
+    setUploadState("idle");
+    setStatusMessage("");
+  }
+};
 
-      const gameStats = calculateGameStats(shotEvents);
-      setUploadResult({
-        success: true,
-        videoUrl: "",
-        fileName: selectedFile.name,
-        fileSize: selectedFile.size,
-        method: "gemini_ai",
-        verified: true,
-        shotEvents,
-        gameStats,
-      });
-      setUploadState("complete");
-    } catch (err) {
-      console.error("Upload error:", err);
-      setUploadState("idle");
-    }
-  };
 
     // UNCHANGED: reset, with added cleanup of new state
   const resetUpload = () => {
@@ -298,6 +306,7 @@ export default function UploadPage() {
     setSelectedFile(null);
     setUploadResult(null);
     setProgress(0);
+    setStatusMessage("");
     setJobId(null); // NEW: reset job id
     setDownloadUrl(null); // NEW: reset signed URL
     stopPolling(); // NEW: stop any active poller
@@ -333,6 +342,7 @@ export default function UploadPage() {
   link.click();
   document.body.removeChild(link);
 };
+
 
   // COOLDOWN STATES:
   const [cooldown, setCooldown] = useState<number | null>(null);
@@ -400,7 +410,7 @@ export default function UploadPage() {
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">Upload Basketball Video (Enhanced Version)</h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">Upload Basketball Video</h1>
             <p className="text-gray-600">Upload your basketball footage for AI-powered analysis and highlight generation</p>
           </div>
 
@@ -494,9 +504,19 @@ export default function UploadPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <Progress value={progress} className="w-full" />
-                  <p className="text-center text-gray-600">
-                    {uploadState === "uploading" ? "Uploading" : "Analyzing"} {selectedFile?.name}... {progress}%
+                  <div className="space-y-2">
+                    <Progress value={progress} className="w-full" />
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm text-gray-600 font-medium">
+                        {statusMessage}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {progress}%
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-center text-gray-500 text-sm">
+                    {selectedFile?.name}
                   </p>
                 </div>
               </CardContent>
@@ -538,15 +558,27 @@ export default function UploadPage() {
                 onEnded={() => setEnded(true)}
               />
 
-                  {/* === Enhanced Highlight Editor === */}
-                  {uploadResult.shotEvents.map((shot, idx) => (
-                  <HighlightReviewPanel
-                  key={idx}
-                  index={idx}
-                    timestamp={shot.timestamp_start}
-                    videoUrl={`${API_BASE}/stream/${uploadResult.processingId}#t=${shot.timestamp_start}`} // or signed GCS URL
-                  />
-                ))}
+{uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
+  <div className="mt-8 space-y-4">
+    <h3 className="text-lg font-semibold mb-4 flex items-center">
+      <Zap className="w-4 h-4 mr-2 text-orange-500" />
+      Review & Edit Highlights
+    </h3>
+    {uploadResult.shotEvents.map((shot, idx) => (
+      <HighlightReviewPanel
+        key={idx}
+        index={idx}
+        startTime={shot.timestamp_start}
+        endTime={shot.timestamp_end}
+        videoUrl={`${API_BASE}/stream/${uploadResult.processingId || uploadResult.processingId}#t=${shot.timestamp_start}`}
+        outcome={shot.outcome}
+        shotType={shot.shot_type}
+        shotLocation={shot.shot_location}
+      />
+    ))}
+  </div>
+)}
+
 
 
                       {/* NEW: show highlight download when ready */}
@@ -594,10 +626,15 @@ export default function UploadPage() {
 
                     <div className="flex flex-col sm:flex-row gap-3 mt-6">
                       <Button className="flex-1" asChild>
-                        <Link href="/upload/enhanced">
-                          <BarChart3 className="w-4 h-4 mr-2" />
-                          View Detailed Analysis
-                        </Link>
+                                                  {jobId && (
+                            <Link href={`/upload/${jobId}`}>
+                              <Button className="flex-1">
+                                <BarChart3 className="w-4 h-4 mr-2" />
+                                View Detailed Analysis
+                              </Button>
+                            </Link>
+                          )}
+
                       </Button>
                       <Button variant="outline" className="flex-1" onClick={resetUpload}>
                         Analyze Another Video

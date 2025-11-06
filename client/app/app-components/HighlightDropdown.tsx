@@ -1,134 +1,194 @@
-// MAIN FILE FOR DROPDOWNS
-
-"use client"
+"use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge" 
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { ChevronDown, ChevronUp, Play } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
-
-interface HighlightReviewPanelDrops {
-    index: number;
-    timestamp: string;
-    videoUrl: string; // can be GCS or signed URL to raw video
+interface HighlightReviewPanelProps {
+  index: number;
+  startTime: string;
+  endTime: string;
+  videoUrl: string;
+  outcome?: string;
+  shotType?: string;
+  shotLocation?: string;
 }
 
-export default function HighlightReviewPanel({index, timestamp, videoUrl }: HighlightReviewPanelDrops) {
-    const [isOpen, setIsOpen] = useState(false);
-    const [shotType, setShotType] = useState("3-Point Jump Shot");
-    const [shotLocation, setShotLocation] = useState("Left Corner");
-    const [shotResult, setShotResult] = useState("Made");
+export default function HighlightReviewPanel({
+  index,
+  startTime,
+  endTime,
+  videoUrl,
+  outcome: initialOutcome,
+  shotType: initialShotType,
+  shotLocation: initialShotLocation,
+}: HighlightReviewPanelProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [shotType, setShotType] = useState(initialShotType || "");
+  const [shotLocation, setShotLocation] = useState(initialShotLocation || "");
+  const [shotResult, setShotResult] = useState(
+    initialOutcome?.toLowerCase().includes("make") ? "made" : "missed"
+  );
 
-    
-    return (
-    <div className="border rounded-lg bg-white shadow-sm mb-4 overflow-hidden transition-all">
-      {/* === Header === */}
-      <div
-        className="flex justify-between items-center p-3 cursor-pointer bg-gray-50 hover:bg-gray-100"
-        onClick={() => setIsOpen(!isOpen)}
+  const handleReset = () => {
+    setShotType(initialShotType || "");
+    setShotLocation(initialShotLocation || "");
+    setShotResult(initialOutcome?.toLowerCase().includes("make") ? "made" : "missed");
+  };
+
+  const handleSave = () => {
+    console.log("Saving highlight", {
+      index,
+      shotType,
+      shotLocation,
+      shotResult,
+      startTime,
+      endTime,
+    });
+    // Add your save logic here
+  };
+
+  return (
+    <div className="border rounded-lg bg-white shadow-sm overflow-hidden">
+      {/* Header */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
       >
         <div className="flex items-center space-x-3">
           <Badge variant="secondary">Highlight {index + 1}</Badge>
-          <span className="text-sm text-gray-500">{timestamp}</span>
+          <span className="text-sm text-gray-600">Start: {startTime}</span>
         </div>
-        {isOpen ? (
-          <ChevronUp className="w-4 h-4 text-gray-600" />
+        {isExpanded ? (
+          <ChevronUp className="w-5 h-5 text-gray-500" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-gray-600" />
+          <ChevronDown className="w-5 h-5 text-gray-500" />
         )}
-      </div>
+      </button>
 
-      {/* === Collapsible Section === */}
-      {isOpen && (
-        <div className="p-4 border-t bg-gray-50">
-          {/* Video preview */}
-          <div className="mb-4">
-            <video
-              src={videoUrl}
-              className="rounded-lg w-full max-h-64"
-              controls
-              muted
-            />
-          </div>
-
-          {/* Shot info form */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium">Shot Type</label>
-              <Select value={shotType} onValueChange={setShotType}>
-                <SelectTrigger className="w-full mt-1">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Layup">Layup</SelectItem>
-                  <SelectItem value="Midrange">Midrange</SelectItem>
-                  <SelectItem value="3-Point Jump Shot">3-Point Jump Shot</SelectItem>
-                  <SelectItem value="Free Throw">Free Throw</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium">Shot Location</label>
-              <Select value={shotLocation} onValueChange={setShotLocation}>
-                <SelectTrigger className="w-full mt-1">
-                  <SelectValue placeholder="Select location" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Left Corner">Left Corner</SelectItem>
-                  <SelectItem value="Right Corner">Right Corner</SelectItem>
-                  <SelectItem value="Top of Key">Top of Key</SelectItem>
-                  <SelectItem value="Paint">Paint</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium">Shot Result</label>
-              <div className="flex space-x-4 mt-2">
-                <Button
-                  variant={shotResult === "Made" ? "default" : "outline"}
-                  onClick={() => setShotResult("Made")}
+      {/* Expandable Content */}
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 py-4 space-y-4 border-t">
+              {/* Video Preview */}
+              <div className="w-full">
+                <video
+                  src={videoUrl}
+                  controls
+                  className="w-full rounded-lg"
+                  preload="metadata"
                 >
-                  Made
-                </Button>
-                <Button
-                  variant={shotResult === "Missed" ? "default" : "outline"}
-                  onClick={() => setShotResult("Missed")}
-                >
-                  Missed
-                </Button>
+                  Your browser does not support the video tag.
+                </video>
               </div>
-            </div>
 
-            <div>
-              <label className="text-sm font-medium">Timestamp</label>
-              <div className="flex items-center justify-between mt-1">
-                <input
-                  type="text"
-                  readOnly
-                  value={timestamp}
-                  className="text-sm bg-white border rounded p-1 w-1/2"
-                />
+              {/* Shot Type Dropdown */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Shot Type
+                </label>
+                <Select value={shotType} onValueChange={setShotType}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select shot type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Layup">Layup</SelectItem>
+                    <SelectItem value="Midrange">Midrange</SelectItem>
+                    <SelectItem value="3-Point Jump Shot">
+                      3-Point Jump Shot
+                    </SelectItem>
+                    <SelectItem value="Free Throw">Free Throw</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Shot Location Dropdown */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Shot Location
+                </label>
+                <Select value={shotLocation} onValueChange={setShotLocation}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select shot location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Left Corner">Left Corner</SelectItem>
+                    <SelectItem value="Right Corner">Right Corner</SelectItem>
+                    <SelectItem value="Top of Key">Top of Key</SelectItem>
+                    <SelectItem value="Paint">Paint</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Shot Result Toggle */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Shot Result
+                </label>
                 <div className="flex space-x-2">
-                  <Button size="sm" variant="outline">Start</Button>
-                  <Button size="sm" variant="outline">End</Button>
+                  <Button
+                    type="button"
+                    variant={shotResult === "made" ? "default" : "outline"}
+                    className={
+                      shotResult === "made"
+                        ? "flex-1 bg-green-500 hover:bg-green-600"
+                        : "flex-1"
+                    }
+                    onClick={() => setShotResult("made")}
+                  >
+                    Made
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={shotResult === "missed" ? "default" : "outline"}
+                    className={
+                      shotResult === "missed"
+                        ? "flex-1 bg-red-500 hover:bg-red-600"
+                        : "flex-1"
+                    }
+                    onClick={() => setShotResult("missed")}
+                  >
+                    Missed
+                  </Button>
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* Action buttons */}
-          <div className="flex justify-end mt-6 space-x-2">
-            <Button variant="outline">Reset Changes</Button>
-            <Button className="bg-orange-500 hover:bg-orange-600 text-white">Save & Continue</Button>
-          </div>
-        </div>
-      )}
+              {/* Action Buttons */}
+              <div className="flex space-x-2 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={handleReset}
+                  className="flex-1"
+                >
+                  Reset Changes
+                </Button>
+                <Button
+                  onClick={handleSave}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600"
+                >
+                  Save & Continue
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
-
-

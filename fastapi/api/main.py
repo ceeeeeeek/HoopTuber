@@ -27,13 +27,13 @@ print("DEBUGGING:")
 print(f"GCP_PROJECT_ID: {os.environ.get('GCP_PROJECT_ID')}")
 print(f"GOOGLE_APP_CREDS: {os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')}")
 print(f"Credentials file exists: {os.path.exists(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', ''))}")
-# NEW: env-config (you already set these on Render)
+
 PROJECT_ID   = os.environ["GCP_PROJECT_ID"]
 RAW_BUCKET   = os.environ["GCS_RAW_BUCKET"]
 OUT_BUCKET   = os.environ["GCS_OUT_BUCKET"]
 TOPIC_NAME   = os.environ["PUBSUB_TOPIC"]
 COLLECTION   = os.getenv("FIRESTORE_COLLECTION", "jobs")
-HIGHLIGHT_COL = os.getenv("FIRESTORE_HIGHLIGHT_COL", "Highlights")
+#HIGHLIGHT_COL = os.getenv("FIRESTORE_HIGHLIGHT_COL", "Highlights")
 SERVICE_ACCOUNT = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 # NEW: GCP clients
@@ -60,8 +60,6 @@ async def rate_limit_handler(request, exc):
         content={"detail": "Rate limit exceeded. Try again later."}
     )
 
-# backend/backend-sa.json
-# ../backend/backend-sa.json
 
 app.add_middleware(
     CORSMiddleware,
@@ -74,9 +72,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-#BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # directory of current script (main.py)
-#DATASET_DIR = os.path.join(BASE_DIR, "videoDataset") # directory to save uploaded videos (/videoDataset)
-#os.makedirs(DATASET_DIR, exist_ok=True)
+
 
 @app.get("/")
 def check_working():
@@ -104,10 +100,13 @@ async def ratelimit_status(request: Request):
         return {"allowed": True, "retry_after": 0, "error": str(e)}
 
 @app.post("/generate_upload_url")
-def generate_upload_url(request: dict = Body(...)):
-    filename = request.get("filename")
-    user_id = request.get("UserId")
-    content_type = request.get("userId")
+def generate_upload_url(request: Request, body: dict = Body(...)):
+    print("DEBUG BODY:", body)
+    print("DEBUG HEADERS:", dict(request.headers))
+    filename = body.get("filename")
+    user_id = body.get("UserId")
+    content_type = body.get("ContentType", "video/mp4")
+    owner_email = request.headers.get("x-owner-email")
     if not filename:
         raise HTTPException(status_code=400, detail="Missing filename")
     
@@ -128,9 +127,12 @@ def generate_upload_url(request: dict = Body(...)):
     _job_doc(job_id).set({
         "jobId": job_id,
         "userId": user_id,
+        "ownerEmail": owner_email,
         "status": "uploading",
-        "videoGcsUri": gcs_uri,
         "originalFileName": safe_name,
+        "title": safe_name,
+        "visibility": "private",
+        "videoGcsUri": gcs_uri,
         "createdAt": firestore.SERVER_TIMESTAMP,
     }, merge=True)
 

@@ -1,4 +1,4 @@
-#worker/main.py -downloads from GCS, “processes” the file, uploads back to GCS, and updates Firestore
+# worker/main.py -downloads from GCS, “processes” the file, uploads back to GCS, and updates Firestore
 
 import os, json, time, tempfile, shutil
 from google.cloud import pubsub_v1, storage, firestore
@@ -6,6 +6,8 @@ from VideoInputTest import process_video_and_summarize, client, CreateHighlightV
 import subprocess
 import logging # for render logs
 from utils import convert_to_mp4, add_watermark
+
+from utils import format_gemini_output # COMBINES GEMINI OUTPUT AND TUPLE ARRAY FOR FRONTEND
 
 logging.basicConfig(level=logging.INFO)
 PROJECT_ID         = os.environ["GCP_PROJECT_ID"]
@@ -15,15 +17,11 @@ OUT_BUCKET         = os.environ["GCS_OUT_BUCKET"]
 COLLECTION         = os.environ.get("FIRESTORE_COLLECTION", "jobs")
 PUBSUB_TOPIC = os.environ.get("PUBSUB_TOPIC", "video-jobs")
 
-# Optional: if you use Gemini here too
-#USE_GEMINI = bool(os.environ.get("GOOGLE_API_KEY"))
-#is just a placeholder and isn’t used—feel free to delete it (or keep it as a future feature flag).
 
-# --- helpers
 storage_client   = storage.Client(project=PROJECT_ID)
 firestore_client = firestore.Client(project=PROJECT_ID)
 
-
+Creator = CreateHighlightVideo2()
 
 def update_job(job_id: str, data: dict):
     firestore_client.collection(COLLECTION).document(job_id).set(data, merge=True)
@@ -123,12 +121,27 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
             
 
             make_highlight(in_path, out_path, parsed_data)
+            try:
+                logging.info("Starting timestamp merge for frontend")
+                
+                start_end_times = Creator.converting_tester(timestamp_maker(parsed_data))
+                logging.info("Converted to tuple timstamps")
+                logging.info(f"Timestamps: {start_end_times}\n")
+                formatted_output = format_gemini_output(parsed_data, start_end_times)
 
+                logging.info("CHECK! Combined Gemini + Timestamp ranges successfully")
+                logging.info(f"FORMATTED OUTPUT: {formatted_output}")
+                with open(json_path, "w") as f:
+                    json.dump(formatted_output, f, indent=2)
+            except Exception as e:
+                logging.error(f"ERROR (make_highlight function):error merging timestamps: {e}")
+                formatted_output = [] # fallback
             out_gcs_uri = upload_to_gcs(out_path, OUT_BUCKET, out_key)
             analysis_gcs_uri = upload_to_gcs(json_path, OUT_BUCKET, json_key)
             
         update_job(job_id, {
             "status": "done",
+            "shotEvents": formatted_output,
             "outputGcsUri": out_gcs_uri,
             "analysisGcsUri": analysis_gcs_uri,
             "finishedAt": firestore.SERVER_TIMESTAMP,

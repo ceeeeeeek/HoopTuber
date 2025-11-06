@@ -86,7 +86,7 @@ export default function DashboardClient() {
       videosUploaded: count,     //equals highlight count
       highlightsCreated: count,  //same
       totalFootageMin: minutes,  //zero if durations absent
-      teamGroups: 3,             //*placeholder* will change when we add Groups functionality (not yet added) - Sunday 11-04-25 7:48pm
+      teamGroups: 0,             //*placeholder* will change when we add Groups functionality (not yet added) - Sunday 11-04-25 7:48pm
     };
   }, [highlights]);
 
@@ -190,7 +190,7 @@ export default function DashboardClient() {
             <Clock3 className="w-5 h-5 text-orange-600" />
           </div>
           <div className="p-4 bg-white rounded-lg border">
-            <div className="text-3xl font-bold">3</div>
+            <div className="text-3xl font-bold">{stats.teamGroups}</div>
             <div className="text-sm text-gray-500">Team Groups</div>
             <Users className="w-5 h-5 text-purple-600" />
           </div>

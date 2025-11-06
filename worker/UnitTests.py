@@ -3,15 +3,19 @@ import json
 from VideoInputTest import return_enhanced_timestamps
 from utils import convert_to_mp4
 
+# FUNCTION RETURNS FORMATTED DICT FOR FRONTEND
+from utils import format_gemini_output 
+
 if __name__ == "__main__":
     Creator = CreateHighlightVideo2()
-    file_path = "videoDataset/alivschristian1.MOV"
+    file_path = "videoDataset/meshooting2.mp4"
     res = process_video_and_summarize(file_path)
     print(f"DEBUG: gemini is outputting: {type(res)}, coming from worker/VideoInputTest.py")
     print(f"DEBUG: Gem output: {res}\n")
     #if not isinstance(res, str) or not isinstance(res, list) or not isinstance(res, dict):
      #   parsed_data = json.loads(res)
-    parsed_data = res
+    
+    parsed_data = res # PARSED DATA = GEMINI OUTPUT
     if isinstance(res, str):
         parsed_data = json.loads(res)
     
@@ -36,7 +40,11 @@ if __name__ == "__main__":
         print(shot)
     print(f"TESTING SECONDS CONVERSION")
     checking1 = timestamp_maker(parsed_data)
-    checking2 = Creator.converting_tester(checking1)
-    print(checking2)
+    start_end_tuple_array = Creator.converting_tester(checking1)
+    print(start_end_tuple_array)
+
+    print(f"DEBUG FOR: combining tuple \n")
+    formatted_gem_output_for_frontend = format_gemini_output(parsed_data, start_end_tuple_array)
+    print(formatted_gem_output_for_frontend)
     # TESTING TIMESTAMP CONVERSION
     

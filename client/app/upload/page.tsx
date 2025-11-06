@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import Link from "next/link"
 import ProfileDropdown from "../app-components/ProfileDropdown"
+import HighlightReviewPanel from "../app-components/HighlightReviewPanel"
 // "https://hooptuber-fastapi-web-service-docker.onrender.com"
 // "http://localhost:8000"
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
@@ -36,19 +37,13 @@ console.log("API_BASE =", process.env.NEXT_PUBLIC_API_BASE);
 
 
 interface GeminiShotEvent {
-  Subject: string;
-  Location: string;
-  ShotType: string;
-  TimeStamp: string;
-  Outcome: string;
-}
-
-interface GeminiShotEvent {
-  Subject: string
-  Location: string
-  ShotType: string
-  TimeStamp: string
-  Outcome: string
+  id: string;
+  timestamp_end: string,
+  timestamp_start: string,
+  outcome: string,
+  subject: string,
+  shot_type: string,
+  shot_location: string
 }
 
 interface UploadResult {
@@ -81,6 +76,8 @@ interface JobRecord {
 
 export default function UploadPage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  console.log("SESSION DEBUG:", session);
   useEffect(() => {
     const checkSession = async () => {
       const res = await fetch("/api/auth/session", {
@@ -108,6 +105,7 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState("");
 
   // NEW: track job id and downloadable URL from worker output
   // Job + download tracking
@@ -129,6 +127,7 @@ export default function UploadPage() {
     setUploadState("idle");
     setUploadResult(null);
     setProgress(0);
+    setStatusMessage("");
     setJobId(null);
     setDownloadUrl(null);
   }, []);
@@ -143,14 +142,14 @@ export default function UploadPage() {
 
   const calculateGameStats = (shotEvents: GeminiShotEvent[]) => {
     const totalShots = shotEvents.length;
-    const madeShots = shotEvents.filter((s) => s.Outcome.toLowerCase().includes("make")).length;
+    const madeShots = shotEvents.filter((s) => s.outcome.toLowerCase().includes("make")).length;
     const shootingPercentage = totalShots > 0 ? Math.round((madeShots / totalShots) * 100) : 0;
 
     const shotTypes: Record<string, number> = {};
     const locations: Record<string, number> = {};
     for (const s of shotEvents) {
-      shotTypes[s.ShotType] = (shotTypes[s.ShotType] || 0) + 1;
-      locations[s.Location] = (locations[s.Location] || 0) + 1;
+      shotTypes[s.shot_type] = (shotTypes[s.shot_type] || 0) + 1;
+      locations[s.shot_location] = (locations[s.shot_location] || 0) + 1;
     }
 
     return { totalShots, madeShots, shootingPercentage, shotTypes, locations };
@@ -167,8 +166,10 @@ export default function UploadPage() {
 
   const startPolling = (id: string) => {
   stopPolling();
+  let pollCount = 0;
   pollRef.current = window.setInterval(async () => {
     try {
+      pollCount++;
       const res = await fetch(`${API_BASE}/jobs/${id}`);
       if (!res.ok) throw new Error(`status ${res.status}`);
       const data: JobRecord = await res.json();
@@ -176,11 +177,16 @@ export default function UploadPage() {
       if (data.status === "error" || data.status === "publish_error") {
         stopPolling();
         setUploadState("idle");
+        setStatusMessage("");
         console.error("Job failed:", data.error || "unknown");
         return;
       }
 
       if (data.status === "done" && data.outputGcsUri) {
+        // Finalizing stage
+        setProgress(95);
+        setStatusMessage("Applying final touches...");
+
         // Fetch final download + analysis
         const dlRes = await fetch(`${API_BASE}/jobs/${id}/download`);
         if (dlRes.ok) {
@@ -198,10 +204,25 @@ export default function UploadPage() {
             gameStats,
           }));
         }
+
+        setProgress(100);
+        setStatusMessage("Complete!");
         stopPolling();
         setUploadState("complete");
       } else {
+        // Still processing - gradually increase progress from 50% to 90%
         setUploadState("processing");
+        const currentProgress = Math.min(50 + (pollCount * 5), 90);
+        setProgress(currentProgress);
+
+        // Update status messages based on progress
+        if (currentProgress < 65) {
+          setStatusMessage("Analyzing video...");
+        } else if (currentProgress < 80) {
+          setStatusMessage("Detecting shots and movements...");
+        } else {
+          setStatusMessage("Generating highlights...");
+        }
       }
     } catch (e) {
       console.warn("Polling error:", e);
@@ -222,16 +243,27 @@ export default function UploadPage() {
 
   try {
     setUploadState("uploading");
-    setProgress(10);
+    setProgress(5);
+    setStatusMessage("Preparing upload...");
 
     // Request a signed upload URL from FastAPI
     const res = await fetch(`${API_BASE}/generate_upload_url`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename: selectedFile.name }),
+      headers: {
+        "Content-Type": "application/json",
+        "x-owner-email": session?.user?.email || "",
+      },
+      body: JSON.stringify({
+        filename: selectedFile.name,
+        userId: null, // CHANGE LATER, NEED TO CHANGE FOR OTHER LOGINS (regular logins etc)
+        contentType: selectedFile.type || "video/mp4",
+      }),
     });
     if (!res.ok) throw new Error("Failed to get signed URL");
     const { uploadUrl, gcsUri, jobId } = await res.json();
+
+    setProgress(10);
+    setStatusMessage("Uploading video...");
 
     // Upload directly to GCS
     const upload = await fetch(uploadUrl, {
@@ -241,7 +273,8 @@ export default function UploadPage() {
     });
     if (!upload.ok) throw new Error("GCS upload failed");
 
-    setProgress(75);
+    setProgress(40);
+    setStatusMessage("Processing upload...");
 
     // Tell FastAPI the upload is complete (publish job to Pub/Sub)
     const pub = await fetch(`${API_BASE}/publish_job`, {
@@ -251,7 +284,8 @@ export default function UploadPage() {
     });
     if (!pub.ok) throw new Error("Failed to publish job");
 
-    setProgress(100);
+    setProgress(50);
+    setStatusMessage("Analyzing video...");
     setUploadState("processing");
     setJobId(jobId);
 
@@ -270,6 +304,7 @@ export default function UploadPage() {
     console.error("Upload error:", err);
     alert("Upload failed: " + (err as Error).message);
     setUploadState("idle");
+    setStatusMessage("");
   }
 };
 
@@ -280,6 +315,7 @@ export default function UploadPage() {
     setSelectedFile(null);
     setUploadResult(null);
     setProgress(0);
+    setStatusMessage("");
     setJobId(null); // NEW: reset job id
     setDownloadUrl(null); // NEW: reset signed URL
     stopPolling(); // NEW: stop any active poller
@@ -477,9 +513,19 @@ export default function UploadPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <Progress value={progress} className="w-full" />
-                  <p className="text-center text-gray-600">
-                    {uploadState === "uploading" ? "Uploading" : "Analyzing"} {selectedFile?.name}... {progress}%
+                  <div className="space-y-2">
+                    <Progress value={progress} className="w-full" />
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm text-gray-600 font-medium">
+                        {statusMessage}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {progress}%
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-center text-gray-500 text-sm">
+                    {selectedFile?.name}
                   </p>
                 </div>
               </CardContent>
@@ -521,72 +567,24 @@ export default function UploadPage() {
                 onEnded={() => setEnded(true)}
               />
 
-{/* === Highlight Adjuster UI (timestamps only) === */}
 {uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
-  <div className="mt-8 bg-white rounded-lg shadow p-4">
+  <div className="mt-8 space-y-4">
     <h3 className="text-lg font-semibold mb-4 flex items-center">
       <Zap className="w-4 h-4 mr-2 text-orange-500" />
-      Adjust Highlights
+      Review & Edit Highlights
     </h3>
-
-    <p className="text-sm text-gray-600 mb-6">
-      Adjust each highlight’s start and end time below.  
-      This is the preview UI — functionality will be added later.
-    </p>
-
-    <div className="space-y-6">
-      {uploadResult.shotEvents.map((shot, idx) => (
-        <div key={idx} className="border rounded-lg p-3 bg-gray-50">
-          {/* Header row with timestamp and confirm button */}
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center space-x-2">
-              <Badge variant="secondary">
-                Highlight {idx + 1}
-              </Badge>
-              <span className="text-xs text-gray-500">
-                {shot.TimeStamp}
-              </span>
-            </div>
-            <Button size="sm" variant="outline">
-              Confirm
-            </Button>
-          </div>
-
-          {/* Mock slider for highlight range (visual placeholder) */}
-          <div className="px-2">
-            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-              <span>Start</span>
-              <span>End</span>
-            </div>
-            <div className="w-full relative">
-              {/* Timeline bar */}
-              <div className="h-2 bg-gray-200 rounded-full relative">
-                <div
-                  className="absolute h-2 bg-orange-500 rounded-full"
-                  style={{
-                    left: `${(idx * 15) % 80}%`,
-                    width: "20%",
-                  }}
-                />
-              </div>
-              <div className="flex justify-between mt-2 text-xs text-gray-400">
-                <span>+/- 2s</span>
-                <span>+/- 2s</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-
-    <div className="flex justify-end mt-6">
-      <Button variant="outline" className="mr-2">
-        Reset Adjustments
-      </Button>
-      <Button className="bg-orange-500 hover:bg-orange-600 text-white">
-        Save Adjustments
-      </Button>
-    </div>
+    {uploadResult.shotEvents.map((shot, idx) => (
+      <HighlightReviewPanel
+        key={idx}
+        index={idx}
+        startTime={shot.timestamp_start}
+        endTime={shot.timestamp_end}
+        videoUrl={`${API_BASE}/stream/${uploadResult.processingId || uploadResult.processingId}#t=${shot.timestamp_start}`}
+        outcome={shot.outcome}
+        shotType={shot.shot_type}
+        shotLocation={shot.shot_location}
+      />
+    ))}
   </div>
 )}
 

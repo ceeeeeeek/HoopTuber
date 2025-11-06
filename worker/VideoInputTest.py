@@ -200,7 +200,7 @@ class CreateHighlightVideo2:
     def __init__(self, clip_duration=5):
         self.clip_duration = clip_duration
     
-    def converting_tester(self, timestamp_list, start_before=1, merge_gap=0):
+    def converting_tester(self, timestamp_list, start_before=1, merge_gap=0): # RETURNS THE TUPLE ARRAY (STARTTIME,ENDTIME)
         try:
             if not timestamp_list:
                     print(f"No timestamps")
