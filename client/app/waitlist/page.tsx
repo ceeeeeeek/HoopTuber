@@ -7,6 +7,9 @@ import { Check } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com"
+console.log("API BASE @ W: ", process.env.NEXT_PUBLIC_API_BASE);
+
 export default function SignupPage() {
   const [email, setEmail] = useState("")
   const [submitted, setSubmitted] = useState(false)
@@ -19,10 +22,24 @@ export default function SignupPage() {
     setIsAnimating(true)
 
     // Simulate API call
-    setTimeout(() => {
-      setSubmitted(true)
-      setEmail("")
-    }, 500)
+    try{
+      const res = await fetch(`${API_BASE}/join_waitlist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json"},
+        body: JSON.stringify({ email })
+      });
+
+      if (res.ok) {
+        setSubmitted(true);
+        setEmail("");
+      } else {
+        console.error("Failed to submit email");
+      }
+    } catch (err) {
+      console.error("Error submitting email: ", err)
+    } finally {
+      setIsAnimating(false);
+    }
   }
 
   return (

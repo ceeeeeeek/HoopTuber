@@ -17,6 +17,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from urllib.parse import urlparse
+from pydantic import BaseModel, EmailStr
 
 from typing import Dict, Any, List
 from google.cloud.firestore import Query
@@ -472,6 +473,29 @@ def delete_highlight(job_id: str):
         pass
 
     return {"ok": True, "deleted": True}
+
+class WaitlistEntry(BaseModel):
+    email: EmailStr
+
+@app.post("/join_waitlist")
+def join_waitlist(entry: WaitlistEntry):
+    db = firestore_client
+    email = entry.email.strip().lower()
+
+    try:
+        #doc_ref = db.collection("waitlist").document(email)
+        db_ref = db.collection("waitlist").document(email)
+        existing = db_ref.get()
+        if existing.exists:
+            return {"message": "Email already on waitlist", "status": "duplicate"}
+
+        db_ref.set({
+            "email": email,
+            "createdAt": firestore.SERVER_TIMESTAMP
+        })
+        return {"message": "Added to waitlist", "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))   
 
 @app.get("/healthz")
 def healthz():

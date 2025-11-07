@@ -10,6 +10,11 @@ export default withAuth(
     if (url.endsWith(".php")) {
       return new NextResponse("Not Found", {status: 404});
     }
+
+    const blockedRoutes = ["/login", "/upload"];
+    if (blockedRoutes.includes(pathname)) {
+      return NextResponse.redirect(new URL("/waitlist", req.url))
+    }
     return NextResponse.next();
   },
   {
@@ -22,5 +27,7 @@ export default withAuth(
 export const config = {
   matcher: [
     "/dashboard/:path*",
+    "/login",
+    "/upload"
   ]
 };
