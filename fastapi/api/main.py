@@ -22,6 +22,8 @@ from pydantic import BaseModel, EmailStr
 from typing import Dict, Any, List
 from google.cloud.firestore import Query
 
+import resend
+
 load_dotenv()
 
 print("DEBUGGING:")
@@ -36,6 +38,7 @@ TOPIC_NAME   = os.environ["PUBSUB_TOPIC"]
 COLLECTION   = os.getenv("FIRESTORE_COLLECTION", "jobs")
 #HIGHLIGHT_COL = os.getenv("FIRESTORE_HIGHLIGHT_COL", "Highlights")
 SERVICE_ACCOUNT = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+resend.api_key = os.getenv("RESEND_API_KEY")
 
 # NEW: GCP clients
 storage_client   = storage.Client(project=PROJECT_ID)
@@ -485,6 +488,8 @@ def join_waitlist(entry: WaitlistEntry):
     try:
         #doc_ref = db.collection("waitlist").document(email)
         db_ref = db.collection("waitlist").document(email)
+        
+
         existing = db_ref.get()
         if existing.exists:
             return {"message": "Email already on waitlist", "status": "duplicate"}
@@ -493,6 +498,52 @@ def join_waitlist(entry: WaitlistEntry):
             "email": email,
             "createdAt": firestore.SERVER_TIMESTAMP
         })
+        try:
+            params: resend.Emails.SendParams = {
+                "from": "Chris <chris@hooptuber.com>",
+                "to": email,
+                "subject": "Welcome to Hooptuber!",
+                "html": f"""
+                <div style="font-family: Verdana, sans-serif; background-color: #fef6f2; padding: 24px;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 12px; padding: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+                <div style="text-align: center;">
+                    <img src="https://hooptuber.com/hooptubericon2.png" alt="HoopTuber Logo" width="64" height="64" style="margin-bottom: 16px;" />
+                    <h1 style="color: #f97316; font-size: 24px; margin-bottom: 8px;">Welcome to HoopTuber!</h1>
+                </div>
+
+                <p style="font-size: 16px; color: #333; line-height: 1.6;">
+                    Hey there,
+                    <br><br>
+                    Thanks for joining the <strong>HoopTuber Waitlist</strong>! You’re officially one of the first in line to try out our AI-powered basketball highlight creator.
+                    <br><br>
+                    When we launch, you’ll be able to upload your games, let AI detect your best moments, and instantly create shareable highlight reels and in-depth analyses for your highlights, all automatically.
+                </p>
+
+                <div style="margin: 32px 0; text-align: center;">
+                    <a href="https://hooptuber.com" style="display: inline-block; background-color: #f97316; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold;">
+                        Visit HoopTuber
+                    </a>
+                </div>
+
+                <p style="font-size: 14px; color: #555; line-height: 1.5;">
+                    Stay tuned, we’ll send you early access as soon as we go live.
+                </p>
+
+                <hr style="margin: 32px 0; border: none; border-top: 1px solid #eee;" />
+
+                <p style="font-size: 12px; color: #999; text-align: center;">
+                    You received this email because you signed up for the HoopTuber waitlist.<br>
+                    If you’d like to unsubscribe, <a href="https://hooptuber.com/unsubscribe?email={email}" style="color: #f97316;">click here</a>.
+                </p>
+            </div>
+        </div>
+
+                """,
+            }
+            sent_email = resend.Emails.send(params)
+            print(f"[DEBUG] @ join_waitlist: email sent! {sent_email}")
+        except Exception as e:
+            print(f"[DEBUG] @ join_waitlist: email not sent: {e}")
         return {"message": "Added to waitlist", "status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))   
