@@ -111,7 +111,7 @@ def process_video_and_summarize(file_path):
         try:
             parsed = json.loads(clean_text)
         except json.JSONDecodeError as e:
-            logging.info(f"Failed to parse Gemini output as JSON: {e} ")
+            logging.info(f"(PROCESS_VIDEO_SUMMARIZE): Failed to parse Gemini output as JSON: {e} ")
             return clean_text
         #list_test = json.loads(clean_text)
         return parsed

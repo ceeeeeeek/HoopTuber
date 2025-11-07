@@ -45,9 +45,11 @@ def upload_to_gcs(local_path: str, bucket_name: str, dst_key: str) -> str:
 def make_highlight(in_path: str, out_path: str, gemini_output):
     highlighter = CreateHighlightVideo2()
     # REAL HIGHLIGHT PIPELINE:
-    
+    print(f"[DEBUG] @make_highlight: type={type(gemini_output)}")
+    print(f"[DEBUG] make_highlight: first element={gemini_output[0] if gemini_output else 'None'}")
     make_timestamps = timestamp_maker(gemini_output) # list of make timestamps
-    clip_files = highlighter.create_highlights_ffmpeg(make_timestamps, in_path, out_path) # create highlight clips
+    print(f"[DEBUG] @ make_highlight: timestamps = {make_highlight}")
+    clip_files = highlighter.create_highlights_ffmpeg(highlighter.converting_tester(make_timestamps), in_path, out_path) # create highlight clips
     if not clip_files:
         raise RuntimeError("No highlight clips were created.")
     return out_path
@@ -162,7 +164,7 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
             logging.error(f"Failed to update job status for: {inner}")
         finally:
             msg.ack() # ACKNOWLEDGE TO AVOID INF LOOP
-        print("ERROR processing message:", e, flush=True)
+        print("(HANDLE_JOB FUNC) ERROR processing message:", e, flush=True)
 
 def main():
     subscriber = pubsub_v1.SubscriberClient()
