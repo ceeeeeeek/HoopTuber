@@ -19,7 +19,7 @@ export default function TryFreeUploadButton({
   variant = "default",
   withIcon = true,
   className,
-  children = "Try Free Upload",
+  children = "Join The Waitlist",
 }: Props) {
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
@@ -32,13 +32,13 @@ export default function TryFreeUploadButton({
         credentials: "include",
         headers: { Accept: "application/json" },
       });
-      // Take the user to login and include a `next=/upload` so we can bounce them back
+      // Take the user to login and include a `next=/waitlist` so we can bounce them back
       const data = await r.json()
       const isLoggedIn = !!data?.user;
-      
-      router.push(r.ok ? "/upload" : "/login?next=/upload");
+
+      router.push(r.ok ? "/waitlist" : "/login?next=/waitlist");
     } catch {
-      router.push("/login?next=/upload");
+      router.push("/login?next=/waitlist");
     } finally {
       setPending(false);
     }

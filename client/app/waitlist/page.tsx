@@ -161,12 +161,14 @@ export default function SignupPage() {
 
           {/* Additional Info */}
           <div className="mt-8 text-center space-y-4">
+            {/* 
             <p className="text-gray-600">
               Already have an account?{" "}
               <Link href="/login" className="text-orange-500 hover:text-orange-600 font-semibold">
                 Sign in
               </Link>
             </p>
+            */}
           </div>
         </div>
       </main>

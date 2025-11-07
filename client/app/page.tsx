@@ -35,6 +35,16 @@ export default function LandingPage() {
     setEnded(false);
   }
 
+  const scrollToFeatures = () => {
+    const el = document.querySelector("#features");
+    if (el instanceof HTMLElement) {
+      window.scrollTo({
+        top: el.offsetTop - 80,
+        behavior: "smooth",
+      });
+    }
+  };
+
   useEffect(() => {
     if (!playing && videoRef.current) {
       try {
@@ -81,7 +91,7 @@ export default function LandingPage() {
               </>
             ) : (
               <>
-                <Link href="/login" className="text-gray-600 hover:text-orange-500">
+                <Link href="/waitlist" className="text-gray-600 hover:text-orange-500">
                   Login
                 </Link>
                 <TryFreeUploadButton
