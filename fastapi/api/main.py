@@ -473,6 +473,20 @@ def delete_highlight(job_id: str):
 
     return {"ok": True, "deleted": True}
 
+@app.get("/unsubscribe")
+async def unsubscribe(email):
+    db = firestore_client
+
+    try:
+        email_ref = db.collection("waitlist").document(email)
+        doc = email.ref
+        if not doc.exists:
+            return {"error": f"Error @unsubscribe: {email} cannot be found."}
+        email.ref.delete()
+        return {"success": True}
+    except HTTPException as e:
+        return {"error": f"Error @unsubscribe: {str(e)}"}
+
 @app.get("/healthz")
 def healthz():
     """Used by Render for health checks."""
