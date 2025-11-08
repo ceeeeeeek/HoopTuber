@@ -42,7 +42,7 @@ resend.api_key = os.getenv("RESEND_API_KEY")
 
 # NEW: GCP clients
 storage_client   = storage.Client(project=PROJECT_ID)
-firestore_client = firestore.Client(project=PROJECT_ID)
+firestore_client = firestore.Client(project=PROJECT_ID) #db client
 publisher        = pubsub_v1.PublisherClient()
 topic_path       = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
 
@@ -69,6 +69,7 @@ app.add_middleware(
     CORSMiddleware,
     #allow_origins=['http://localhost:3000'],
     allow_origins=['http://localhost:3000',
+    "http://127.0.0.1:3000",               
     "https://www.hooptuber.com",
     "https://hooptuber.com" 
     ],
@@ -81,6 +82,7 @@ app.add_middleware(
 @app.get("/")
 def check_working():
     return {"detail": "FastAPI server up and running"}
+
 
 @app.get("/ratelimit/status")
 async def ratelimit_status(request: Request):
@@ -496,7 +498,8 @@ def join_waitlist(entry: WaitlistEntry):
 
         db_ref.set({
             "email": email,
-            "createdAt": firestore.SERVER_TIMESTAMP
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "isValidated": False
         })
         try:
             params: resend.Emails.SendParams = {
@@ -547,6 +550,20 @@ def join_waitlist(entry: WaitlistEntry):
         return {f"message": "{email} Added to waitlist", "status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))   
+    
+@app.get("/unsubscribe")
+async def unsub(email: str):
+    db = firestore_client
+    try:
+        db_ref = db.collection("waitlist").document(email)
+        doc = db_ref.get()
+        if not doc.exists:
+            raise HTTPException(status=404, detail="f{email} not found.")
+        db_ref.delete()
+        return {"ok": True, "message": f"{email} has been removed successfully."}
+    except HTTPException as e:
+        return {"messsage": "@unsubscribe: error unsubscribing: {e}"}
+
 
 @app.get("/healthz")
 def healthz():
