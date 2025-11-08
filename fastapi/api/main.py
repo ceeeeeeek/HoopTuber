@@ -484,11 +484,9 @@ class WaitlistEntry(BaseModel):
 
 
 @app.post("/join_waitlist")
-@limiter.limit("1/minute")
-def join_waitlist(entry: WaitlistEntry):
+async def join_waitlist(entry: WaitlistEntry):
     db = firestore_client
     email = entry.email.strip().lower()
-
     try:
         #doc_ref = db.collection("waitlist").document(email)
         db_ref = db.collection("waitlist").document(email)
@@ -498,7 +496,7 @@ def join_waitlist(entry: WaitlistEntry):
         if existing.exists:
             return {"message": "Email already on waitlist", "status": "duplicate"}
 
-        db_ref.set({
+        await db_ref.set({
             "email": email,
             "createdAt": firestore.SERVER_TIMESTAMP,
             "isValidated": False
