@@ -500,7 +500,7 @@ def join_waitlist(entry: WaitlistEntry):
         })
         try:
             params: resend.Emails.SendParams = {
-                "from": "Chris <chris@hooptuber.com>",
+                "from": "Hooptuber <no-reply@hooptuber.com>",
                 "to": email,
                 "subject": "Welcome to Hooptuber!",
                 "html": f"""
@@ -544,7 +544,7 @@ def join_waitlist(entry: WaitlistEntry):
             print(f"[DEBUG] @ join_waitlist: email sent! {sent_email}")
         except Exception as e:
             print(f"[DEBUG] @ join_waitlist: email not sent: {e}")
-        return {"message": "Added to waitlist", "status": "success"}
+        return {f"message": "{email} Added to waitlist", "status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))   
 
