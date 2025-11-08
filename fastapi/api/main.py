@@ -482,7 +482,9 @@ def delete_highlight(job_id: str):
 class WaitlistEntry(BaseModel):
     email: EmailStr
 
+
 @app.post("/join_waitlist")
+@limiter.limit("1/minute")
 def join_waitlist(entry: WaitlistEntry):
     db = firestore_client
     email = entry.email.strip().lower()
