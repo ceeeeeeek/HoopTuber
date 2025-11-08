@@ -503,7 +503,7 @@ def join_waitlist(entry: WaitlistEntry):
         })
         try:
             params: resend.Emails.SendParams = {
-                "from": "Hooptuber <no-reply@hooptuber.com>",
+                "from": "HoopTuber <no-reply@hooptuber.com>",
                 "to": email,
                 "subject": "Welcome to Hooptuber!",
                 "html": f"""
