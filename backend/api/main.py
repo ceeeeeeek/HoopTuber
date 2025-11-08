@@ -4,11 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from typing import List, Optional
 from datetime import timedelta
-import os, uuid, json
+import os, uuid, json, tempfile, subprocess #11-08-25 Saturday 11:42am - For 'Total Footage' stat; added tempfile, subprocess
 from dotenv import load_dotenv
 from google.cloud import storage, firestore
 from google.cloud import pubsub_v1
-from pydantic import BaseModel
+from pydantic import BaseModel 
 from google.cloud import firestore
 from google.cloud import storage
 from datetime import timedelta
@@ -34,7 +34,6 @@ RAW_BUCKET = os.getenv("GCS_RAW_BUCKET")
 OUT_BUCKET = os.getenv("GCS_OUT_BUCKET")
 TOPIC_NAME = os.getenv("PUBSUB_TOPIC")
 COLLECTION = os.getenv("FIRESTORE_COLLECTION", "jobs")
-HIGHLIGHT_COL = os.getenv("FIRESTORE_HIGHLIGHT_COL", "Highlights")
 SERVICE_ACCOUNT = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 #clients
@@ -109,6 +108,116 @@ def _sign_get_url(gs_uri: str, minutes: int = 15) -> str:
         expiration=timedelta(minutes=minutes),
         method="GET",
     )
+
+#11-08-25 Saturday 11:42am - For 'Total Footage' stat in dashboard page to be accurate
+#compute video duration (seconds) from a gs:// URI and cache it into the job doc
+def _get_duration_from_gcs_video(gs_uri: str, job_id: str | None = None) -> float:
+    try:
+        bucket_name, blob_name = _parse_gs_uri(gs_uri)                 # PRESERVED helper
+        bucket = storage_client.bucket(bucket_name)                    # PRESERVED client
+        blob = bucket.blob(blob_name)
+
+        # Download to a temp file for ffprobe
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:       
+            blob.download_to_filename(tmp.name)                        
+
+            # Run ffprobe to get duration
+            result = subprocess.run(                                   
+                [
+                    "ffprobe",
+                    "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "json",
+                    tmp.name,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            info = json.loads(result.stdout)                          
+            dur = float(info["format"]["duration"])                    
+            if dur > 0:
+                # Optionally cache back into Firestore so we don't recompute next time
+                if job_id:
+                    try:
+                        _job_doc(job_id).set(                          # PRESERVED helper
+                            {"highlightDurationSeconds": dur},
+                            merge=True,
+                        )
+                    except Exception:
+                        pass
+                return dur
+
+    except Exception as e:
+        print(f"DEBUG: _get_duration_from_gcs_video failed for {gs_uri}: {e}")
+
+    return 0.0
+#11-08-25 Saturday 11:42am - For 'Total Footage' stat in dashboard page to be accurate
+
+#11-08-25 Saturday 11:42am - For 'Total Footage' stat in dashboard page to be accurate
+#best-effort duration extractor for the HIGHLIGHT video (not raw job runtime)
+def _guess_duration_seconds(data: dict) -> float:
+    # 1) Prefer explicit highlight duration fields on the Firestore doc.          # PRESERVED comment (slightly edited)
+    preferred_keys = [
+        "highlightDurationSeconds",   # PRESERVED: primary source of truth
+        "durationSeconds",            # PRESERVED: optional alias if ever added
+    ]
+    for key in preferred_keys:
+        val = data.get(key)
+        if val is None:
+            continue
+        try:
+            if isinstance(val, str):
+                val = float(val)
+            val = float(val)
+            if val > 0:
+                return val
+        except Exception:
+            continue
+
+    # We DO NOT use startedAt/finishedAt here.                                    # PRESERVED idea
+
+    # 2) Minimal fallback - read analysis JSON for highlightDurationSeconds only. # PRESERVED (simplified)
+    try:
+        analysis_uri = data.get("analysisGcsUri")
+        if analysis_uri and analysis_uri.startswith("gs://"):
+            bucket_name, blob_name = _parse_gs_uri(analysis_uri)
+            blob = storage_client.bucket(bucket_name).blob(blob_name)
+            analysis = json.loads(blob.download_as_text())
+
+            candidates = [                                                      # PRESERVED (trimmed)
+                analysis.get("highlightDurationSeconds"),
+                analysis.get("summary", {}).get("highlightDurationSeconds"),
+            ]
+            for c in candidates:
+                if c is None:
+                    continue
+                try:
+                    if isinstance(c, str):
+                        c = float(c)
+                    c = float(c)
+                    if c > 0:
+                        return c
+                except Exception:
+                    continue
+    except Exception:
+        pass  # PRESERVED-style swallow
+
+    # 3)As a last resort, compute duration from the highlight video itself.
+    try:
+        out_uri = data.get("outputGcsUri")
+        if out_uri and out_uri.startswith("gs://"):
+            job_id = data.get("jobId") or data.get("id")
+            dur = _get_duration_from_gcs_video(out_uri, job_id=job_id)  
+            if dur > 0:
+                return dur
+    except Exception:
+        pass  # don't break listing on duration error
+
+    # 4) If we still don't know, treat as 0 so it doesn't distort Total Footage.  # PRESERVED
+    return 0.0
+
+#11-08-25 Saturday 11:42am - For 'Total Footage' stat in dashboard page to be accurate
 
 #POST
 @app.post("/upload")
@@ -251,18 +360,25 @@ def list_highlights(
     for d in docs:
         data = d.to_dict()
 
-        # fields + NEW: title & visibility (with sensible fallbacks)
+        #11-08-25 Saturday 11:42am - For 'Total Footage' stat
+        #derive a duration for the Total Footage stat
+        duration_sec = _guess_duration_seconds(data)  
+        #11-08-25 Saturday 11:42am - For 'Total Footage' stat
+
+        # fields + title & visibility (with sensible fallbacks)
         item = {
             "jobId": data.get("jobId") or d.id,
             "originalFileName": data.get("originalFileName"),
             "title": data.get("title") or data.get("originalFileName"),          
             "visibility": data.get("visibility") or "private",                    
             "finishedAt": str(data.get("finishedAt")),
+            "createdAt": str(data.get("createdAt")),                   
             "outputGcsUri": data.get("outputGcsUri"),
             "analysisGcsUri": data.get("analysisGcsUri"),
             "ownerEmail": data.get("ownerEmail"),
             "userId": data.get("userId"),
             "status": data.get("status"),
+            "durationSeconds": duration_sec, #11-08-25 Saturday 11:42am - For 'Total Footage' stat
         }
         if signed and data.get("outputGcsUri"):
             try:

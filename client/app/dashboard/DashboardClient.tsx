@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";                            
 import {
   Play, Upload, UploadIcon, BarChart2, BarChart3, Clock3, Users,
-  Edit3, Save, Trash2, Eye, Lock, Link as LinkIcon, ChevronDown, ChevronUp
+  Edit3, Save, Trash2, Eye, Lock, Link as LinkIcon, ChevronDown, ChevronUp, Filter
 } from "lucide-react";                                                   
 import cn from "clsx";                                                  
 import ProfileDropdown from "../app-components/ProfileDropdown";         
@@ -24,7 +24,8 @@ type HighlightItem = {
   originalFileName?: string;                                     
   ownerEmail?: string;                                            
   title?: string;                                              
-  finishedAt?: string;                                             
+  finishedAt?: string;        
+  createdAt?: string;                                     
   signedUrl?: string;                                             
   outputGcsUri?: string;                                          
   durationSeconds?: number;                                        
@@ -50,6 +51,29 @@ export default function DashboardClient() {
 
   //little help accordion
   const [helpOpen, setHelpOpen] = useState(false);
+
+  //11-08-25 Saturday 2:18pm Update - Added Filter Button to Dashboard + New sorting/filtering state and UI hooks for dashboard page
+  // === Filter state (NEW) ===
+  type SortField = "createdAt" | "visibility" | "alphabetical" | null;    
+  type SortDirection = "asc" | "desc";                                    
+
+  const [filterOpen, setFilterOpen] = useState(false);                    
+  const [appliedField, setAppliedField] = useState<SortField>(null);      
+  const [appliedDirection, setAppliedDirection] =
+    useState<SortDirection>("asc");                                     
+
+  const [pendingField, setPendingField] = useState<SortField>(null);      
+  const [pendingDirection, setPendingDirection] =
+    useState<SortDirection>("asc");                                      
+
+  const openFilter = () => {                                              
+    setPendingField(appliedField);
+    setPendingDirection(appliedDirection);
+    setFilterOpen(true);
+  };
+
+  const closeFilter = () => setFilterOpen(false); 
+  //11-08-25 Saturday 2:18pm Update
 
   // =====Fetch from FastAPI instead of /api/highlightVideos =====
   const load = useCallback(async () => {
@@ -82,13 +106,71 @@ export default function DashboardClient() {
     const count = highlights.length;
     const totalSeconds = highlights.reduce((acc, h) => acc + (h.durationSeconds || 0), 0);
     const minutes = Math.round(totalSeconds / 60);
+
+    //#11-08-25 Saturday 11:42am - For 'Total Footage' stat
+    const hours = Math.floor(minutes / 60);                                     
+    const remainingMinutes = minutes % 60;                                      
+    const totalHighlightFootageCombined =
+      hours > 0 ? `${hours}h ${remainingMinutes}m` : `${minutes}m`;
+    //#11-08-25 Saturday 11:42am - For 'Total Footage' stat
+
     return {
       videosUploaded: count,     //equals highlight count
       highlightsCreated: count,  //same
       totalFootageMin: minutes,  //zero if durations absent
+      totalHighlightFootageCombined, //#11-08-25 Saturday 11:42am - For 'Total Footage' stat
       teamGroups: 3,             //*placeholder* will change when we add Groups functionality (not yet added) - Sunday 11-04-25 7:48pm
     };
   }, [highlights]);
+
+  //11-08-25 Saturday 2:18pm Update
+  // Derived, sorted view of highlights based on applied filter settings  
+  const sortedHighlights = useMemo(() => {                                
+    const items = [...highlights];                                        
+    const field = appliedField;                                           
+    const dir = appliedDirection === "asc" ? 1 : -1;                      
+
+    if (!field) return items; // no sorting applied                       
+
+    if (field === "alphabetical") {                                       
+      items.sort((a, b) => {
+        const aName = (a.title || a.originalFileName || "").toLowerCase();
+        const bName = (b.title || b.originalFileName || "").toLowerCase();
+        if (aName < bName) return -1 * dir;
+        if (aName > bName) return 1 * dir;
+        return 0;
+      });
+    } else if (field === "createdAt") {                                   
+      items.sort((a, b) => {
+        const aTime = new Date(a.createdAt || a.finishedAt || 0).getTime() || 0;
+        const bTime = new Date(b.createdAt || b.finishedAt || 0).getTime() || 0;
+        return (aTime - bTime) * dir;
+      });
+    } else if (field === "visibility") {                                  
+      const rank = (vis?: Visibility) => {
+        if (vis === "public") return 0;
+        if (vis === "unlisted") return 1;
+        return 2; // private / undefined
+      };
+      items.sort((a, b) => (rank(a.visibility) - rank(b.visibility)) * dir);
+    }
+
+    return items;
+  }, [highlights, appliedField, appliedDirection]);  
+  
+    // human-readable label for the currently applied sort
+    const appliedLabel = useMemo(() => {
+      if (!appliedField) return "";
+      const dirLabel = appliedDirection === "asc" ? "Asc" : "Desc";
+  
+      if (appliedField === "createdAt") return `Created • ${dirLabel}`;
+      if (appliedField === "visibility") return `Visibility • ${dirLabel}`;
+      if (appliedField === "alphabetical") return `A-Z • ${dirLabel}`;
+  
+      return "";
+    }, [appliedField, appliedDirection]);
+  
+  //11-08-25 Saturday 2:18pm Update
 
   //=====PATCH/DELETE routed to FastAPI instead of /api/highlightVideos =====
   const patchHighlight = async (jobId: string, body: Record<string, any>) => {
@@ -185,7 +267,7 @@ export default function DashboardClient() {
             <BarChart2 className="w-5 h-5 text-green-600" />
           </div>
           <div className="p-4 bg-white rounded-lg border">
-            <div className="text-3xl font-bold">{stats.totalFootageMin}m</div>
+            <div className="text-3xl font-bold">{stats.totalHighlightFootageCombined}</div> {/*11-08-25 Saturday 11:42am - For 'Total Footage' stat*/}
             <div className="text-sm text-gray-500">Total Footage</div>
             <Clock3 className="w-5 h-5 text-orange-600" />
           </div>
@@ -198,11 +280,40 @@ export default function DashboardClient() {
 
         {/*Highlights-only gallery(wired to FastAPI data)*/}
         <section className="mt-10">
-          <div className="flex items-center justify-between">
+          {/*11-08-25 Saturday 2:18pm Update */}
+          {/*<div className="flex items-center justify-between">*/}
+          <div className="flex items-center justify-between relative"> {/*relative for dropdown positioning */}
             <div className="flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-gray-700" />
               <h2 className="text-xl font-semibold text-gray-900">Highlight Videos</h2>
             </div>
+            {/*11-08-25 Saturday 2:18pm Update */}
+            <div className="flex items-center gap-3">
+              {/*Filter button */}
+              <button
+                type="button"
+                onClick={() => (filterOpen ? closeFilter() : openFilter())}
+                className="text-sm text-gray-600 hover:text-gray-900 inline-flex items-center gap-1 px-2 py-1 border rounded-md bg-white"
+              >
+                <Filter className="w-4 h-4" />
+                <span>Filter</span>
+                <ChevronDown
+                  className={cn(
+                    "w-3 h-3 transition-transform",
+                    filterOpen && "rotate-180"
+                  )}
+                />
+              </button>
+              {/*11-08-25 Saturday 2:18pm Update */} 
+              {/*tiny badge showing current applied sort */}
+              {appliedLabel && (
+                <span className="px-2 py-0.5 text-[10px] rounded-full bg-gray-100 text-gray-700 border border-gray-200">
+                  {appliedLabel}
+                </span>
+              )}
+              {/*11-08-25 Saturday 2:18pm Update */} 
+
+          {/*11-08-25 Saturday 2:18pm Update */}   
             <button
               className="text-sm text-gray-600 hover:text-gray-800 inline-flex items-center gap-1"
               onClick={() => setHelpOpen((v) => !v)}
@@ -211,6 +322,118 @@ export default function DashboardClient() {
               How it works
             </button>
           </div>
+
+            {/*Filter dropdown panel */}
+            {filterOpen && (
+              <div className="absolute right-0 top-full mt-2 w-72 bg-white border rounded-lg shadow-lg p-3 z-20">
+                <div className="text-xs font-semibold text-gray-500 mb-1">
+                  Filter by field
+                </div>
+                <div className="flex flex-col gap-1 mb-3 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setPendingField("createdAt")}
+                    className={cn(
+                      "w-full text-left px-2 py-1 rounded",
+                      pendingField === "createdAt" && "bg-gray-100 font-semibold"
+                    )}
+                  >
+                    Created date
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingField("visibility")}
+                    className={cn(
+                      "w-full text-left px-2 py-1 rounded",
+                      pendingField === "visibility" && "bg-gray-100 font-semibold"
+                    )}
+                  >
+                    Visibility (Public → Unlisted → Private)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingField("alphabetical")}
+                    className={cn(
+                      "w-full text-left px-2 py-1 rounded",
+                      pendingField === "alphabetical" && "bg-gray-100 font-semibold"
+                    )}
+                  >
+                    Alphabetical (Title / File name)
+                  </button>
+                </div>
+
+                <div className="text-xs font-semibold text-gray-500 mb-1">
+                  Sort results
+                </div>
+                <div className="flex gap-2 mb-3 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setPendingDirection("asc")}
+                    className={cn(
+                      "flex-1 px-2 py-1 rounded border",
+                      pendingDirection === "asc" && "bg-gray-100 font-semibold border-gray-400"
+                    )}
+                  >
+                    Ascending
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingDirection("desc")}
+                    className={cn(
+                      "flex-1 px-2 py-1 rounded border",
+                      pendingDirection === "desc" && "bg-gray-100 font-semibold border-gray-400"
+                    )}
+                  >
+                    Descending
+                  </button>
+                </div>
+
+                <div className="flex justify-between gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Clear: remove sorting entirely
+                      setAppliedField(null);
+                      setAppliedDirection("asc");
+                      setPendingField(null);
+                      setPendingDirection("asc");
+                      closeFilter();
+                    }}
+                    className="px-2 py-1 rounded border text-gray-600 hover:bg-gray-50"
+                  >
+                    Clear
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Cancel: discard pending changes
+                        setPendingField(appliedField);
+                        setPendingDirection(appliedDirection);
+                        closeFilter();
+                      }}
+                      className="px-2 py-1 rounded border text-gray-600 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Apply: commit pending to applied
+                        setAppliedField(pendingField);
+                        setAppliedDirection(pendingDirection);
+                        closeFilter();
+                      }}
+                      className="px-2 py-1 rounded bg-orange-500 text-white hover:bg-orange-600"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          {/*11-08-25 Saturday 2:18pm Update */}   
 
           {helpOpen && (
             <div className="mt-3 p-3 text-sm text-gray-700 bg-white border rounded-md">
@@ -238,7 +461,8 @@ export default function DashboardClient() {
 
             {!loading && !error && highlights.length > 0 && (
               <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {highlights.map((h) => {
+                {/*{highlights.map((h) => {*/}
+                {sortedHighlights.map((h) => {  {/*11-08-25 Sunday 2:18pm Update - Use sortedHighlights */}
                   const isEditing = editingId === h.jobId;                 //use jobId
                   const vis = (h.visibility || "private") as Visibility;
 

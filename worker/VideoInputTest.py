@@ -14,7 +14,7 @@ from prompts import prompt_4, json_input, prompt_shot_outcomes_only
 from uuid import uuid4 
 
 
-# NEW: turning Gemini call to async, avoid repeated API calls
+# turning Gemini call to async, avoid repeated API calls
 import asyncio
 
 logging.basicConfig(level=logging.INFO)
@@ -206,7 +206,7 @@ def return_enhanced_timestamps(gem_output):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
-# NEW: --- begin safe console helpers (Windows-safe, ASCII only) ---
+#--- begin safe console helpers (Windows-safe, ASCII only) ---
 def _log_ok(msg: str):
     print(f"[OK] {msg}")
 
