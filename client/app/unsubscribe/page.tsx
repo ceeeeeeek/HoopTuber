@@ -7,7 +7,7 @@ import Link from "next/link";
 import Image from "next/image"
 
 // "https://hooptuber-fastapi-web-service-docker.onrender.com"
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000"
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-devtest.onrender.com"
 console.log("API_BASE = ", API_BASE)
 
 type Status = "loading" | "success" | "error" | "no-email";

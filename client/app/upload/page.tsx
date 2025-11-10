@@ -32,7 +32,7 @@ import ProfileDropdown from "../app-components/ProfileDropdown"
 import HighlightReviewPanel from "../app-components/HighlightReviewPanel"
 // "https://hooptuber-fastapi-web-service-docker.onrender.com"
 // "http://localhost:8000"
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-devtest.onrender.com";
 console.log("API_BASE =", process.env.NEXT_PUBLIC_API_BASE);
 
 
