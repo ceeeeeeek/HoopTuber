@@ -1,4 +1,4 @@
-//client/app/dashboard/DashboardClient.tsx — Tuesday 11-04-25 Version 7:50pm
+//client/app/dashboard/DashboardClient.tsx — Thursday 11-13-25 Version 11am
 //now highlights-only and pointed at FastAPI
 
 "use client";
@@ -53,7 +53,7 @@ export default function DashboardClient() {
   const [helpOpen, setHelpOpen] = useState(false);
 
   //11-08-25 Saturday 2:18pm Update - Added Filter Button to Dashboard + New sorting/filtering state and UI hooks for dashboard page
-  // === Filter state (NEW) ===
+  // ===Filter state===
   type SortField = "createdAt" | "visibility" | "alphabetical" | null;    
   type SortDirection = "asc" | "desc";                                    
 
@@ -105,23 +105,38 @@ export default function DashboardClient() {
   const stats = useMemo(() => {
     const count = highlights.length;
     const totalSeconds = highlights.reduce((acc, h) => acc + (h.durationSeconds || 0), 0);
-    const minutes = Math.round(totalSeconds / 60);
+    //11-13-25 Thursday 10am - For 'Total Footage' stat
+    //human-readable label without rounding up
+    const hours = Math.floor(totalSeconds / 3600);                           
+    const minutes = Math.floor((totalSeconds % 3600) / 60);                  
+    const seconds = Math.floor(totalSeconds % 60);                           
 
-    //#11-08-25 Saturday 11:42am - For 'Total Footage' stat
-    const hours = Math.floor(minutes / 60);                                     
-    const remainingMinutes = minutes % 60;                                      
-    const totalHighlightFootageCombined =
-      hours > 0 ? `${hours}h ${remainingMinutes}m` : `${minutes}m`;
-    //#11-08-25 Saturday 11:42am - For 'Total Footage' stat
+    let label = "0m";  //default
+    if (totalSeconds < 60) {                                                 
+      label = `${seconds}s`;
+    } else if (totalSeconds < 3600) {                                        
+      label = seconds
+        ? `${minutes}m ${seconds}s`
+        : `${minutes}m`;
+    } else {                                                                 
+      if (minutes === 0 && seconds === 0) {
+        label = `${hours}h`;
+      } else if (seconds === 0) {
+        label = `${hours}h ${minutes}m`;
+      } else {
+        label = `${hours}h ${minutes}m ${seconds}s`;
+      }
+    }
 
     return {
-      videosUploaded: count,     //equals highlight count
-      highlightsCreated: count,  //same
-      totalFootageMin: minutes,  //zero if durations absent
-      totalHighlightFootageCombined, //#11-08-25 Saturday 11:42am - For 'Total Footage' stat
-      teamGroups: 3,             //*placeholder* will change when we add Groups functionality (not yet added) - Sunday 11-04-25 7:48pm
+      videosUploaded: count,                 
+      highlightsCreated: count,              
+      totalFootageSeconds: totalSeconds,     //exact numeric seconds if needed
+      totalFootageLabel: label,              //pretty display string
+      teamGroups: 3,                         //placeholder
     };
   }, [highlights]);
+  //11-13-25 Thursday 10am - For 'Total Footage' stat
 
   //11-08-25 Saturday 2:18pm Update
   // Derived, sorted view of highlights based on applied filter settings  
@@ -130,7 +145,7 @@ export default function DashboardClient() {
     const field = appliedField;                                           
     const dir = appliedDirection === "asc" ? 1 : -1;                      
 
-    if (!field) return items; // no sorting applied                       
+    if (!field) return items; //no sorting applied                       
 
     if (field === "alphabetical") {                                       
       items.sort((a, b) => {
@@ -150,7 +165,7 @@ export default function DashboardClient() {
       const rank = (vis?: Visibility) => {
         if (vis === "public") return 0;
         if (vis === "unlisted") return 1;
-        return 2; // private / undefined
+        return 2; //private / undefined
       };
       items.sort((a, b) => (rank(a.visibility) - rank(b.visibility)) * dir);
     }
@@ -158,7 +173,7 @@ export default function DashboardClient() {
     return items;
   }, [highlights, appliedField, appliedDirection]);  
   
-    // human-readable label for the currently applied sort
+    //human-readable label for the currently applied sort
     const appliedLabel = useMemo(() => {
       if (!appliedField) return "";
       const dirLabel = appliedDirection === "asc" ? "Asc" : "Desc";
@@ -169,7 +184,6 @@ export default function DashboardClient() {
   
       return "";
     }, [appliedField, appliedDirection]);
-  
   //11-08-25 Saturday 2:18pm Update
 
   //=====PATCH/DELETE routed to FastAPI instead of /api/highlightVideos =====
@@ -267,7 +281,10 @@ export default function DashboardClient() {
             <BarChart2 className="w-5 h-5 text-green-600" />
           </div>
           <div className="p-4 bg-white rounded-lg border">
-            <div className="text-3xl font-bold">{stats.totalHighlightFootageCombined}</div> {/*11-08-25 Saturday 11:42am - For 'Total Footage' stat*/}
+            {/*<div className="text-3xl font-bold">{stats.totalHighlightFootageCombined}</div> 11-08-25 Saturday 11:42am - For 'Total Footage' stat */}
+            <div className="text-3xl font-bold">
+    {         stats.totalFootageLabel} {/*uses exact hh/mm/ss label; 11-13-25 Thursday 10am - For 'Total Footage' stat */} 
+            </div>
             <div className="text-sm text-gray-500">Total Footage</div>
             <Clock3 className="w-5 h-5 text-orange-600" />
           </div>

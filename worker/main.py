@@ -72,7 +72,7 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
         input_gcs_uri = payload["videoGcsUri"]     # gs://...
         out_key       = f"{job_id}/highlight.mp4"
         json_key      = f"{job_id}/analysis.json"
-        print(f"DEBUG: Paylod: {payload}, Processing {job_id} for {user_id}, gcs_uri={input_gcs_uri}")
+        print(f"DEBUG: Payload: {payload}, Processing {job_id} for {user_id}, gcs_uri={input_gcs_uri}")
         update_job(job_id, {"status": "processing", "startedAt": firestore.SERVER_TIMESTAMP})
         print(f"=== handle_job() started for jobId={payload.get('jobId')} ===", flush=True)
 
