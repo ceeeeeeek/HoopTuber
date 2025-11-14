@@ -272,6 +272,7 @@ async def upload_video(
             "visibility": "private",
             "videoGcsUri": raw_gcs_uri,
             "createdAt": firestore.SERVER_TIMESTAMP,
+            "videoDurationSec": 0,
         }, merge=True)
 
         # 4) Publish to Pub/Sub so the Background Worker starts processing
@@ -378,6 +379,7 @@ def list_highlights(
             "title": data.get("title") or data.get("originalFileName"),          
             "visibility": data.get("visibility") or "private",                    
             "finishedAt": str(data.get("finishedAt")),
+            "videoDurationSec": int(data.get("videoDurationSec")) if data.get("videoDurationSec") is not None else 0,
             "outputGcsUri": data.get("outputGcsUri"),
             "analysisGcsUri": data.get("analysisGcsUri"),
             "ownerEmail": data.get("ownerEmail"),

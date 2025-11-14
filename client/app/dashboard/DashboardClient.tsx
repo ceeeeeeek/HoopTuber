@@ -17,17 +17,37 @@ type Visibility = "public" | "unlisted" | "private";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 
+/**
+ * Format duration in seconds to a human-readable string
+ * - Under 60s: "XXs"
+ * - 60s to 3599s: "Xm Ys"
+ * - 3600s and above: "Xh Ym" (no seconds)
+ */
+function formatDuration(totalSeconds: number): string {
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  } else if (totalSeconds < 3600) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${seconds}s`;
+  } else {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  }
+}
+
 type HighlightItem = {
-  jobId: string;                                                   
-  originalFileName?: string;                                     
-  ownerEmail?: string;                                            
-  title?: string;                                              
-  finishedAt?: string;                                             
-  signedUrl?: string;                                             
-  outputGcsUri?: string;                                          
-  durationSeconds?: number;                                        
-  status?: string;                                                
-  visibility?: Visibility;                                        
+  jobId: string;
+  originalFileName?: string;
+  ownerEmail?: string;
+  title?: string;
+  finishedAt?: string;
+  signedUrl?: string;
+  outputGcsUri?: string;
+  videoDurationSec?: number;
+  status?: string;
+  visibility?: Visibility;
 };
 
 
@@ -78,12 +98,12 @@ export default function DashboardClient() {
   //(CHANGED source): derive stats from FastAPI items
   const stats = useMemo(() => {
     const count = highlights.length;
-    const totalSeconds = highlights.reduce((acc, h) => acc + (h.durationSeconds || 0), 0);
-    const minutes = Math.round(totalSeconds / 60);
+    const totalSeconds = highlights.reduce((acc, h) => acc + (h.videoDurationSec || 0), 0);
+    const formattedDuration = formatDuration(totalSeconds);
     return {
       videosUploaded: count,     //equals highlight count
       highlightsCreated: count,  //same
-      totalFootageMin: minutes,  //zero if durations absent
+      totalFootage: formattedDuration,  //formatted duration string
       teamGroups: 0,             //*placeholder* will change when we add Groups functionality (not yet added) - Sunday 11-04-25 7:48pm
     };
   }, [highlights]);
@@ -183,7 +203,7 @@ export default function DashboardClient() {
             <BarChart2 className="w-5 h-5 text-green-600" />
           </div>
           <div className="p-4 bg-white rounded-lg border">
-            <div className="text-3xl font-bold">{stats.totalFootageMin}m</div>
+            <div className="text-3xl font-bold">{stats.totalFootage}</div>
             <div className="text-sm text-gray-500">Total Footage</div>
             <Clock3 className="w-5 h-5 text-orange-600" />
           </div>

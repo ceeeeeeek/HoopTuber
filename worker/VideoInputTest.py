@@ -243,7 +243,7 @@ class CreateHighlightVideo2:
             clip_files = []
             
             try:
-                timestamps = self.converting_tester(timestamps_input)
+                timestamps = timestamps_input
                 
                 # Create individual clips
                 for i, (start, end) in enumerate(timestamps):
