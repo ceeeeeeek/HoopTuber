@@ -35,6 +35,7 @@ OUT_BUCKET = os.getenv("GCS_OUT_BUCKET")
 TOPIC_NAME = os.getenv("PUBSUB_TOPIC")
 COLLECTION = os.getenv("FIRESTORE_COLLECTION", "jobs")
 SERVICE_ACCOUNT = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+FOLDER_COLLECTION = "highlightFolders" #11-13-25 Thursday 2pm - For future folder support
 
 #clients
 storage_client   = storage.Client(project=PROJECT_ID)
@@ -63,6 +64,12 @@ def root():
 #Firestore doc handle helper
 def _job_doc(job_id: str):
     return firestore_client.collection(COLLECTION).document(job_id)
+
+#11-13-25 Thursday 2pm - For future folder support
+#helper for folder documents
+def _folder_doc(folder_id: str):
+    return firestore_client.collection(FOLDER_COLLECTION).document(folder_id)
+#11-13-25 Thursday 2pm - For future folder support
 
 #name the ingest object (temporary “raw” file in GCS)
 def _make_keys(original_name: str, job_id: str) -> tuple[str, str, str]:
@@ -555,6 +562,70 @@ def delete_highlight(job_id: str):
 
     return {"ok": True, "deleted": True}
 #Sunday 11-02-25 Update 7:55pm - PATCH & DELETE for highlights
+
+#11-13-25 Thursday 2pm - For future folder support
+@app.get("/folders")
+def list_folders(ownerEmail: str):
+    """List all highlight folders for a user."""
+    #query user’s folders ascending by createdAt
+    q = (
+        firestore_client.collection(FOLDER_COLLECTION)
+        .where("ownerEmail", "==", ownerEmail)
+        .order_by("createdAt", direction=firestore.Query.ASCENDING)  #pattern
+    )
+    folders = []
+    for doc in q.stream():
+        data = doc.to_dict() or {}
+        data["folderId"] = doc.id
+        folders.append(data)
+    return {"items": folders}
+
+@app.post("/folders")
+def create_folder(body: dict = Body(...)):
+    """Create a new folder."""
+    owner = body.get("ownerEmail")
+    name = body.get("name") or "New Folder"
+    folder_id = str(uuid.uuid4())                              #uuid pattern
+    _folder_doc(folder_id).set({
+        "folderId": folder_id,
+        "ownerEmail": owner,
+        "name": name,
+        "videoIds": [],                                         #simple membership list
+        "createdAt": firestore.SERVER_TIMESTAMP,                #timestamp style
+    })
+    return {"ok": True, "folderId": folder_id}
+
+@app.patch("/folders/{folder_id}")
+def update_folder(folder_id: str, body: dict = Body(...)):
+    """Rename or move videos in a folder."""
+    doc_ref = _folder_doc(folder_id)
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="folder not found")
+
+    updates = {}
+    if "name" in body:
+        updates["name"] = body["name"]            #rename
+    if "videoIds" in body:
+        updates["videoIds"] = body["videoIds"]    #replace membership (id list)
+
+    if not updates:
+        return {"ok": True, "updated": False}
+
+    updates["updatedAt"] = firestore.SERVER_TIMESTAMP  
+    doc_ref.update(updates)
+    return {"ok": True, "updated": True}
+
+@app.delete("/folders/{folder_id}")
+def delete_folder(folder_id: str):
+    """Delete folder (videos not deleted)."""
+    doc_ref = _folder_doc(folder_id)
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="folder not found")
+    doc_ref.delete()
+    return {"ok": True, "deleted": True}
+#11-13-25 Thursday 2pm - For future folder support
 
 @app.get("/healthz")
 def healthz():

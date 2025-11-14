@@ -3,12 +3,13 @@
 
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";                            
 import {
   Play, Upload, UploadIcon, BarChart2, BarChart3, Clock3, Users,
-  Edit3, Save, Trash2, Eye, Lock, Link as LinkIcon, ChevronDown, ChevronUp, Filter
+  Edit3, Save, Trash2, Eye, Lock, Link as LinkIcon, ChevronDown, ChevronUp, Filter,
+  Folder as FolderIcon, ChevronRight, Plus, Pencil, MoreHorizontal
 } from "lucide-react";                                                   
 import cn from "clsx";                                                  
 import ProfileDropdown from "../app-components/ProfileDropdown";         
@@ -19,6 +20,56 @@ const API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   "http://127.0.0.1:8000";
 
+//11-13-25 Thursday 2pm - For future folder support
+// ===================== FOLDERS API HELPERS ======================
+async function apiListFolders(ownerEmail: string) {
+  const r = await fetch(
+    `${API_BASE}/folders?ownerEmail=${encodeURIComponent(ownerEmail)}`,
+    { cache: "no-store" }
+  );
+  if (!r.ok) throw new Error(`GET /folders ${r.status}`);
+  return r.json();
+}
+
+async function apiCreateFolder(ownerEmail: string, name: string) {
+  const r = await fetch(`${API_BASE}/folders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ownerEmail, name }),
+  });
+  if (!r.ok) throw new Error(`POST /folders ${r.status}`);
+  return r.json();
+}
+
+async function apiPatchFolder(folderId: string, body: Record<string, any>) {
+  const r = await fetch(`${API_BASE}/folders/${folderId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`PATCH /folders/${folderId} ${r.status}`);
+  return r.json();
+}
+
+async function apiDeleteFolder(folderId: string) {
+  const r = await fetch(`${API_BASE}/folders/${folderId}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(`DELETE /folders/${folderId} ${r.status}`);
+  return r.json();
+}
+
+async function apiRemoveVideoFromFolder(folderId: string, videoIds: string[]) {
+  const res = await fetch(`${API_BASE}/folders/${folderId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ videoIds }),
+  });
+  if (!res.ok) throw new Error("Failed to update folder");
+  return res.json();
+}
+// ===================== FOLDERS API HELPERS ======================
+//11-13-25 Thursday 2pm - For future folder support
+
+//Highlight item type shape from FastAPI
 type HighlightItem = {
   jobId: string;                                                   
   originalFileName?: string;                                     
@@ -33,6 +84,17 @@ type HighlightItem = {
   visibility?: Visibility;                                        
 };
 
+//11-13-25 Thursday 2pm - For future folder support
+// folder shape
+type Folder = {
+  folderId: string;
+  name: string;
+  ownerEmail: string;
+  videoIds: string[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+//11-13-25 Thursday 2pm - For future folder support
 
 export default function DashboardClient() {
   //auth/session
@@ -75,6 +137,82 @@ export default function DashboardClient() {
   const closeFilter = () => setFilterOpen(false); 
   //11-08-25 Saturday 2:18pm Update
 
+  //11-13-25 Thursday 2pm - For future folder support
+  //folders state
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [foldersLoading, setFoldersLoading] = useState(false);
+  const [folderError, setFolderError] = useState<string | null>(null);
+
+  //rename-folder state (per-folder inline)
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [draftFolderName, setDraftFolderName] = useState("");
+
+  //keep track of which folders are expanded (no hooks inside map)
+  const [openFolderIds, setOpenFolderIds] = useState<Set<string>>(new Set());
+
+  const [moveMenuFor, setMoveMenuFor] = useState<string | null>(null);   //which video card shows the dropdown
+  const [creatingForVideo, setCreatingForVideo] = useState<string | null>(null); //inline "new folder" mini form
+  const [newFolderName, setNewFolderName] = useState("");                 //input model for mini form
+
+    // === Dropdown outside-click / escape close ===
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMoveMenuFor(null);
+    const onClick = (e: MouseEvent) => {
+      if (!menuRef.current) return;
+      if (!menuRef.current.contains(e.target as Node)) setMoveMenuFor(null);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onClick);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onClick);
+    };
+  }, []);
+
+
+  //Small helper to open a highlight URL from a jobId
+  const openVideoByJobId = useCallback((jobId: string) => {
+    const item = highlights.find(h => h.jobId === jobId);
+    if (!item) return;
+    //Try signed URL if you have it in your item; otherwise fall back to GCS URI
+    const url =
+      (item as any).signedUrl || 
+      (item as any).outputUrl ||
+      (item as any).signedOutputUrl ||
+      (item as any).outputGcsUriSigned ||
+      (item as any).outputGcsUri;
+    if (url) window.open(url, "_blank");
+  }, [highlights]);
+
+  const toggleFolderOpen = useCallback((id: string) => {
+    setOpenFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  //11-13-25 Thursday 2pm - For future folder support
+
+  //loader to load folders for this user
+  const loadFolders = useCallback(async () => {
+    if (!userEmail) return;
+    setFoldersLoading(true);
+    setFolderError(null);
+    try {
+      const j = await apiListFolders(userEmail);
+      setFolders(Array.isArray(j?.items) ? j.items : []);
+    } catch (e: any) {
+      setFolderError(e?.message || "Failed to load folders.");
+      setFolders([]);
+    } finally {
+      setFoldersLoading(false);
+    }
+  }, [userEmail]);
+  //11-13-25 Thursday 2pm - For future folder support
+
   // =====Fetch from FastAPI instead of /api/highlightVideos =====
   const load = useCallback(async () => {
     if (!userEmail) return; //wait until session loads
@@ -100,6 +238,11 @@ export default function DashboardClient() {
 
   //run loader on mount / when email changes
   useEffect(() => { load(); }, [load]);
+
+  //11-13-25 Thursday 2pm - For future folder support
+  //run londer on mount alongside highlights load to also fetch folders when email changes
+  useEffect(() => { loadFolders(); }, [loadFolders]);
+  //11-13-25 Thursday 2pm - For future folder support
 
   //(CHANGED source): derive stats from FastAPI items
   const stats = useMemo(() => {
@@ -201,6 +344,71 @@ export default function DashboardClient() {
     return r.json().catch(() => ({}));
   };
 
+  //11-13-25 Thursday 2pm - For future folder support
+  //====================== FOLDERS ACTIONS ======================
+  //quick action to move one video into a folder (append if not present)
+  const moveVideoToFolder = async (jobId: string, folderId: string) => {
+    const folder = folders.find(f => f.folderId === folderId);
+    if (!folder) return;
+
+    const nextIds = Array.from(new Set([...(folder.videoIds || []), jobId]));
+    await apiPatchFolder(folderId, { videoIds: nextIds });
+
+    // refresh local state
+    setFolders(prev =>
+      prev.map(f => (f.folderId === folderId ? { ...f, videoIds: nextIds } : f))
+    );
+  };
+
+ //keep your existing moveVideoToFolder but we’ll add remove + dropdown helpers.
+  const removeVideoFromFolder = useCallback(
+    async (folderId: string, jobId: string) => {
+      const folder = folders.find(f => f.folderId === folderId);
+      if (!folder) return;
+
+      const nextIds = (folder.videoIds || []).filter(id => id !== jobId);
+      await apiRemoveVideoFromFolder(folderId, nextIds);
+
+      // refresh local state
+      setFolders(prev =>
+        prev.map(f => (f.folderId === folderId ? { ...f, videoIds: nextIds } : f))
+      );
+    },
+    [folders, setFolders]
+  );
+
+  // Dropdown item: create a new folder in-line for this specific video (NEW)
+  const createFolderAndMove = useCallback(async (jobId: string) => {
+    if (!newFolderName.trim()) return;
+    const res = await apiCreateFolder(userEmail, newFolderName.trim());
+    setNewFolderName("");
+    setCreatingForVideo(null);
+    await loadFolders();
+    await moveVideoToFolder(jobId, res.folderId);
+    setMoveMenuFor(null);
+  }, [userEmail, newFolderName, loadFolders, moveVideoToFolder]);
+
+  // Drag polish (visual hints only)
+    const onDragStartVideo = useCallback((e: React.DragEvent, jobId: string) => {
+      e.dataTransfer.setData("text/hooptuber-job-id", jobId);
+      e.dataTransfer.effectAllowed = "copyMove";
+    }, []);
+
+    const onDragOverFolder = useCallback((e: React.DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    }, []);
+
+  const onDropOnFolder = async (e: React.DragEvent, folderId: string) => {
+    e.preventDefault();
+    const jobId = e.dataTransfer.getData("text/hooptuber-job-id");
+    if (!jobId) return;
+    await moveVideoToFolder(jobId, folderId);
+  };
+  //====================== FOLDERS ACTIONS ======================
+  //11-13-25 Thursday 2pm - For future folder support
+
+  //To rename highlight VIDEOS
   //update using server-returned item
     const onRename = async (jobId: string, title: string) => {
       const res = await patchHighlight(jobId, { title });
@@ -237,9 +445,16 @@ export default function DashboardClient() {
       return;
     }
     await load();
+
+    setFolders(prev =>
+      prev.map(f => ({
+        ...f,
+        videoIds: (f.videoIds || []).filter(id => id !== jobId),
+      }))
+    );
   };
 
-  //====================== UI (PRESERVED look/feel) ======================
+  //====================== UI (same look/feel) ======================
   return (
     <div className="min-h-screen bg-gray-50">
       {/*Header*/}
@@ -484,7 +699,13 @@ export default function DashboardClient() {
                   const vis = (h.visibility || "private") as Visibility;
 
                   return (
-                    <li key={h.jobId} className="bg-white border rounded-lg p-4 flex flex-col gap-3">
+                    // <li key={h.jobId} className="bg-white border rounded-lg p-4 flex flex-col gap-3">
+                    <li
+                      key={h.jobId}
+                      className="bg-white border rounded-lg p-4 flex flex-col gap-3"
+                      draggable //allow drag
+                      onDragStart={(e) => onDragStartVideo(e, h.jobId)} //drag start handler
+                    > {/*11-13-25 Thursday Update 2pm*/}
                       {/* Title/rename*/}
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1">
@@ -568,6 +789,94 @@ export default function DashboardClient() {
                           <Trash2 className="w-4 h-4" />
                           Delete
                         </button>
+                        {/*11-13-25 Thursday Update 2pm*/}
+                        {/* <button
+                          onClick={() => pickFolderAndMove(h.jobId)}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200"
+                        >
+                          <FolderIcon className="w-4 h-4" />
+                          Move to Folder
+                        </button>  */}
+
+                        {/* Move to Folder (dropdown) — NEW replaces the old prompt button */}
+                        <div className="relative">
+                          <button
+                            onClick={() => setMoveMenuFor(prev => (prev === h.jobId ? null : h.jobId))}
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200"
+                          >
+                            <FolderIcon className="w-4 h-4" />
+                            Move to Folder
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+
+                          {moveMenuFor === h.jobId && (
+                            <div 
+                              ref={menuRef}
+                              className="absolute z-20 right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-2">
+                              {folders.length === 0 ? (
+                                <div className="p-2 text-sm text-gray-600">
+                                  No folders yet. Create one below.
+                                </div>
+                              ) : (
+                                <ul className="max-h-60 overflow-auto">
+                                  {folders.map((f) => (
+                                    <li key={f.folderId}>
+                                      <button
+                                        className="w-full text-left px-2 py-1 rounded hover:bg-gray-50"
+                                        onClick={async () => {
+                                          await moveVideoToFolder(h.jobId, f.folderId);
+                                          setMoveMenuFor(null);
+                                        }}
+                                      >
+                                        {f.name}
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+
+                              {/* quick create-in-place */}
+                              {creatingForVideo === h.jobId ? (
+                                <div className="mt-2 flex gap-2">
+                                  <input
+                                    value={newFolderName}
+                                    onChange={(e) => setNewFolderName(e.target.value)}
+                                    placeholder="New folder name"
+                                    className="flex-1 border rounded px-2 py-1 text-sm"
+                                  />
+                                  <button
+                                    onClick={() => setCreatingForVideo(null)}
+                                    className="px-2 py-1 text-sm border rounded"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      if (!newFolderName.trim()) return;
+                                      const res = await apiCreateFolder(userEmail, newFolderName.trim());
+                                      setNewFolderName("");
+                                      setCreatingForVideo(null);
+                                      await loadFolders();
+                                      await moveVideoToFolder(h.jobId, res.folderId);
+                                      setMoveMenuFor(null);
+                                    }}
+                                    className="px-2 py-1 text-sm rounded bg-orange-500 text-white hover:bg-orange-600"
+                                  >
+                                    Create
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setCreatingForVideo(h.jobId)}
+                                  className="mt-2 w-full px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+                                >
+                                  + New folder…
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {/*11-13-25 Thursday Update 2pm*/}      
                       </div>
                     </li>
                   );
@@ -576,6 +885,191 @@ export default function DashboardClient() {
             )}
           </div>
         </section>
+        {/*11-13-25 Thursday Update 2pm*/}
+        {/* ===================== Highlight Folders ===================== */}
+        <section className="mt-14">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FolderIcon className="w-5 h-5 text-gray-700" />
+              <h2 className="text-xl font-semibold text-gray-900">Highlight Folders</h2>
+            </div>
+            <button
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-sm"
+              onClick={async () => {
+                const name = prompt("Folder name?")?.trim();
+                if (!name) return;
+                await apiCreateFolder(userEmail, name);
+                await loadFolders();
+              }}
+            >
+              <Plus className="w-4 h-4" />
+              New Folder
+            </button>
+          </div>
+
+          <div className="mt-6">
+            {foldersLoading && <div className="p-8 text-gray-500">Loading folders…</div>}
+            {folderError && <div className="p-8 text-red-600">Failed to load folders: {folderError}</div>}
+
+            {!foldersLoading && !folderError && folders.length === 0 && (
+              <div className="p-6 bg-white border rounded-lg text-gray-600">
+                No folders yet. Create one and drag videos into it, or use “Move to Folder”.
+              </div>
+            )}
+
+            {!foldersLoading && !folderError && folders.length > 0 && (
+              <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {folders.map((f) => {
+                  const isEditing = editingFolderId === f.folderId;
+                  //const [open, setOpen] = useState(true); // per-folder expand (small trick)
+                  const isOpen = openFolderIds.has(f.folderId);  
+
+                  // resolve video objects for this folder
+                  const videosInFolder = (f.videoIds || [])
+                    .map(id => highlights.find(h => h.jobId === id))
+                    .filter(Boolean) as HighlightItem[];
+
+                  return (
+                    <li
+                      key={f.folderId}
+                      className="bg-white border rounded-lg p-4 flex flex-col gap-3"
+                      onDragOver={onDragOverFolder}                         //accept drops (drag target)
+                      onDrop={(e) => onDropOnFolder(e, f.folderId)}         //drop handler
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          {!isEditing ? (
+                            <div className="font-semibold text-gray-900 break-words flex items-center gap-2">
+                              <FolderIcon className="w-4 h-4" />
+                              {f.name}
+                            </div>
+                          ) : (
+                            <input
+                              value={draftFolderName}
+                              onChange={(e) => setDraftFolderName(e.target.value)}
+                              className="w-full border rounded px-2 py-1"
+                              placeholder="Folder name"
+                            />
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {!isEditing ? (
+                            <>
+                              <button
+                                className="text-gray-600 hover:text-gray-900"
+                                onClick={() => {
+                                  setEditingFolderId(f.folderId);
+                                  setDraftFolderName(f.name || "");
+                                }}
+                                aria-label="Rename folder"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                className="text-gray-600 hover:text-gray-900"
+                                //onClick={() => setOpen((v) => !v)}
+                                onClick={() => toggleFolderOpen(f.folderId)}
+                                aria-label="Toggle"
+                              >
+                                {/*{open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}*/}
+                                {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className="text-gray-600 hover:text-gray-900"
+                              onClick={async () => {
+                                await apiPatchFolder(f.folderId, { name: draftFolderName.trim() });
+                                setEditingFolderId(null);
+                                setDraftFolderName("");
+                                await loadFolders(); // refresh names
+                              }}
+                              aria-label="Save folder name"
+                            >
+                              <Save className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* folder actions */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 text-red-700 hover:bg-red-100"
+                          onClick={async () => {
+                            if (!confirm("Delete this folder? This cannot be undone (Videos will not be deleted).")) return;
+                            await apiDeleteFolder(f.folderId);
+                            await loadFolders();
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </button>
+                      </div>
+
+                      {/* folder contents */}
+                      {/*open && ( */}
+                      {isOpen && (
+                        <div className="mt-2">
+                          {videosInFolder.length === 0 ? (
+                            <div className="text-sm text-gray-500">
+                              Drop a video here or use “Move to Folder”.
+                            </div>
+                          ) : (
+                            <ul className="space-y-2">
+                              {videosInFolder.map(v => (
+                                // <li key={v.jobId} className="text-sm text-gray-800 flex items-center gap-2">
+                                //   <Play className="w-3 h-3" />
+                                //   {v.title || v.originalFileName || v.jobId}
+                                // </li>
+                                <li 
+                                  key={v.jobId} 
+                                  className="text-sm text-gray-800 flex items-center justify-between gap-2"
+                                  draggable
+                                  onDragStart={(e) => onDragStartVideo(e, v.jobId)}
+                                  >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <Play className="w-3 h-3 flex-none" />
+                                    <span className="truncate">
+                                      {v.title || v.originalFileName || v.jobId}
+                                    </span>
+                                  </div>
+                                
+                                  <div className="flex items-center gap-2">
+                                    {/* Play (opens the signed URL) */}
+                                    <button
+                                      onClick={() => openVideoByJobId(v.jobId)}
+                                      className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+                                      title="Play"
+                                    >
+                                      Play
+                                    </button>
+                                
+                                    {/* Remove ONLY from this folder */}
+                                    <button
+                                      onClick={() => removeVideoFromFolder(f.folderId, v.jobId)}
+                                      className="px-2 py-1 text-xs rounded bg-red-50 text-red-700 hover:bg-red-100"
+                                      title="Remove from folder"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
+        {/* =================== END Highlight Folders=================== */}
+        {/*11-13-25 Thursday Update 2pm*/}
       </main>
     </div>
   );
