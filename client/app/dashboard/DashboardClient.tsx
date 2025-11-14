@@ -851,15 +851,16 @@ export default function DashboardClient() {
                                     Cancel
                                   </button>
                                   <button
-                                    onClick={async () => {
-                                      if (!newFolderName.trim()) return;
-                                      const res = await apiCreateFolder(userEmail, newFolderName.trim());
-                                      setNewFolderName("");
-                                      setCreatingForVideo(null);
-                                      await loadFolders();
-                                      await moveVideoToFolder(h.jobId, res.folderId);
-                                      setMoveMenuFor(null);
-                                    }}
+                                    // onClick={async () => {
+                                    //   if (!newFolderName.trim()) return;
+                                    //   const res = await apiCreateFolder(userEmail, newFolderName.trim());
+                                    //   setNewFolderName("");
+                                    //   setCreatingForVideo(null);
+                                    //   await loadFolders();
+                                    //   await moveVideoToFolder(h.jobId, res.folderId);
+                                    //   setMoveMenuFor(null);
+                                    // }}
+                                    onClick={() => createFolderAndMove(h.jobId)}
                                     className="px-2 py-1 text-sm rounded bg-orange-500 text-white hover:bg-orange-600"
                                   >
                                     Create
