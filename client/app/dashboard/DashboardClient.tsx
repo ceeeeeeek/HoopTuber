@@ -805,7 +805,7 @@ export default function DashboardClient() {
                             className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200"
                           >
                             <FolderIcon className="w-4 h-4" />
-                            Move to Folder
+                            Move
                             <ChevronDown className="w-3 h-3" />
                           </button>
 
@@ -1015,7 +1015,7 @@ export default function DashboardClient() {
                         <div className="mt-2">
                           {videosInFolder.length === 0 ? (
                             <div className="text-sm text-gray-500">
-                              Drop a video here or use “Move to Folder”.
+                              Drop a video here or use “Move” to move to any created folder.
                             </div>
                           ) : (
                             <ul className="space-y-2">
