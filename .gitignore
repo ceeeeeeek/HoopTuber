@@ -26,6 +26,7 @@ yarn-error.log*
 .pnpm-debug.log*
 client/app/verify/page.tsx
 
+PERSISTENT_UPLOAD_IMPLEMENTATION.md
 
 # virtualenvs (anywhere)
 .venv/

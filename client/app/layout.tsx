@@ -4,6 +4,7 @@ import { GeistMono } from 'geist/font/mono'
 import './globals.css'
 import RoutePrefetcher from "./app-components/RoutePrefetcher"
 import SessionProvider from "./app-components/SessionProvider"
+import { UploadStatusProvider } from "@/contexts/UploadStatusContext"
 
 export const metadata: Metadata = {
   title: 'HoopTuber',
@@ -32,8 +33,10 @@ html {
       </head>
       <body>
         <SessionProvider>
-          <RoutePrefetcher />
-          {children}
+          <UploadStatusProvider>
+            <RoutePrefetcher />
+            {children}
+          </UploadStatusProvider>
         </SessionProvider>
       </body>
     </html>
