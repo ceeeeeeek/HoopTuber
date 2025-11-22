@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "frontend": "cd client && npm run dev",
-    "backend": "backend\\env\\Scripts\\python.exe -m uvicorn --app-dir backend/api main:app --reload --port 8000",
+    "backend": "cd backend && env\\Scripts\\python.exe -m uvicorn --app-dir api main:app --reload --port 8000",
     "worker":  "worker\\env\\Scripts\\python.exe -u worker\\main.py",    
     "build": "next build",
     "dev": "concurrently -n FRONTEND,BACKEND,WORKER -c blue,green,magenta \"npm run frontend\" \"npm run backend\" \"npm run worker\"",

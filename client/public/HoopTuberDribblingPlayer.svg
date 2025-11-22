@@ -1,0 +1,27 @@
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+
+  <!-- head -->
+  <circle cx="12" cy="5" r="2.5"></circle>
+
+  <!-- torso -->
+  <path d="M12 7.5 L12 12.5"></path>
+
+  <!-- left arm reaching out (ball-hand) -->
+  <path d="M12 9.5 L17 11"></path>
+
+  <!-- right arm tucked back -->
+  <path d="M12 9.5 L9 11"></path>
+
+  <!-- right leg bent -->
+  <path d="M12 12.5 L14.5 17"></path>
+
+  <!-- left leg forward -->
+  <path d="M12 12.5 L9.5 17"></path>
+
+  <!-- bouncing ball -->
+  <circle cx="18.2" cy="14.2" r="2"></circle>
+
+  <!-- bounce motion line -->
+  <path d="M18.2 16.5 L18.2 19.2" stroke-width="1.4"></path>
+
+</svg>

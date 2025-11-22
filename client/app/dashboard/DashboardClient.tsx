@@ -13,15 +13,43 @@ import {
 } from "lucide-react";                                                   
 import cn from "clsx";                                                  
 import ProfileDropdown from "../app-components/ProfileDropdown";         
+import { DribbleIcon } from "@/components/icons/DribbleIcon";
+
 
 type Visibility = "public" | "unlisted" | "private";                    
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "http://127.0.0.1:8000";
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
-//11-13-25 Thursday 2pm - For future folder support
-// ===================== FOLDERS API HELPERS ======================
+//11-21-25 Friday 10pm - For my runs page
+//=== RUNS API HELPERS (START - used only for the dashboard "My Runs/Team Groups" stat) === //
+async function apiGetRunCount(ownerEmail: string): Promise<number> {
+  try {
+    const url = `${API_BASE}/runs?ownerEmail=${encodeURIComponent(ownerEmail)}`;
+    const r = await fetch(url, { cache: "no-store" });
+
+    // Backend for /runs isn’t built yet → just show 0 but don’t break the UI
+    if (!r.ok) return 0;
+
+    const data = (await r.json().catch(() => null)) as any;
+
+    // prefer an explicit { count: number } shape if/when we add it
+    if (data && typeof data.count === "number") return data.count;
+
+    // or fall back to items.length if we later return { items: [...] }
+    if (Array.isArray(data?.items)) return data.items.length;
+
+    return 0;
+  } catch {
+    // network/JSON errors → treat as 0
+    return 0;
+  }
+}
+//=== RUNS API HELPERS (END - used only for the dashboard "My Runs/Team Groups" stat) === //
+//11-21-25 Friday 10pm - For my runs page
+
+//11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
+//===================== FOLDERS API HELPERS (START)======================
 async function apiListFolders(ownerEmail: string) {
   const r = await fetch(
     `${API_BASE}/folders?ownerEmail=${encodeURIComponent(ownerEmail)}`,
@@ -66,8 +94,28 @@ async function apiRemoveVideoFromFolder(folderId: string, videoIds: string[]) {
   if (!res.ok) throw new Error("Failed to update folder");
   return res.json();
 }
-// ===================== FOLDERS API HELPERS ======================
-//11-13-25 Thursday 2pm - For future folder support
+//===================== FOLDERS API HELPERS (END) ======================
+//11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
+
+//11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
+//=====================RUNS - Assign-to-Run button + dropdown menu API HELPERS (START) ======================
+//Routing: These helpers will connect to backend later
+const apiListRuns = async (email: string) => {
+  // temporary placeholder — backend implemented in Step 3
+  return { items: [] };
+};
+
+const apiCreateRun = async (email: string, name: string) => {
+  // temporary placeholder
+  return { ok: true, runId: crypto.randomUUID() };
+};
+
+const apiAssignToRun = async (runId: string, jobId: string) => {
+  // temporary placeholder
+  return { ok: true };
+};
+//=====================RUNS - Assign-to-Run button + dropdown menu API HELPERS (END) ======================
+//11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
 
 //Highlight item type shape from FastAPI
 type HighlightItem = {
@@ -84,9 +132,9 @@ type HighlightItem = {
   visibility?: Visibility;                                        
 };
 
-//11-13-25 Thursday 2pm - For future folder support
+//11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
 // folder shape
-type Folder = {
+type HighlightFolder = {
   folderId: string;
   name: string;
   ownerEmail: string;
@@ -94,18 +142,27 @@ type Folder = {
   createdAt?: string;
   updatedAt?: string;
 };
-//11-13-25 Thursday 2pm - For future folder support
+//11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
 
 export default function DashboardClient() {
   //auth/session
   const { data: session } = useSession();
-  const userName = session?.user?.name || "";
+  //also grab `status` so we know when the session is ready
+  //const { data: session, status } = useSession(); //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
+  //const userName = session?.user?.name || ""; //not used but if you plan to show a greeting later (“Welcome back, Chris”), we can re-add it then
   const userEmail = session?.user?.email || "";
+  //const userEmail = session?.user?.email ?? "";
+
+  if (typeof window !== "undefined") {
+    console.log("Dashboard session", session);
+    console.log("Dashboard userEmail", userEmail);
+  }
 
   //highlights state (but now typed for FastAPI items)
   const [highlights, setHighlights] = useState<HighlightItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  //const [loading, setHighlightsLoading] = useState(true);
+  const [highlightsLoading, setHighlightsLoading] = useState(false);
+  const [highlightsError, setHighlightsError] = useState<string | null>(null);
 
   //rename state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -137,9 +194,9 @@ export default function DashboardClient() {
   const closeFilter = () => setFilterOpen(false); 
   //11-08-25 Saturday 2:18pm Update
 
-  //11-13-25 Thursday 2pm - For future folder support
+  //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
   //folders state
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const [folders, setFolders] = useState<HighlightFolder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(false);
   const [folderError, setFolderError] = useState<string | null>(null);
 
@@ -154,15 +211,50 @@ export default function DashboardClient() {
   const [creatingForVideo, setCreatingForVideo] = useState<string | null>(null); //inline "new folder" mini form
   const [newFolderName, setNewFolderName] = useState("");                 //input model for mini form
 
-    // === Dropdown outside-click / escape close ===
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
+  //which video card has the "Assign to Run" dropdown open
+  const [runMenuFor, setRunMenuFor] = useState<string | null>(null);
 
+  //for creating a new run inside dropdown
+  const [newRunName, setNewRunName] = useState("");
+  //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
+
+  //11-21-25 Friday 10pm - For my runs page
+  const [runCount, setRunCount] = useState<number>(0); //My Runs / Team Groups stat count 
+  //11-21-25 Friday 10pm - For my runs page
+
+  //11-13-25 Thursday 2pm - For Move folder support
+  //=== Dropdown outside-click / escape close ===
+  const menuRef = useRef<HTMLDivElement | null>(null); //ref for folder Move/"Move to Folder" dropdown menu
+  //needed to havae a separate ref (separate from the ref for the Assign-to-Run menu) like this one for folder Move/"Move to Folder" dropdown menu
+  //11-13-25 Thursday 2pm - For Move folder support
+
+  //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
+  //separate ref for the Assign-to-Run dropdown
+  const runMenuRef = useRef<HTMLDivElement | null>(null); //ref for "Assign-to-Run" dropdown menu
+
+  //useEffect uses both dropdowns' refs (const ref for Move menu and const runMenuRef for Assign-to-Run menu) to close on outside click / escape
+  //one useEffect, two refs, closes both menus - Move folder menu + Assign-to-Run menu
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMoveMenuFor(null);
-    const onClick = (e: MouseEvent) => {
-      if (!menuRef.current) return;
-      if (!menuRef.current.contains(e.target as Node)) setMoveMenuFor(null);
+    //Escape should close BOTH menus
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMoveMenuFor(null);
+        setRunMenuFor(null);
+      }
     };
+
+    //outside click should close whichever dropdown was open
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+
+      const inMoveMenu = menuRef.current?.contains(target);
+      const inRunMenu  = runMenuRef.current?.contains(target);
+
+      if (!inMoveMenu) setMoveMenuFor(null);
+      if (!inRunMenu) setRunMenuFor(null);
+    };
+
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onClick);
     return () => {
@@ -170,6 +262,26 @@ export default function DashboardClient() {
       document.removeEventListener("mousedown", onClick);
     };
   }, []);
+  //one useEffect, two refs, closes both menus
+  //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
+
+  //11-21-25 Friday 10pm - For my runs page
+  //Second useEffect for loading the run count for the "My Runs/Team Groups" stat
+  // useEffect(() => {
+  //   if (!userEmail) return;
+
+  //   let cancelled = false;
+
+  //   (async () => {
+  //     const count = await apiGetRunCount(userEmail);
+  //     if (!cancelled) setRunCount(count);
+  //   })();
+
+  //   return () => {
+  //     cancelled = true;
+  //   };
+  // }, [userEmail]);
+  //11-21-25 Friday 10pm - For my runs page
 
 
   //Small helper to open a highlight URL from a jobId
@@ -194,56 +306,168 @@ export default function DashboardClient() {
       return next;
     });
   }, []);
-  //11-13-25 Thursday 2pm - For future folder support
+  //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
 
   //loader to load folders for this user
+  //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
   const loadFolders = useCallback(async () => {
     if (!userEmail) return;
-    setFoldersLoading(true);
-    setFolderError(null);
+
     try {
+      console.log("loadFolders() called with userEmail =", userEmail);
+      setFoldersLoading(true);
+      setFolderError(null);
+
       const j = await apiListFolders(userEmail);
-      setFolders(Array.isArray(j?.items) ? j.items : []);
+      console.log("folders raw JSON", j);
+
+      // ✅ FastAPI returns { items: [...] } here too
+      const foldersArr = Array.isArray(j?.items)
+        ? (j.items as HighlightFolder[])
+        : [];
+
+      setFolders(foldersArr);
     } catch (e: any) {
+      console.error("loadFolders() error", e);
       setFolderError(e?.message || "Failed to load folders.");
       setFolders([]);
     } finally {
       setFoldersLoading(false);
     }
   }, [userEmail]);
-  //11-13-25 Thursday 2pm - For future folder support
+
 
   // =====Fetch from FastAPI instead of /api/highlightVideos =====
+  //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
   const load = useCallback(async () => {
-    if (!userEmail) return; //wait until session loads
-    setLoading(true);
-    setError(null);
+    if (!userEmail) return;
+
     try {
-      const url = `${API_BASE}/highlights?ownerEmail=${encodeURIComponent(userEmail)}&limit=100&signed=true`;
-      const r = await fetch(url, { cache: "no-store" });                 
+      console.log("load() called with userEmail =", userEmail);
+      setHighlightsLoading(true);
+      setHighlightsError(null);
+
+      const url = `${API_BASE}/highlights?ownerEmail=${encodeURIComponent(
+        userEmail
+      )}&limit=100&signed=true`;
+
+      const r = await fetch(url, { cache: "no-store" });
       if (!r.ok) {
         const txt = await r.text().catch(() => "");
         throw new Error(`GET /highlights ${r.status}: ${txt}`);
       }
-      const j = await r.json();                                           
-      const items: HighlightItem[] = Array.isArray(j?.items) ? j.items : [];
+
+      const j = await r.json();
+      console.log("highlights raw JSON", j);
+
+      // ✅ Your FastAPI returns { items: [...] }
+      const items = Array.isArray(j?.items) ? (j.items as HighlightItem[]) : [];
+
       setHighlights(items);
     } catch (e: any) {
-      setError(e?.message || "Failed to load.");
+      console.error("load() error", e);
+      setHighlightsError(e?.message || "Failed to load.");
       setHighlights([]);
     } finally {
-      setLoading(false);
+      setHighlightsLoading(false);
     }
   }, [userEmail]);
 
+
   //run loader on mount / when email changes
-  useEffect(() => { load(); }, [load]);
+  //useEffect(() => { load(); }, [load]); //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
 
-  //11-13-25 Thursday 2pm - For future folder support
-  //run londer on mount alongside highlights load to also fetch folders when email changes
-  useEffect(() => { loadFolders(); }, [loadFolders]);
-  //11-13-25 Thursday 2pm - For future folder support
+  //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
+  //run loader on mount alongside highlights load to also fetch folders when email changes
+  //useEffect(() => { loadFolders(); }, [loadFolders]); //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
+  //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
 
+  //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
+  // useEffect(() => {
+  //   // don’t fire while NextAuth is still establishing the session
+  //   if (!userEmail) return;
+  
+  //   // now it’s safe to load everything that depends on ownerEmail
+  //   load();
+  //   loadFolders();
+  //   // if you have a run-count loader, include it here too:
+  //   // loadRunCount();
+  // }, [userEmail, load, loadFolders]);
+
+  // useEffect(() => {
+  //   // While NextAuth is still figuring out the session, `session` is `undefined`
+  //   // → don’t hit the backend yet, but also don’t touch loading flags.
+  //   if (session === undefined) return;
+  
+  //   // At this point, NextAuth is done:
+  //   // - `session === null`  → unauthenticated
+  //   // - `session` is object → authenticated
+  //   if (!userEmail) {
+  //     // No logged-in user: clear data and stop the spinners
+  //     setHighlights([]);
+  //     setHighlightsLoading(false);
+  //     setFolders([]);
+  //     setFoldersLoading(false);
+  //     setFolderError(null);
+  //     return;
+  //   }
+  
+  //   // We have a real user → load everything that depends on ownerEmail
+  //   load();
+  //   loadFolders();
+  
+  //   // Optional: if you re-enable the run-count loader, you can call it here too.
+  //   // (async () => {
+  //   //   const count = await apiGetRunCount(userEmail);
+  //   //   setRunCount(count);
+  //   // })();
+  // }, [session, userEmail, load, loadFolders]);
+
+  // useEffect(() => {
+  //   // while session is undefined, NextAuth is still loading
+  //   if (session === undefined) return;
+  
+  //   // if there is no userEmail, user is not logged in – don’t call the API
+  //   if (!userEmail) return;
+  
+  //   // now it’s safe to load everything that depends on ownerEmail
+  //   load();
+  //   loadFolders();
+  //   // if you have a run-count loader, include it here too:
+  //   // loadRunCount();
+  // }, [session, userEmail, load, loadFolders]);
+
+  // useEffect(() => {
+  //   // while NextAuth is still figuring out the session, `session` is `undefined`
+  //   if (session === undefined) return;
+  
+  //   // once we know the session (null or object), we can decide what to do
+  //   if (!userEmail) {
+  //     // no logged-in user -> clear state + stop loading spinners
+  //     setHighlights([]);
+  //     setFolders([]);
+  //     setHighlightsLoading(false);
+  //     setFoldersLoading(false);
+  //     return;
+  //   }
+  
+  //   // logged-in user with an email -> safe to hit backend
+  //   load();
+  //   loadFolders();
+  //   // if you add a run-count loader, call it here too:
+  //   // loadRunCount();
+  // }, [session, userEmail, load, loadFolders]);
+
+  useEffect(() => {
+    if (!userEmail) return;
+  
+    load();
+    loadFolders();
+    // loadRunCount(); // if you have it
+  }, [userEmail, load, loadFolders]);
+  
+  //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
+  
   //(CHANGED source): derive stats from FastAPI items
   const stats = useMemo(() => {
     const count = highlights.length;
@@ -276,7 +500,8 @@ export default function DashboardClient() {
       highlightsCreated: count,              
       totalFootageSeconds: totalSeconds,     //exact numeric seconds if needed
       totalFootageLabel: label,              //pretty display string
-      teamGroups: 3,                         //placeholder
+      //teamGroups: 3,                         //placeholder
+      //teamGroups: folders.length, //teamGroups no longer in use (will be using runCount instead)- 11-19-25 Wednesday Update 4pm - number of runs / groups for this user
     };
   }, [highlights]);
   //11-13-25 Thursday 10am - For 'Total Footage' stat
@@ -344,8 +569,8 @@ export default function DashboardClient() {
     return r.json().catch(() => ({}));
   };
 
-  //11-13-25 Thursday 2pm - For future folder support
-  //====================== FOLDERS ACTIONS ======================
+  //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
+  //====================== FOLDERS FUNCTIONS/ACTIONS (START) ======================
   //quick action to move one video into a folder (append if not present)
   const moveVideoToFolder = async (jobId: string, folderId: string) => {
     const folder = folders.find(f => f.folderId === folderId);
@@ -405,8 +630,26 @@ export default function DashboardClient() {
     if (!jobId) return;
     await moveVideoToFolder(jobId, folderId);
   };
-  //====================== FOLDERS ACTIONS ======================
-  //11-13-25 Thursday 2pm - For future folder support
+  //====================== FOLDERS FUNCTIONS/ACTIONS (END) ======================
+  //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
+
+  //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
+  //=====================RUNS - Assign-to-Run button + dropdown menu FUNCTIONS/ACTIONS (START) ======================
+  //assign a video to a specific run
+  const assignVideoToRun = async (jobId: string, runId: string) => {
+    await apiAssignToRun(runId, jobId);
+    setRunMenuFor(null);
+  };
+
+  //create a new run inline from the dropdown for this video
+  const createRunAndAssign = async (jobId: string) => {
+    if (!newRunName.trim()) return;
+    const res = await apiCreateRun(userEmail, newRunName.trim());
+    setNewRunName("");
+    await assignVideoToRun(jobId, res.runId);
+  };
+  //=====================RUNS - Assign-to-Run button + dropdown menu FUNCTIONS/ACTIONS (END) ======================
+  //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
 
   //To rename highlight VIDEOS
   //update using server-returned item
@@ -503,12 +746,24 @@ export default function DashboardClient() {
             <div className="text-sm text-gray-500">Total Footage</div>
             <Clock3 className="w-5 h-5 text-orange-600" />
           </div>
-          <div className="p-4 bg-white rounded-lg border">
-            <div className="text-3xl font-bold">3</div>
-            <div className="text-sm text-gray-500">Team Groups</div>
-            <Users className="w-5 h-5 text-purple-600" />
-          </div>
-        </div>
+          
+          {/*11-17-25 Monday Frontend update - My Runs/Team Groups stat - placeholder number 3 for now*/}
+            {/* <div className="p-4 bg-white rounded-lg border"> */}
+            <Link
+                href="/my-runs"
+                className="p-4 bg-white rounded-lg border hover:bg-purple-50/40 hover:border-purple-300 cursor-pointer transition"
+            >
+              {/*<div className="text-3xl font-bold">3</div>*/}
+              {/* <div className="text-3xl font-bold">{stats.teamGroups}</div> 11-19-25 Wednesday Update*/}
+              <div className="text-3xl font-bold">{runCount}</div> {/*11-21-25 Friday Update 10pm */}
+              <div className="text-sm text-gray-500">My Runs/Team Groups</div>
+              <div className="mt-0 flex justify-start">
+                <DribbleIcon className="w-7 h-7 text-purple-600 -ml-2" />
+              </div>
+            </Link>                   
+          {/*11-17-25 Monday Frontend update - My Runs/Team Groups stat - placeholder number 3 for now*/}
+      </div>
+
 
         {/*Highlights-only gallery(wired to FastAPI data)*/}
         <section className="mt-10">
@@ -675,10 +930,10 @@ export default function DashboardClient() {
           )}
 
           <div className="mt-6">
-            {loading && <div className="p-8 text-gray-500">Loading highlights…</div>}
-            {error && <div className="p-8 text-red-600">Failed to load: {error}</div>}
+            {highlightsLoading && <div className="p-8 text-gray-500">Loading highlights…</div>}
+            {highlightsError && <div className="p-8 text-red-600">Failed to load: {highlightsError}</div>}
 
-            {!loading && !error && highlights.length === 0 && (
+            {!highlightsLoading && !highlightsError && highlights.length === 0 && (
               <div className="p-8 bg-white border rounded-lg text-center">
                 <div className="text-gray-600 mb-4">No highlight videos yet.</div>
                 <Link
@@ -691,8 +946,9 @@ export default function DashboardClient() {
               </div>
             )}
 
-            {!loading && !error && highlights.length > 0 && (
-              <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {!highlightsLoading && !highlightsError && highlights.length > 0 && (
+              <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-4"> {/*for highlight video boxes */}
+              {/*<ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"> */}
                 {/*{highlights.map((h) => {*/}
                 {sortedHighlights.map((h) => {  {/*11-08-25 Sunday 2:18pm Update - Use sortedHighlights */}
                   const isEditing = editingId === h.jobId;                 //use jobId
@@ -768,10 +1024,11 @@ export default function DashboardClient() {
                         </span>
                       </div>
 
-                      {/*Open/Delete*/}
-                      <div className="flex items-center gap-2">
+                      {/*Open/Delete Buttons*/}
+                      {/*Open/Delete + Move + Assign to Run*/}
+                      <div className="flex flex-wrap items-center gap-2">
                         <a
-                          href={h.signedUrl || "#"} //prefer signedUrl from FastAPI
+                          href={h.signedUrl || "#"} // prefer signedUrl from FastAPI
                           target="_blank"
                           rel="noreferrer"
                           className={cn(
@@ -782,26 +1039,21 @@ export default function DashboardClient() {
                           <Play className="w-4 h-4" />
                           Open
                         </a>
+
                         <button
-                          onClick={() => onDelete(h.jobId)}                   
+                          onClick={() => onDelete(h.jobId)}
                           className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 text-red-700 hover:bg-red-100"
                         >
                           <Trash2 className="w-4 h-4" />
                           Delete
                         </button>
-                        {/*11-13-25 Thursday Update 2pm*/}
-                        {/* <button
-                          onClick={() => pickFolderAndMove(h.jobId)}
-                          className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200"
-                        >
-                          <FolderIcon className="w-4 h-4" />
-                          Move to Folder
-                        </button>  */}
 
-                        {/* Move to Folder (dropdown) — NEW replaces the old prompt button */}
+                        {/* Move to Folder button (dropdown menu) — 11-13-25 Thursday Update 2pm */}
                         <div className="relative">
                           <button
-                            onClick={() => setMoveMenuFor(prev => (prev === h.jobId ? null : h.jobId))}
+                            onClick={() =>
+                              setMoveMenuFor(prev => (prev === h.jobId ? null : h.jobId))
+                            }
                             className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200"
                           >
                             <FolderIcon className="w-4 h-4" />
@@ -810,16 +1062,17 @@ export default function DashboardClient() {
                           </button>
 
                           {moveMenuFor === h.jobId && (
-                            <div 
+                            <div
                               ref={menuRef}
-                              className="absolute z-20 right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-2">
+                              className="absolute z-20 right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-2"
+                            >
                               {folders.length === 0 ? (
                                 <div className="p-2 text-sm text-gray-600">
                                   No folders yet. Create one below.
                                 </div>
                               ) : (
                                 <ul className="max-h-60 overflow-auto">
-                                  {folders.map((f) => (
+                                  {folders.map(f => (
                                     <li key={f.folderId}>
                                       <button
                                         className="w-full text-left px-2 py-1 rounded hover:bg-gray-50"
@@ -840,7 +1093,7 @@ export default function DashboardClient() {
                                 <div className="mt-2 flex gap-2">
                                   <input
                                     value={newFolderName}
-                                    onChange={(e) => setNewFolderName(e.target.value)}
+                                    onChange={e => setNewFolderName(e.target.value)}
                                     placeholder="New folder name"
                                     className="flex-1 border rounded px-2 py-1 text-sm"
                                   />
@@ -851,15 +1104,6 @@ export default function DashboardClient() {
                                     Cancel
                                   </button>
                                   <button
-                                    // onClick={async () => {
-                                    //   if (!newFolderName.trim()) return;
-                                    //   const res = await apiCreateFolder(userEmail, newFolderName.trim());
-                                    //   setNewFolderName("");
-                                    //   setCreatingForVideo(null);
-                                    //   await loadFolders();
-                                    //   await moveVideoToFolder(h.jobId, res.folderId);
-                                    //   setMoveMenuFor(null);
-                                    // }}
                                     onClick={() => createFolderAndMove(h.jobId)}
                                     className="px-2 py-1 text-sm rounded bg-orange-500 text-white hover:bg-orange-600"
                                   >
@@ -877,7 +1121,53 @@ export default function DashboardClient() {
                             </div>
                           )}
                         </div>
-                        {/*11-13-25 Thursday Update 2pm*/}      
+
+                        {/* === ASSIGN TO RUN button (dropdown menu) - 11-18-25 Tuesday Update 10am === */}
+                        <div className="relative">
+                          <button
+                            onClick={() =>
+                              setRunMenuFor(prev => (prev === h.jobId ? null : h.jobId))
+                            }
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-50 text-gray-800 hover:bg-gray-100"
+                          >
+                            <DribbleIcon className="w-4 h-4" />
+                            Assign Run
+                            <ChevronDown className="w-4 h-4" />
+                          </button>
+
+                          {runMenuFor === h.jobId && (
+                            <div
+                              ref={runMenuRef} // so outside-click logic can see this element
+                              className="absolute z-30 right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-2"
+                            >
+                              <p className="text-xs text-gray-500 mb-1">Your Runs</p>
+
+                              {/* Placeholder — real runs soon */}
+                              <p className="text-gray-400 text-sm italic px-2 py-1">
+                                No runs yet. Create one below.
+                              </p>
+
+                              <div className="border-t my-2" />
+
+                              {/* Inline New Run Form */}
+                              <div className="flex flex-col gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="New run name"
+                                  value={newRunName}
+                                  onChange={e => setNewRunName(e.target.value)}
+                                  className="w-full px-2 py-1 border rounded-md"
+                                />
+                                <button
+                                  onClick={() => createRunAndAssign(h.jobId)}
+                                  className="px-3 py-1 rounded-md text-sm bg-blue-600 text-white hover:bg-blue-700"
+                                >
+                                  Create & Assign
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </li>
                   );

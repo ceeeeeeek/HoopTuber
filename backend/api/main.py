@@ -35,7 +35,15 @@ OUT_BUCKET = os.getenv("GCS_OUT_BUCKET")
 TOPIC_NAME = os.getenv("PUBSUB_TOPIC")
 COLLECTION = os.getenv("FIRESTORE_COLLECTION", "jobs")
 SERVICE_ACCOUNT = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-FOLDER_COLLECTION = "highlightFolders" #11-13-25 Thursday 2pm - For future folder support
+#FOLDER_COLLECTION = "highlightFolders" #11-13-25 Thursday 2pm - For future folder support
+#You only need os.getenv(...) if:
+#The collection name might change between environments, or
+#You configured it in your .env and want to keep code generic.
+#f your Firestore collection is always called "highlightFolders" and you’re not planning to configure it via env vars, then FOLDER_COLLECTION = "highlightFolders" is okay.
+#But you can change it to use an env var if you want symmetry, but it’s not required for correctness
+FOLDER_COLLECTION = os.getenv("FIRESTORE_FOLDER_COLLECTION", "highlightFolders")
+#RUNS_COLLECTION = "runs" #11-21-25 Friday 4pm - For my runs page
+RUNS_COLLECTION = os.getenv("FIRESTORE_RUNS_COLLECTION", "runs") #11-22-25 Saturday 12pm - For my runs page
 
 #clients
 storage_client   = storage.Client(project=PROJECT_ID)
@@ -71,6 +79,12 @@ def _folder_doc(folder_id: str):
     return firestore_client.collection(FOLDER_COLLECTION).document(folder_id)
 #11-13-25 Thursday 2pm - For future folder support
 
+#11-21-25 Friday 4pm - For my runs page
+#helper for run documents (My Runs page)
+def _run_doc(run_id: str):
+    return firestore_client.collection(RUNS_COLLECTION).document(run_id)
+#11-21-25 Friday 4pm - For my runs page
+
 #name the ingest object (temporary “raw” file in GCS)
 def _make_keys(original_name: str, job_id: str) -> tuple[str, str, str]:
     safe_name = original_name or "upload.mp4"
@@ -100,7 +114,7 @@ def _upload_filelike_to_gcs(bucket: storage.Bucket, blob_name: str, file_obj, co
         pass
     blob.upload_from_file(file_obj, content_type=content_type, timeout=600)
 
-# gs:// parsing + GET signer (used by /jobs/{id}/download)
+#gs:// parsing + GET signer (used by /jobs/{id}/download)
 def _parse_gs_uri(gs_uri: str) -> tuple[str, str]:
     assert gs_uri.startswith("gs://"), "Not a gs:// URI"
     rest = gs_uri[len("gs://"):]
@@ -626,6 +640,79 @@ def delete_folder(folder_id: str):
     doc_ref.delete()
     return {"ok": True, "deleted": True}
 #11-13-25 Thursday 2pm - For future folder support
+
+# === MY RUNS API (separate from highlightFolders gallery) ===
+#11-21-25 Friday 4pm - For my runs page
+@app.get("/runs")
+def list_runs(ownerEmail: str):
+    """
+    Return all runs for a given ownerEmail.
+    Response shape: { "items": [ { "runId": ..., "name": ..., "ownerEmail": ..., ... } ] }
+    """
+    try:
+        runs_ref = firestore_client.collection(RUNS_COLLECTION)
+        q = runs_ref.where("ownerEmail", "==", ownerEmail)
+
+        docs = q.stream()
+        items = []
+        for doc in docs:
+            d = doc.to_dict() or {}
+            d["runId"] = doc.id
+            items.append(d)
+
+        return {"items": items}
+
+    except Exception as e:
+        print("ERROR in /runs:", e)
+        raise HTTPException(status_code=500, detail="Failed to list runs")
+
+# def list_runs(ownerEmail: str):
+#     """
+#     List all runs owned by a user.
+#     Later we can extend this to membership, visibility filters, etc.
+#     """
+#     q = (
+#         firestore_client.collection(RUNS_COLLECTION)
+#         .where("ownerEmail", "==", ownerEmail)
+#         .order_by("createdAt", direction=firestore.Query.ASCENDING)
+#     )
+#     runs = []
+#     for doc in q.stream():
+#         data = doc.to_dict() or {}
+#         data["runId"] = doc.id
+#         runs.append(data)
+#     return {"items": runs}
+
+
+@app.post("/runs")
+def create_run(body: dict = Body(...)):
+    """
+    Create a new run. For now:
+    - ownerEmail: the admin / owner
+    - name: run name (e.g. "Friday LA Fitness Run")
+    - visibility: "private" | "public" | "unlisted" (default "private")
+    """
+    owner = body.get("ownerEmail")
+    name = (body.get("name") or "New Run").strip()
+    visibility = (body.get("visibility") or "private").strip()  # "public" later shows on Join a Run
+    max_members = body.get("maxMembers") or 12
+
+    run_id = str(uuid.uuid4())
+    _run_doc(run_id).set(
+        {
+            "runId": run_id,
+            "ownerEmail": owner,
+            "name": name,
+            "visibility": visibility,
+            "maxMembers": max_members,
+            "videoIds": [],
+            "members": [owner] if owner else [],
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        }
+    )
+    return {"ok": True, "runId": run_id}
+#11-21-25 Friday 4pm - For my runs page
 
 @app.get("/healthz")
 def healthz():
