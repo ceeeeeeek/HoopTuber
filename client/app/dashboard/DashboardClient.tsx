@@ -51,7 +51,7 @@ export type RunSummary = {
   ownerEmail: string;
   visibility: RunVisibility;
   members?: string[];
-  highlightVideoIds?: string[];
+  highlightIds?: string[];
   createdAt?: string;
   updatedAt?: string;
   maxMembers?: number;
@@ -78,6 +78,18 @@ async function apiGetRunCount(memberEmail: string): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+function buildAssignedRunsMap(allRuns: RunSummary[]): Record<string, RunSummary[]> {
+  const map: Record<string, RunSummary[]> = {};
+  for (const run of allRuns) {
+    const ids = run.highlightIds || [];
+    for (const hId of ids) {
+      if (!map[hId]) map[hId] = [];
+      map[hId].push(run);
+    }
+  }
+  return map;
 }
 
 //11-23-25 Sunday 5pm - For Assign-to-Run button + dropdown menu
@@ -274,6 +286,16 @@ export default function DashboardClient() {
   //which video card has the "Assign to Run" dropdown open
   const [runMenuFor, setRunMenuFor] = useState<string | null>(null);   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
 
+  // highlightId -> array of runs where that highlight is assigned
+  const [assignedRunsByHighlightId, setAssignedRunsByHighlightId] = useState<
+    Record<string, RunSummary[]>
+  >({});
+
+  // expand/collapse for the “Assigned to …” section per highlight card
+  const [openAssignedForHighlightId, setOpenAssignedForHighlightId] = useState<
+  Set<string>
+  >(new Set());
+
   //=== Dropdown outside-click / escape close ===
   const menuRef = useRef<HTMLDivElement | null>(null); //ref for folder Move/"Move to Folder" dropdown menu
   //needed to have a separate ref (separate from the ref for the Assign-to-Run menu) like this one for folder Move/"Move to Folder" dropdown menu - 11-13-25 Thursday 2pm - For Move folder support
@@ -403,7 +425,7 @@ const runsByHighlightId = useMemo(() => {
   const map = new Map<string, RunSummary[]>();
 
   for (const run of runs) {
-    for (const hid of run.highlightVideoIds || []) {
+    for (const hid of run.highlightIds || []) {
       const list = map.get(hid) || [];
       list.push(run);
       map.set(hid, list);
@@ -427,37 +449,44 @@ const runsByHighlightId = useMemo(() => {
   //useEffect B - useEffect() to load runs list for Assign Run dropdown - 11-23-25 Sunday 5pm
   //this useEffect only handles loading runs for the Assign-to-Run dropdown menu
   useEffect(() => {
-  if (!userEmail) return;
-
-  let cancelled = false;
-
-  const load = async () => {
-    try {
-      setLoadingRuns(true);
-      setRunsError(null);
-      const items = await apiListRuns(userEmail);
-      if (!cancelled) {
+    if (!userEmail) return;
+  
+    let cancelled = false;
+  
+    const loadRunsForDashboard = async () => {
+      try {
+        setLoadingRuns(true);
+        setRunsError(null);
+        const items = await apiListRuns(userEmail);
+  
+        if (cancelled) return;
+  
         setRuns(items);
+  
+        //derive mapping highlightId -> runs
+        const map = buildAssignedRunsMap(items);
+        setAssignedRunsByHighlightId(map);
+      } catch (e: any) {
+        console.error("Dashboard apiListRuns error", e);
+        if (!cancelled) {
+          setRunsError(e?.message || "Failed to load runs.");
+          setRuns([]);
+          setAssignedRunsByHighlightId({});
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingRuns(false);
+        }
       }
-    } catch (e: any) {
-      console.error("Dashboard apiListRuns error", e);
-      if (!cancelled) {
-        setRunsError(e?.message || "Failed to load runs.");
-        setRuns([]);
-      }
-    } finally {
-      if (!cancelled) {
-        setLoadingRuns(false);
-      }
-    }
-  };
-
-  load();
-
-  return () => {
-    cancelled = true;
-  };
-}, [userEmail]);
+    };
+  
+    loadRunsForDashboard();
+  
+    return () => {
+      cancelled = true;
+    };
+  }, [userEmail]);
+  
 
 //useEffect C - useEffect() loads or sets runCount for the stat card - My Runs / Team Groups count for this user
 useEffect(() => {
@@ -584,7 +613,7 @@ useEffect(() => {
   };
 
   //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
-  //====================== FOLDERS FUNCTIONS/ACTIONS (START) ======================
+  //====================== FOLDERS FUNCTIONS/ACTIONS/HELPERS (START) ======================
   //quick action to move one video into a folder (append if not present)
   const moveVideoToFolder = async (jobId: string, folderId: string) => {
     const folder = folders.find(f => f.folderId === folderId);
@@ -644,58 +673,68 @@ useEffect(() => {
     if (!jobId) return;
     await moveVideoToFolder(jobId, folderId);
   };
-  //====================== FOLDERS FUNCTIONS/ACTIONS (END) ======================
+  //====================== FOLDERS FUNCTIONS/ACTIONS/HELPERS (END) ======================
   //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
 
   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
-  //=====================RUNS - Assign-to-Run button + dropdown menu FUNCTIONS/ACTIONS (START) ======================
+  //=====================RUNS - Assign-to-Run button + dropdown menu FUNCTIONS/ACTIONS/HELPERS (START) ======================
   //assign a video to a specific run
   const assignVideoToRun = async (jobId: string, runId: string) => {
-    try {
       await apiAssignToRun(runId, jobId);
+
+      setRunMenuFor(null);
   
       //update local runs state so "Assigned to…" chips update instantly
-      setRuns((prev) =>
-        prev.map((run) =>
+      setRuns(prev => {
+        const next = prev.map(run =>
           run.runId === runId
             ? {
                 ...run,
-                highlightVideoIds: Array.from(
-                  new Set([...(run.highlightVideoIds || []), jobId])
-                ),
+                highlightIds: Array.from(new Set([...(run.highlightIds || []), jobId])),
               }
             : run
-        )
-      );
+        );
   
-      setRunMenuFor(null);
-    } catch (e: any) {
-      console.error("assignVideoToRun error", e);
-      alert(e?.message || "Failed to assign highlight to run.");
-    }
+      setAssignedRunsByHighlightId(buildAssignedRunsMap(next));
+      return next;
+    });
   };
-  
 
   //create a new run inline from the dropdown for this video
   const createRunAndAssign = async (jobId: string) => {
     if (!newRunName.trim() || !userEmail) return;
-    try {
-      const newRun = await apiCreateRun(userEmail, newRunName.trim());
-      setNewRunName("");
+    const newRun = await apiCreateRun(userEmail, newRunName.trim());
+    setNewRunName("");
   
-      // NEW: add to dropdown immediately
-      setRuns((prev) => [newRun, ...prev]);
+    // First, add the new run locally with this highlightId
+    setRuns(prev => {
+      const updatedRun: RunSummary = {
+        ...newRun,
+        highlightIds: Array.from(new Set([...(newRun.highlightIds || []), jobId])),
+      };
+      const next = [updatedRun, ...prev];
+      setAssignedRunsByHighlightId(buildAssignedRunsMap(next));
+      return next;
+    });
   
-      // NEW: update stat card immediately
-      setRunCount((prev) => (prev == null ? 1 : prev + 1));
+    // Then actually assign in backend (idempotent because we already added in local state above)
+    await apiAssignToRun(newRun.runId, jobId);
   
-      // still assign the video to that run
-      await assignVideoToRun(jobId, newRun.runId);
-    } catch (e: any) {
-      console.error("createRunAndAssign error", e);
-      alert(e?.message || "Failed to create run.");
-    }
+    setRunMenuFor(null);
   };
+
+  const toggleAssignedOpen = (highlightId: string) => {
+    setOpenAssignedForHighlightId(prev => {
+      const next = new Set(prev);
+      if (next.has(highlightId)) {
+        next.delete(highlightId);
+      } else {
+        next.add(highlightId);
+      }
+      return next;
+    });
+  };
+  
   //=====================RUNS - Assign-to-Run button + dropdown menu FUNCTIONS/ACTIONS (END) ======================
   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
 
@@ -999,7 +1038,7 @@ useEffect(() => {
                   const vis = (h.visibility || "private") as FolderVisibility;
                   // which runs contain this highlightId?
                   const assignedRuns = runs.filter((run) =>
-                    (run.highlightVideoIds || []).includes(h.jobId)
+                    (run.highlightIds || []).includes(h.jobId)
                   );
 
                   return (
@@ -1272,8 +1311,57 @@ useEffect(() => {
                               </Link>
                             </span>
                           ))}
-                        </div>
+                        </div>                       
                       )}
+                      {/* Assigned to Run(s) summary with expand/collapse */}
+                      {(() => {
+                        const assignedRuns = assignedRunsByHighlightId[h.jobId] || [];
+                        if (assignedRuns.length === 0) return null;
+
+                        const isOpen = openAssignedForHighlightId.has(h.jobId);
+
+                        return (
+                          <div className="mt-2 text-xs text-gray-600">
+                            <button
+                              type="button"
+                              onClick={() => toggleAssignedOpen(h.jobId)}
+                              className="inline-flex items-center gap-1 text-purple-700 hover:text-purple-900"
+                            >
+                              {isOpen ? (
+                                <>
+                                  <ChevronUp className="w-3 h-3" />
+                                  Hide assigned runs
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronDown className="w-3 h-3" />
+                                  Assigned to {assignedRuns.length} run
+                                  {assignedRuns.length > 1 ? "s" : ""}
+                                </>
+                              )}
+                            </button>
+
+                            {isOpen && (
+                              <div className="mt-1">
+                                {assignedRuns.map(run => (
+                                  <span
+                                    key={run.runId}
+                                    className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 mr-1 mb-1"
+                                  >
+                                    <DribbleIcon className="w-3 h-3 text-purple-600" />
+                                    <Link
+                                      href={`/my-runs?runId=${encodeURIComponent(run.runId)}`}
+                                      className="font-medium text-purple-700 hover:underline"
+                                    >
+                                      {run.name}
+                                    </Link>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </li>
                   );
                 })}

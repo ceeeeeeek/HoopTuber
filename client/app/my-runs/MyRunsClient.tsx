@@ -75,7 +75,7 @@ type RunsSummary = {
     ownerEmail: string;
     visibility: RunVisibility;
     members?: string[];
-    highlightVideoIds?: string[];
+    highlightIds?: string[];
     createdAt?: string;
     updatedAt?: string;
     maxMembers?: number;
@@ -534,7 +534,7 @@ return (
           {!loading && !error && memberRuns.length > 0 && (
             <div className="grid gap-4 md:grid-cols-2">
               {memberRuns.map((run) => {
-                const videoCount = run.highlightVideoIds?.length ?? 0; 
+                const videoCount = run.highlightIds?.length ?? 0; 
                 const memberCount = run.members?.length ?? 1;      
                 const owned = isOwner(run);                        
 
@@ -716,13 +716,13 @@ return (
                     )}
 
                     {/* Highlight IDs list – (simple debug-style) */}
-                    {(run.highlightVideoIds?.length || 0) > 0 && (
+                    {(run.highlightIds?.length || 0) > 0 && (
                       <div className="mt-3 border-t pt-2">
                         <p className="text-[11px] font-semibold text-gray-500 mb-1">
                           Highlight IDs
                         </p>
                         <div className="flex flex-wrap gap-1">
-                          {run.highlightVideoIds?.map((hId) => (
+                          {run.highlightIds?.map((hId) => (
                             <span
                               key={hId}
                               className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-mono text-orange-700"
