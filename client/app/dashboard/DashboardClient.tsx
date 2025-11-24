@@ -15,38 +15,134 @@ import cn from "clsx";
 import ProfileDropdown from "../app-components/ProfileDropdown";         
 import { DribbleIcon } from "@/components/icons/DribbleIcon";
 
+type FolderVisibility = "public" | "unlisted" | "private";  
+type RunVisibility = "public" | "private" | "unlisted";
 
-type Visibility = "public" | "unlisted" | "private";                    
+//Highlight item type shape from FastAPI
+type HighlightItem = {
+  jobId: string;                                                   
+  originalFileName?: string;                                     
+  ownerEmail?: string;                                            
+  title?: string;                                              
+  finishedAt?: string;        
+  createdAt?: string;                                     
+  signedUrl?: string;                                             
+  outputGcsUri?: string;                                          
+  durationSeconds?: number;                                        
+  status?: string;                                                
+  visibility?: FolderVisibility;                                        
+};
+
+//11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
+// folder shape
+type HighlightFolder = {
+  folderId: string;
+  name: string;
+  ownerEmail: string;
+  videoIds: string[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+//11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
+
+export type RunSummary = {
+  runId: string;
+  name: string;
+  ownerEmail: string;
+  visibility: RunVisibility;
+  members?: string[];
+  highlightVideoIds?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  maxMembers?: number;
+};
 
 const API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
-//11-21-25 Friday 10pm - For my runs page
+//11-23-25 Sunday 4pm - Connected to my runs page
 //=== RUNS API HELPERS (START - used only for the dashboard "My Runs/Team Groups" stat) === //
-async function apiGetRunCount(ownerEmail: string): Promise<number> {
+async function apiGetRunCount(memberEmail: string): Promise<number> {
   try {
-    const url = `${API_BASE}/runs?ownerEmail=${encodeURIComponent(ownerEmail)}`;
+    const url = `${API_BASE}/runs?memberEmail=${encodeURIComponent(memberEmail)}`;
     const r = await fetch(url, { cache: "no-store" });
 
-    // Backend for /runs isn’t built yet → just show 0 but don’t break the UI
     if (!r.ok) return 0;
 
     const data = (await r.json().catch(() => null)) as any;
 
-    // prefer an explicit { count: number } shape if/when we add it
     if (data && typeof data.count === "number") return data.count;
-
-    // or fall back to items.length if we later return { items: [...] }
     if (Array.isArray(data?.items)) return data.items.length;
 
     return 0;
   } catch {
-    // network/JSON errors → treat as 0
     return 0;
   }
 }
-//=== RUNS API HELPERS (END - used only for the dashboard "My Runs/Team Groups" stat) === //
-//11-21-25 Friday 10pm - For my runs page
+
+//11-23-25 Sunday 5pm - For Assign-to-Run button + dropdown menu
+//list runs where the user is a member (same as MyRunsClient)
+const apiListRuns = async (memberEmail: string): Promise<RunSummary[]> => {
+  const url = `${API_BASE}/runs?memberEmail=${encodeURIComponent(memberEmail)}`;
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(
+      `Failed to load runs: ${r.status} ${r.statusText} ${txt}`
+    );
+  }
+  const data = await r.json();
+  return Array.isArray(data?.items) ? (data.items as RunSummary[]) : [];
+};
+
+//create a run (owner + member is the current user)
+const apiCreateRun = async (
+  ownerEmail: string,
+  name: string
+): Promise<RunSummary> => {
+  const r = await fetch(`${API_BASE}/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      ownerEmail,
+      visibility: "private", // default
+    }),
+  });
+
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(
+      `Failed to create run: ${r.status} ${r.statusText} ${txt}`
+    );
+  }
+
+  const data = await r.json();
+  return data.run as RunSummary;
+};
+
+//assign highlight to an existing run
+const apiAssignToRun = async (
+  runId: string,
+  highlightId: string
+): Promise<void> => {
+  const r = await fetch(
+    `${API_BASE}/runs/${encodeURIComponent(runId)}/assignHighlight`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ highlightId }),
+    }
+  );
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(
+      `Failed to assign highlight to run: ${r.status} ${r.statusText} ${txt}`
+    );
+  }
+};
+//=====================RUNS API HELPERS (END - Assign-to-Run button + dropdown menu API HELPERS (END) ======================
+//11-23-25 Sunday 5pm Tuesday 10am - For Assign-to-Run button + dropdown menu
 
 //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
 //===================== FOLDERS API HELPERS (START)======================
@@ -95,53 +191,6 @@ async function apiRemoveVideoFromFolder(folderId: string, videoIds: string[]) {
   return res.json();
 }
 //===================== FOLDERS API HELPERS (END) ======================
-//11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
-
-//11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
-//=====================RUNS - Assign-to-Run button + dropdown menu API HELPERS (START) ======================
-//Routing: These helpers will connect to backend later
-const apiListRuns = async (email: string) => {
-  // temporary placeholder — backend implemented in Step 3
-  return { items: [] };
-};
-
-const apiCreateRun = async (email: string, name: string) => {
-  // temporary placeholder
-  return { ok: true, runId: crypto.randomUUID() };
-};
-
-const apiAssignToRun = async (runId: string, jobId: string) => {
-  // temporary placeholder
-  return { ok: true };
-};
-//=====================RUNS - Assign-to-Run button + dropdown menu API HELPERS (END) ======================
-//11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
-
-//Highlight item type shape from FastAPI
-type HighlightItem = {
-  jobId: string;                                                   
-  originalFileName?: string;                                     
-  ownerEmail?: string;                                            
-  title?: string;                                              
-  finishedAt?: string;        
-  createdAt?: string;                                     
-  signedUrl?: string;                                             
-  outputGcsUri?: string;                                          
-  durationSeconds?: number;                                        
-  status?: string;                                                
-  visibility?: Visibility;                                        
-};
-
-//11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
-// folder shape
-type HighlightFolder = {
-  folderId: string;
-  name: string;
-  ownerEmail: string;
-  videoIds: string[];
-  createdAt?: string;
-  updatedAt?: string;
-};
 //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
 
 export default function DashboardClient() {
@@ -211,27 +260,23 @@ export default function DashboardClient() {
   const [creatingForVideo, setCreatingForVideo] = useState<string | null>(null); //inline "new folder" mini form
   const [newFolderName, setNewFolderName] = useState("");                 //input model for mini form
 
-  //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
-  //which video card has the "Assign to Run" dropdown open
-  const [runMenuFor, setRunMenuFor] = useState<string | null>(null);
 
+  //separate ref for the Assign-to-Run dropdown
+  const runMenuRef = useRef<HTMLDivElement | null>(null); //ref for "Assign-to-Run" dropdown menu -   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
+
+  //runs for the Assign Run dropdown (runs where the user is a member) - 11-23-25 Sunday 5pm
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [loadingRuns, setLoadingRuns] = useState(false);
+  const [runsError, setRunsError] = useState<string | null>(null)
+  const [runCount, setRunCount] = useState<number>(0); //My Runs / Team Groups stat count 
   //for creating a new run inside dropdown
   const [newRunName, setNewRunName] = useState("");
-  //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
+  //which video card has the "Assign to Run" dropdown open
+  const [runMenuFor, setRunMenuFor] = useState<string | null>(null);   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
 
-  //11-21-25 Friday 10pm - For my runs page
-  const [runCount, setRunCount] = useState<number>(0); //My Runs / Team Groups stat count 
-  //11-21-25 Friday 10pm - For my runs page
-
-  //11-13-25 Thursday 2pm - For Move folder support
   //=== Dropdown outside-click / escape close ===
   const menuRef = useRef<HTMLDivElement | null>(null); //ref for folder Move/"Move to Folder" dropdown menu
-  //needed to havae a separate ref (separate from the ref for the Assign-to-Run menu) like this one for folder Move/"Move to Folder" dropdown menu
-  //11-13-25 Thursday 2pm - For Move folder support
-
-  //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
-  //separate ref for the Assign-to-Run dropdown
-  const runMenuRef = useRef<HTMLDivElement | null>(null); //ref for "Assign-to-Run" dropdown menu
+  //needed to have a separate ref (separate from the ref for the Assign-to-Run menu) like this one for folder Move/"Move to Folder" dropdown menu - 11-13-25 Thursday 2pm - For Move folder support
 
   //useEffect uses both dropdowns' refs (const ref for Move menu and const runMenuRef for Assign-to-Run menu) to close on outside click / escape
   //one useEffect, two refs, closes both menus - Move folder menu + Assign-to-Run menu
@@ -262,27 +307,6 @@ export default function DashboardClient() {
       document.removeEventListener("mousedown", onClick);
     };
   }, []);
-  //one useEffect, two refs, closes both menus
-  //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
-
-  //11-21-25 Friday 10pm - For my runs page
-  //Second useEffect for loading the run count for the "My Runs/Team Groups" stat
-  // useEffect(() => {
-  //   if (!userEmail) return;
-
-  //   let cancelled = false;
-
-  //   (async () => {
-  //     const count = await apiGetRunCount(userEmail);
-  //     if (!cancelled) setRunCount(count);
-  //   })();
-
-  //   return () => {
-  //     cancelled = true;
-  //   };
-  // }, [userEmail]);
-  //11-21-25 Friday 10pm - For my runs page
-
 
   //Small helper to open a highlight URL from a jobId
   const openVideoByJobId = useCallback((jobId: string) => {
@@ -373,91 +397,25 @@ export default function DashboardClient() {
     }
   }, [userEmail]);
 
+//Derive a map of highlightVideoIds → runs[] and render it.
+//Map highlightId -> array of runs that contain it
+const runsByHighlightId = useMemo(() => {
+  const map = new Map<string, RunSummary[]>();
 
-  //run loader on mount / when email changes
-  //useEffect(() => { load(); }, [load]); //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
+  for (const run of runs) {
+    for (const hid of run.highlightVideoIds || []) {
+      const list = map.get(hid) || [];
+      list.push(run);
+      map.set(hid, list);
+    }
+  }
 
-  //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
-  //run loader on mount alongside highlights load to also fetch folders when email changes
-  //useEffect(() => { loadFolders(); }, [loadFolders]); //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
-  //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
+  return map;
+}, [runs]);
 
-  //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
-  // useEffect(() => {
-  //   // don’t fire while NextAuth is still establishing the session
-  //   if (!userEmail) return;
-  
-  //   // now it’s safe to load everything that depends on ownerEmail
-  //   load();
-  //   loadFolders();
-  //   // if you have a run-count loader, include it here too:
-  //   // loadRunCount();
-  // }, [userEmail, load, loadFolders]);
 
-  // useEffect(() => {
-  //   // While NextAuth is still figuring out the session, `session` is `undefined`
-  //   // → don’t hit the backend yet, but also don’t touch loading flags.
-  //   if (session === undefined) return;
-  
-  //   // At this point, NextAuth is done:
-  //   // - `session === null`  → unauthenticated
-  //   // - `session` is object → authenticated
-  //   if (!userEmail) {
-  //     // No logged-in user: clear data and stop the spinners
-  //     setHighlights([]);
-  //     setHighlightsLoading(false);
-  //     setFolders([]);
-  //     setFoldersLoading(false);
-  //     setFolderError(null);
-  //     return;
-  //   }
-  
-  //   // We have a real user → load everything that depends on ownerEmail
-  //   load();
-  //   loadFolders();
-  
-  //   // Optional: if you re-enable the run-count loader, you can call it here too.
-  //   // (async () => {
-  //   //   const count = await apiGetRunCount(userEmail);
-  //   //   setRunCount(count);
-  //   // })();
-  // }, [session, userEmail, load, loadFolders]);
-
-  // useEffect(() => {
-  //   // while session is undefined, NextAuth is still loading
-  //   if (session === undefined) return;
-  
-  //   // if there is no userEmail, user is not logged in – don’t call the API
-  //   if (!userEmail) return;
-  
-  //   // now it’s safe to load everything that depends on ownerEmail
-  //   load();
-  //   loadFolders();
-  //   // if you have a run-count loader, include it here too:
-  //   // loadRunCount();
-  // }, [session, userEmail, load, loadFolders]);
-
-  // useEffect(() => {
-  //   // while NextAuth is still figuring out the session, `session` is `undefined`
-  //   if (session === undefined) return;
-  
-  //   // once we know the session (null or object), we can decide what to do
-  //   if (!userEmail) {
-  //     // no logged-in user -> clear state + stop loading spinners
-  //     setHighlights([]);
-  //     setFolders([]);
-  //     setHighlightsLoading(false);
-  //     setFoldersLoading(false);
-  //     return;
-  //   }
-  
-  //   // logged-in user with an email -> safe to hit backend
-  //   load();
-  //   loadFolders();
-  //   // if you add a run-count loader, call it here too:
-  //   // loadRunCount();
-  // }, [session, userEmail, load, loadFolders]);
-
+//-----------------------useEffect() Hooks Here (Start)-----------------------
+  //useEffect A -this useEffect only handles highlights + folders for the dropdown menu
   useEffect(() => {
     if (!userEmail) return;
   
@@ -465,9 +423,65 @@ export default function DashboardClient() {
     loadFolders();
     // loadRunCount(); // if you have it
   }, [userEmail, load, loadFolders]);
-  
+
+  //useEffect B - useEffect() to load runs list for Assign Run dropdown - 11-23-25 Sunday 5pm
+  //this useEffect only handles loading runs for the Assign-to-Run dropdown menu
+  useEffect(() => {
+  if (!userEmail) return;
+
+  let cancelled = false;
+
+  const load = async () => {
+    try {
+      setLoadingRuns(true);
+      setRunsError(null);
+      const items = await apiListRuns(userEmail);
+      if (!cancelled) {
+        setRuns(items);
+      }
+    } catch (e: any) {
+      console.error("Dashboard apiListRuns error", e);
+      if (!cancelled) {
+        setRunsError(e?.message || "Failed to load runs.");
+        setRuns([]);
+      }
+    } finally {
+      if (!cancelled) {
+        setLoadingRuns(false);
+      }
+    }
+  };
+
+  load();
+
+  return () => {
+    cancelled = true;
+  };
+}, [userEmail]);
+
+//useEffect C - useEffect() loads or sets runCount for the stat card - My Runs / Team Groups count for this user
+useEffect(() => {
+  if (!userEmail) return;
+
+  let cancelled = false;
+
+  (async () => {
+    try {
+      const count = await apiGetRunCount(userEmail);
+      if (!cancelled) setRunCount(count);
+    } catch {
+      if (!cancelled) setRunCount(0);
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}, [userEmail]);
+
+//-----------------------useEffect() Hooks Here (End)-----------------------
+
   //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
-  
   //(CHANGED source): derive stats from FastAPI items
   const stats = useMemo(() => {
     const count = highlights.length;
@@ -530,7 +544,7 @@ export default function DashboardClient() {
         return (aTime - bTime) * dir;
       });
     } else if (field === "visibility") {                                  
-      const rank = (vis?: Visibility) => {
+      const rank = (vis?: FolderVisibility) => {
         if (vis === "public") return 0;
         if (vis === "unlisted") return 1;
         return 2; //private / undefined
@@ -637,16 +651,50 @@ export default function DashboardClient() {
   //=====================RUNS - Assign-to-Run button + dropdown menu FUNCTIONS/ACTIONS (START) ======================
   //assign a video to a specific run
   const assignVideoToRun = async (jobId: string, runId: string) => {
-    await apiAssignToRun(runId, jobId);
-    setRunMenuFor(null);
+    try {
+      await apiAssignToRun(runId, jobId);
+  
+      //update local runs state so "Assigned to…" chips update instantly
+      setRuns((prev) =>
+        prev.map((run) =>
+          run.runId === runId
+            ? {
+                ...run,
+                highlightVideoIds: Array.from(
+                  new Set([...(run.highlightVideoIds || []), jobId])
+                ),
+              }
+            : run
+        )
+      );
+  
+      setRunMenuFor(null);
+    } catch (e: any) {
+      console.error("assignVideoToRun error", e);
+      alert(e?.message || "Failed to assign highlight to run.");
+    }
   };
+  
 
   //create a new run inline from the dropdown for this video
   const createRunAndAssign = async (jobId: string) => {
-    if (!newRunName.trim()) return;
-    const res = await apiCreateRun(userEmail, newRunName.trim());
-    setNewRunName("");
-    await assignVideoToRun(jobId, res.runId);
+    if (!newRunName.trim() || !userEmail) return;
+    try {
+      const newRun = await apiCreateRun(userEmail, newRunName.trim());
+      setNewRunName("");
+  
+      // NEW: add to dropdown immediately
+      setRuns((prev) => [newRun, ...prev]);
+  
+      // NEW: update stat card immediately
+      setRunCount((prev) => (prev == null ? 1 : prev + 1));
+  
+      // still assign the video to that run
+      await assignVideoToRun(jobId, newRun.runId);
+    } catch (e: any) {
+      console.error("createRunAndAssign error", e);
+      alert(e?.message || "Failed to create run.");
+    }
   };
   //=====================RUNS - Assign-to-Run button + dropdown menu FUNCTIONS/ACTIONS (END) ======================
   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
@@ -667,7 +715,7 @@ export default function DashboardClient() {
     };
 
 
-    const onVisibility = async (jobId: string, visibility: Visibility) => {
+    const onVisibility = async (jobId: string, visibility: FolderVisibility) => {
       const res = await patchHighlight(jobId, { visibility });
       const updated = res?.item as Partial<HighlightItem> | undefined;
       if (updated) {
@@ -746,24 +794,20 @@ export default function DashboardClient() {
             <div className="text-sm text-gray-500">Total Footage</div>
             <Clock3 className="w-5 h-5 text-orange-600" />
           </div>
-          
-          {/*11-17-25 Monday Frontend update - My Runs/Team Groups stat - placeholder number 3 for now*/}
-            {/* <div className="p-4 bg-white rounded-lg border"> */}
+            {/* Card 4 – My Runs / Team Groups*/}
             <Link
-                href="/my-runs"
-                className="p-4 bg-white rounded-lg border hover:bg-purple-50/40 hover:border-purple-300 cursor-pointer transition"
+              href="/my-runs"
+              className="p-4 bg-white rounded-lg border hover:bg-purple-50/40 hover:border-purple-300 cursor-pointer transition"
             >
-              {/*<div className="text-3xl font-bold">3</div>*/}
-              {/* <div className="text-3xl font-bold">{stats.teamGroups}</div> 11-19-25 Wednesday Update*/}
-              <div className="text-3xl font-bold">{runCount}</div> {/*11-21-25 Friday Update 10pm */}
+              <div className="text-3xl font-bold">
+                {runCount === null ? "—" : runCount}
+              </div>
               <div className="text-sm text-gray-500">My Runs/Team Groups</div>
               <div className="mt-0 flex justify-start">
                 <DribbleIcon className="w-7 h-7 text-purple-600 -ml-2" />
               </div>
-            </Link>                   
-          {/*11-17-25 Monday Frontend update - My Runs/Team Groups stat - placeholder number 3 for now*/}
-      </div>
-
+            </Link>
+          </div>
 
         {/*Highlights-only gallery(wired to FastAPI data)*/}
         <section className="mt-10">
@@ -952,7 +996,11 @@ export default function DashboardClient() {
                 {/*{highlights.map((h) => {*/}
                 {sortedHighlights.map((h) => {  {/*11-08-25 Sunday 2:18pm Update - Use sortedHighlights */}
                   const isEditing = editingId === h.jobId;                 //use jobId
-                  const vis = (h.visibility || "private") as Visibility;
+                  const vis = (h.visibility || "private") as FolderVisibility;
+                  // which runs contain this highlightId?
+                  const assignedRuns = runs.filter((run) =>
+                    (run.highlightVideoIds || []).includes(h.jobId)
+                  );
 
                   return (
                     // <li key={h.jobId} className="bg-white border rounded-lg p-4 flex flex-col gap-3">
@@ -1009,7 +1057,7 @@ export default function DashboardClient() {
                         <span className="text-gray-500">Visibility:</span>
                         <select
                           value={vis}
-                          onChange={(e) => onVisibility(h.jobId, e.target.value as Visibility)}
+                          onChange={(e) => onVisibility(h.jobId, e.target.value as FolderVisibility)}
                           className="border rounded px-2 py-1 bg-white"
                         >
                           <option value="public">Public</option>
@@ -1136,39 +1184,96 @@ export default function DashboardClient() {
                           </button>
 
                           {runMenuFor === h.jobId && (
-                            <div
-                              ref={runMenuRef} // so outside-click logic can see this element
-                              className="absolute z-30 right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-2"
-                            >
-                              <p className="text-xs text-gray-500 mb-1">Your Runs</p>
+                          <div
+                            ref={runMenuRef}
+                            className="absolute z-30 right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-2"
+                          >
+                            <p className="text-xs text-gray-500 mb-1">Your Runs</p>
 
-                              {/* Placeholder — real runs soon */}
+                            {/*show loading / error / runs list */}
+                            {loadingRuns && (
+                              <p className="text-gray-400 text-sm italic px-2 py-1">
+                                Loading runs…
+                              </p>
+                            )}
+
+                            {!loadingRuns && runsError && (
+                              <p className="text-red-500 text-xs px-2 py-1">
+                                {runsError}
+                              </p>
+                            )}
+
+                            {!loadingRuns && !runsError && runs.length === 0 && (
                               <p className="text-gray-400 text-sm italic px-2 py-1">
                                 No runs yet. Create one below.
                               </p>
+                            )}
 
-                              <div className="border-t my-2" />
+                            {!loadingRuns && !runsError && runs.length > 0 && (
+                              <ul className="max-h-48 overflow-auto mb-2">
+                                {runs.map((run) => (
+                                  <li key={run.runId}>
+                                    <button
+                                      type="button"
+                                      className="w-full text-left px-2 py-1 rounded hover:bg-gray-50 text-sm flex flex-col"
+                                      onClick={() => assignVideoToRun(h.jobId, run.runId)}
+                                    >
+                                      <span className="font-medium text-gray-900">
+                                        {run.name}
+                                      </span>
+                                      <span className="text-[11px] text-gray-500">
+                                        Owned by {run.ownerEmail}
+                                      </span>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
 
-                              {/* Inline New Run Form */}
-                              <div className="flex flex-col gap-2">
-                                <input
-                                  type="text"
-                                  placeholder="New run name"
-                                  value={newRunName}
-                                  onChange={e => setNewRunName(e.target.value)}
-                                  className="w-full px-2 py-1 border rounded-md"
-                                />
-                                <button
-                                  onClick={() => createRunAndAssign(h.jobId)}
-                                  className="px-3 py-1 rounded-md text-sm bg-blue-600 text-white hover:bg-blue-700"
-                                >
-                                  Create & Assign
-                                </button>
-                              </div>
+                            <div className="border-t my-2" />
+
+                            {/* Inline New Run Form*/}
+                            <div className="flex flex-col gap-2">
+                              <input
+                                type="text"
+                                placeholder="New run name"
+                                value={newRunName}
+                                onChange={(e) => setNewRunName(e.target.value)}
+                                className="w-full px-2 py-1 border rounded-md"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => createRunAndAssign(h.jobId)}
+                                className="px-3 py-1 rounded-md text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                                disabled={!newRunName.trim()}
+                              >
+                                Create &amp; Assign
+                              </button>
                             </div>
+                          </div>
                           )}
                         </div>
                       </div>
+                      {/*11-23-25 Sunday 8pm - show which runs this highlight is assigned to */}
+                      {assignedRuns.length > 0 && (
+                        <div className="mt-1 text-xs text-gray-600">
+                          Assigned to{" "}
+                          {assignedRuns.map((run) => (
+                            <span
+                              key={run.runId}
+                              className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 mr-1"
+                            >
+                              <DribbleIcon className="w-3 h-3 text-purple-600" />
+                              <Link
+                                href={`/my-runs?runId=${encodeURIComponent(run.runId)}`}
+                                className="font-medium text-purple-700 hover:underline"
+                              >
+                                {run.name}
+                              </Link>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </li>
                   );
                 })}

@@ -1,10 +1,11 @@
 #backend/api/main.py AKA fastapi/api/main.py - 11-13-25 Thursday Version 11am 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Body, Header, Response 
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Body, Header, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from typing import List, Optional
 from datetime import timedelta
 import os, uuid, json, tempfile, subprocess #11-08-25 Saturday 11:42am - For 'Total Footage' stat; added tempfile, subprocess
+from uuid import uuid4
 from dotenv import load_dotenv
 from google.cloud import storage, firestore
 from google.cloud import pubsub_v1
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 from google.cloud import firestore
 from google.cloud import storage
 from datetime import timedelta
+from datetime import datetime
 from urllib.parse import urlparse
 
 #typing + datetime helpers for pagination tokens
@@ -642,77 +644,317 @@ def delete_folder(folder_id: str):
 #11-13-25 Thursday 2pm - For future folder support
 
 # === MY RUNS API (separate from highlightFolders gallery) ===
-#11-21-25 Friday 4pm - For my runs page
+#11-22-25 Saturday 12am - For my runs page
+#My Runs = all runs where this email is in `members` (owner OR invited)
+#With def list_runs() - Owner sees their own runs + Users see runs where they are members
 @app.get("/runs")
-def list_runs(ownerEmail: str):
+def list_runs(
+    ownerEmail: Optional[str] = None,
+    memberEmail: Optional[str] = None,
+):
     """
-    Return all runs for a given ownerEmail.
-    Response shape: { "items": [ { "runId": ..., "name": ..., "ownerEmail": ..., ... } ] }
+    List runs.
+
+    - If memberEmail is provided: return runs where that email is in `members` array.
+    - Else if ownerEmail is provided: return runs owned by that email.
     """
     try:
-        runs_ref = firestore_client.collection(RUNS_COLLECTION)
-        q = runs_ref.where("ownerEmail", "==", ownerEmail)
+        if memberEmail:
+            # member search takes priority
+            q = firestore_client.collection(RUNS_COLLECTION).where(
+                "members", "array_contains", memberEmail
+            )
+        elif ownerEmail:
+            q = firestore_client.collection(RUNS_COLLECTION).where(
+                "ownerEmail", "==", ownerEmail
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide ownerEmail or memberEmail"
+            )
 
         docs = q.stream()
         items = []
-        for doc in docs:
-            d = doc.to_dict() or {}
+        for d in docs:
+            doc_data = d.to_dict()
+            if not doc_data:
+                continue
+            if "runId" not in doc_data:
+                doc_data["runId"] = d.id
+            items.append(doc_data)
+
+        return {"items": items, "count": len(items)}
+
+    except Exception as e:
+        print("ERROR in /runs (GET):", e)
+        raise HTTPException(status_code=500, detail="Failed to list runs")
+
+@app.post("/runs")
+def create_run(body: dict = Body(...)):
+    """
+    Create a new run.
+
+    Expected body (minimum):
+      {
+        "name": "Wednesday Run",
+        "ownerEmail": "user@example.com"
+      }
+
+    Optional:
+      "visibility": "public" | "unlisted" | "private"
+      "maxMembers": number
+    """
+    try:
+        name = (body.get("name") or "").strip()
+        owner_email = (body.get("ownerEmail") or "").strip()
+        visibility = (body.get("visibility") or "private").lower()
+        max_members = body.get("maxMembers")
+
+        if not name:
+            raise HTTPException(status_code=400, detail="Run name is required")
+        if not owner_email:
+            raise HTTPException(status_code=400, detail="ownerEmail is required")
+
+        if visibility not in ("public", "unlisted", "private"):
+            visibility = "private"
+
+        run_id = str(uuid4())
+        now = datetime.utcnow()
+
+        run_doc = {
+            "runId": run_id,
+            "name": name,
+            "ownerEmail": owner_email,
+            "visibility": visibility,
+            "createdAt": now,
+            "updatedAt": now,
+            #My Runs = anything you’re a member of - owners runs + runs user is a member of.
+            #Include the owner in members by default.
+            "members": [owner_email],
+            #Highlights that belong to this run
+            "highlightIds": [],
+        }
+
+        if max_members is not None:
+            run_doc["maxMembers"] = max_members
+
+        firestore_client.collection(RUNS_COLLECTION).document(run_id).set(run_doc)
+
+        return {"success": True, "run": run_doc}
+
+    except HTTPException:
+        #just rethrow HTTP-style errors
+        raise
+    except Exception as e:
+        print("ERROR in /runs (POST):", e)
+        raise HTTPException(status_code=500, detail="Failed to create run")
+
+@app.patch("/runs/{run_id}")
+def update_run(run_id: str, body: dict = Body(...)):
+    """
+    Update a run's name or visibility.
+    
+    Allowed fields:
+      - name
+      - visibility ("private" | "public" | "unlisted")
+    """
+
+    try:
+        doc_ref = firestore_client.collection(RUNS_COLLECTION).document(run_id)
+        doc = doc_ref.get()
+
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        run = doc.to_dict()
+
+        # Extract the fields allowed to update
+        new_name = body.get("name")
+        new_visibility = body.get("visibility")
+
+        update_data = {}
+        if new_name is not None:
+            new_name = new_name.strip()
+            if new_name:
+                update_data["name"] = new_name
+
+        if new_visibility is not None:
+            new_visibility = new_visibility.lower()
+            if new_visibility not in ("private", "public", "unlisted"):
+                raise HTTPException(status_code=400, detail="Invalid visibility")
+            update_data["visibility"] = new_visibility
+
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No valid fields provided")
+
+        update_data["updatedAt"] = datetime.utcnow()
+
+        doc_ref.update(update_data)
+
+        # Return the updated run
+        updated = doc_ref.get().to_dict()
+
+        return {"success": True, "run": updated}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("ERROR in PATCH /runs/{run_id}:", e)
+        raise HTTPException(status_code=500, detail="Failed to update run")
+
+#Rules: Only the owner aka the "User Admin Account" can delete a run + Deleting a run does NOT delete videos, does NOT delete highlightFolders
+@app.delete("/runs/{run_id}")
+def delete_run(run_id: str):
+    """Delete a run."""
+    try:
+        doc_ref = firestore_client.collection(RUNS_COLLECTION).document(run_id)
+        doc = doc_ref.get()
+
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        run = doc.to_dict()
+
+        # Only owner can delete
+        owner_email = run.get("ownerEmail")
+        if not owner_email:
+            raise HTTPException(status_code=403, detail="Owner missing")
+
+        doc_ref.delete()
+
+        return {"success": True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("ERROR deleting run:", e)
+        raise HTTPException(status_code=500, detail="Failed to delete run")
+
+#Used by “Assign Run” dropdown inside Dashboard Highlight Video
+@app.post("/runs/{run_id}/assignHighlight")
+def add_highlight_to_run(run_id: str, body: dict = Body(...)):
+    """
+    Add a highlight video ID to a run.
+    Expected body: {"highlightId": "..."}
+    """
+    highlight_id = (body.get("highlightId") or "").strip()
+    if not highlight_id:
+        raise HTTPException(status_code=400, detail="highlightId required")
+
+    run_ref = firestore_client.collection(RUNS_COLLECTION).document(run_id)
+    snap = run_ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    data = snap.to_dict() or {}
+    highlight_ids = data.get("highlightIds") or []
+
+    if highlight_id not in highlight_ids:
+        highlight_ids.append(highlight_id)
+
+    now = datetime.utcnow()
+    run_ref.update({
+        "highlightIds": highlight_ids,
+        "updatedAt": now,
+    })
+
+    data["highlightIds"] = highlight_ids
+    data["updatedAt"] = now
+
+    return {"success": True, "run": data}
+
+#Invite Link API - We will create a permanent invite token for a run
+#Creates token, stores inside run doc
+@app.post("/runs/{run_id}/invite")
+def generate_invite_link(run_id: str):
+    """Generate an invite token for a private or unlisted run."""
+
+    token = str(uuid4())
+
+    try:
+        doc_ref = firestore_client.collection(RUNS_COLLECTION).document(run_id)
+        doc = doc_ref.get()
+
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        doc_ref.update({"inviteToken": token})
+
+        return {
+            "success": True,
+            "token": token,
+            "joinUrl": f"/runs/invite/{token}"
+        }
+
+    except Exception as e:
+        print("ERROR invite:", e)
+        raise HTTPException(status_code=500, detail="Failed to create invite")
+
+#When a user clicks Join Run! invite link
+@app.get("/runs/invite/{token}")
+def accept_invite(token: str, email: str):
+    """
+    email = user who is accepting the invite
+    """
+    try:
+        # Find run with this invite token
+        query = (
+            firestore_client.collection(RUNS_COLLECTION)
+            .where("inviteToken", "==", token)
+            .limit(1)
+            .stream()
+        )
+
+        run_doc = None
+        run_id = None
+        for doc in query:
+            run_doc = doc.to_dict()
+            run_id = doc.id
+
+        if not run_doc:
+            raise HTTPException(status_code=404, detail="Invalid invite token")
+
+        members = run_doc.get("members", [])
+        if email not in members:
+            members.append(email)
+
+        firestore_client.collection(RUNS_COLLECTION).document(run_id).update({
+            "members": members,
+            "updatedAt": datetime.utcnow()
+        })
+
+        return {"success": True, "runId": run_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("ERROR accept_invite:", e)
+        raise HTTPException(status_code=500, detail="Failed to join run")
+
+#The runs that are public shows up in the 'Join a Run' page - runs set to public visibility
+@app.get("/public-runs")
+def list_public_runs():
+    """Return all PUBLIC runs."""
+    try:
+        query = (
+            firestore_client.collection(RUNS_COLLECTION)
+            .where("visibility", "==", "public")
+            .stream()
+        )
+
+        items = []
+        for doc in query:
+            d = doc.to_dict()
             d["runId"] = doc.id
             items.append(d)
 
         return {"items": items}
 
     except Exception as e:
-        print("ERROR in /runs:", e)
-        raise HTTPException(status_code=500, detail="Failed to list runs")
-
-# def list_runs(ownerEmail: str):
-#     """
-#     List all runs owned by a user.
-#     Later we can extend this to membership, visibility filters, etc.
-#     """
-#     q = (
-#         firestore_client.collection(RUNS_COLLECTION)
-#         .where("ownerEmail", "==", ownerEmail)
-#         .order_by("createdAt", direction=firestore.Query.ASCENDING)
-#     )
-#     runs = []
-#     for doc in q.stream():
-#         data = doc.to_dict() or {}
-#         data["runId"] = doc.id
-#         runs.append(data)
-#     return {"items": runs}
-
-
-@app.post("/runs")
-def create_run(body: dict = Body(...)):
-    """
-    Create a new run. For now:
-    - ownerEmail: the admin / owner
-    - name: run name (e.g. "Friday LA Fitness Run")
-    - visibility: "private" | "public" | "unlisted" (default "private")
-    """
-    owner = body.get("ownerEmail")
-    name = (body.get("name") or "New Run").strip()
-    visibility = (body.get("visibility") or "private").strip()  # "public" later shows on Join a Run
-    max_members = body.get("maxMembers") or 12
-
-    run_id = str(uuid.uuid4())
-    _run_doc(run_id).set(
-        {
-            "runId": run_id,
-            "ownerEmail": owner,
-            "name": name,
-            "visibility": visibility,
-            "maxMembers": max_members,
-            "videoIds": [],
-            "members": [owner] if owner else [],
-            "createdAt": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        }
-    )
-    return {"ok": True, "runId": run_id}
-#11-21-25 Friday 4pm - For my runs page
+        print("ERROR list_public_runs:", e)
+        raise HTTPException(status_code=500, detail="Failed to load public runs")
+#11-22-25 Saturday 12am - For my runs page
 
 @app.get("/healthz")
 def healthz():
