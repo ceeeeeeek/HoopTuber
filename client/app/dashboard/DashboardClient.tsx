@@ -1180,6 +1180,189 @@ useEffect(() => {
                         </span>
                       </div>
 
+                      {/*Open/Delete Buttons*/}
+                      {/*Open/Delete + Move + Assign to Run*/}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <a
+                          href={h.signedUrl || "#"} // prefer signedUrl from FastAPI
+                          target="_blank"
+                          rel="noreferrer"
+                          className={cn(
+                            "inline-flex items-center gap-2 px-3 py-2 rounded-md text-white",
+                            h.signedUrl ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"
+                          )}
+                        >
+                          <Play className="w-4 h-4" />
+                          Open
+                        </a>
+
+                        <button
+                          onClick={() => onDelete(h.jobId)}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 text-red-700 hover:bg-red-100"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </button>
+
+                        {/* Move to Folder button (dropdown menu) — 11-13-25 Thursday Update 2pm */}
+                        <div className="relative">
+                          <button
+                            onClick={() =>
+                              setMoveMenuFor(prev => (prev === h.jobId ? null : h.jobId))
+                            }
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200"
+                          >
+                            <FolderIcon className="w-4 h-4" />
+                            Move
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+
+                          {moveMenuFor === h.jobId && (
+                            <div
+                              ref={menuRef}
+                              className="absolute z-20 right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-2"
+                            >
+                              {folders.length === 0 ? (
+                                <div className="p-2 text-sm text-gray-600">
+                                  No folders yet. Create one below.
+                                </div>
+                              ) : (
+                                <ul className="max-h-60 overflow-auto">
+                                  {folders.map(f => (
+                                    <li key={f.folderId}>
+                                      <button
+                                        className="w-full text-left px-2 py-1 rounded hover:bg-gray-50"
+                                        onClick={async () => {
+                                          await moveVideoToFolder(h.jobId, f.folderId);
+                                          setMoveMenuFor(null);
+                                        }}
+                                      >
+                                        {f.name}
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+
+                              {/* quick create-in-place */}
+                              {creatingForVideo === h.jobId ? (
+                                <div className="mt-2 flex gap-2">
+                                  <input
+                                    value={newFolderName}
+                                    onChange={e => setNewFolderName(e.target.value)}
+                                    placeholder="New folder name"
+                                    className="flex-1 border rounded px-2 py-1 text-sm"
+                                  />
+                                  <button
+                                    onClick={() => setCreatingForVideo(null)}
+                                    className="px-2 py-1 text-sm border rounded"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={() => createFolderAndMove(h.jobId)}
+                                    className="px-2 py-1 text-sm rounded bg-orange-500 text-white hover:bg-orange-600"
+                                  >
+                                    Create
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setCreatingForVideo(h.jobId)}
+                                  className="mt-2 w-full px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+                                >
+                                  + New folder…
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* === ASSIGN TO RUN button (dropdown menu) - 11-18-25 Tuesday Update 10am === */}
+                        <div className="relative">
+                          <button
+                            onClick={() =>
+                              setRunMenuFor(prev => (prev === h.jobId ? null : h.jobId))
+                            }
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-50 text-gray-800 hover:bg-gray-100"
+                          >
+                            <DribbleIcon className="w-4 h-4" />
+                            Assign Run
+                            <ChevronDown className="w-4 h-4" />
+                          </button>
+
+                          {runMenuFor === h.jobId && (
+                          <div
+                            ref={runMenuRef}
+                            className="absolute z-30 right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-2"
+                          >
+                            <p className="text-xs text-gray-500 mb-1">Your Runs</p>
+
+                            {/*show loading / error / runs list */}
+                            {loadingRuns && (
+                              <p className="text-gray-400 text-sm italic px-2 py-1">
+                                Loading runs…
+                              </p>
+                            )}
+
+                            {!loadingRuns && runsError && (
+                              <p className="text-red-500 text-xs px-2 py-1">
+                                {runsError}
+                              </p>
+                            )}
+
+                            {!loadingRuns && !runsError && runs.length === 0 && (
+                              <p className="text-gray-400 text-sm italic px-2 py-1">
+                                No runs yet. Create one below.
+                              </p>
+                            )}
+
+                            {!loadingRuns && !runsError && runs.length > 0 && (
+                              <ul className="max-h-48 overflow-auto mb-2">
+                                {runs.map((run) => (
+                                  <li key={run.runId}>
+                                    <button
+                                      type="button"
+                                      className="w-full text-left px-2 py-1 rounded hover:bg-gray-50 text-sm flex flex-col"
+                                      onClick={() => assignVideoToRun(h.jobId, run.runId)}
+                                    >
+                                      <span className="font-medium text-gray-900">
+                                        {run.name}
+                                      </span>
+                                      <span className="text-[11px] text-gray-500">
+                                        Owned by {run.ownerEmail}
+                                      </span>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+
+                            <div className="border-t my-2" />
+
+                            {/* Inline New Run Form*/}
+                            <div className="flex flex-col gap-2">
+                              <input
+                                type="text"
+                                placeholder="New run name"
+                                value={newRunName}
+                                onChange={(e) => setNewRunName(e.target.value)}
+                                className="w-full px-2 py-1 border rounded-md"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => createRunAndAssign(h.jobId)}
+                                className="px-3 py-1 rounded-md text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                                disabled={!newRunName.trim()}
+                              >
+                                Create &amp; Assign
+                              </button>
+                            </div>
+                          </div>
+                          )}
+                        </div>
+                      </div>
+
                       {/* Assigned to Run(s) summary with expand/collapse */}
                       {(() => {
                         const assignedRuns = runsByHighlightId.get(h.jobId) || [];
