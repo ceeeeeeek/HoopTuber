@@ -7,7 +7,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Play, Upload, Globe2, Plus, Users, Eye, Lock, Trash2, Pencil, ChevronDown, Link as LinkIcon } from "lucide-react";            
 import { cn } from "@/lib/utils";                  
 import Link from "next/link";
-//import { useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import ProfileDropdown from "../app-components/ProfileDropdown";
 
 // 🔁 Dribbling icon – same look as before
@@ -184,8 +184,15 @@ async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
 //11-22-25 Satuday 12am - For my runs page
 //===================== COMPONENT (START) ============================
 // Props come from server wrapper in app/my-runs/page.tsx         
-export default function MyRunsClient({ userEmail }: { userEmail: string }) {
-//export default function MyRunsClient() {
+//export default function MyRunsClient({ userEmail }: { userEmail: string }) {
+export default function MyRunsClient() {
+    const { data: session, status } = useSession();
+    const userEmail = session?.user?.email || "";
+
+    // Flag so we only hit the backend once we know:
+    // 1) auth is ready AND 2) we actually have a logged-in email.
+    const backendReady = status === "authenticated" && !!userEmail;
+
     const [runs, setRuns] = useState<RunsSummary[]>([]);           
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
@@ -220,26 +227,46 @@ export default function MyRunsClient({ userEmail }: { userEmail: string }) {
 
     //real loader for runs
     const loadRuns = useCallback(async () => {
-        if (!userEmail) return;
+        //if (!userEmail) return;
+        //wait until auth is ready and we have an email
+        if (!backendReady) {
+            // optional debug log
+            console.log("MyRuns loadRuns skipped (backend not ready yet)", {
+                status,
+                userEmail,
+            });
+            return;
+        }
+
         try {
-        setLoading(true);
-        setError(null);
-        const items = await apiListRuns(userEmail);
-        setRuns(items);
+            setLoading(true);
+            setError(null);
+
+            const items = await apiListRuns(userEmail);
+            setRuns(items);
+
         } catch (e: any) {
-        console.error("loadRuns error", e);
-        setError(e?.message || "Failed to load runs.");
+            //console.error("loadRuns error", e);
+            console.error("MyRuns apiListRuns error", e);
+            setError(e?.message || "Failed to load runs.");
         setRuns([]);
         } finally {
         setLoading(false);
         }
-    }, [userEmail]);
+    //}, [userEmail]);
+    }, [backendReady, status, userEmail]);
 
     //(load on mount) but now uses loadRuns + member logic
+    // useEffect(() => {
+    //     if (!userEmail) return;
+    //     loadRuns();
+    //   }, [userEmail, loadRuns]);
     useEffect(() => {
-        if (!userEmail) return;
+        //don’t fire until auth is fully ready
+        if (!backendReady) return;
         loadRuns();
-      }, [userEmail, loadRuns]);
+      }, [backendReady, loadRuns]);
+      
 
     //11-22-25 Saturday 12am - For my runs page
 
@@ -410,6 +437,26 @@ export default function MyRunsClient({ userEmail }: { userEmail: string }) {
           setInviteBusyFor(null);
         }
       };
+
+      //Guard the whole main UI - If you want to avoid showing the “Failed to load runs” message while auth is still loading, you can gate the render.
+      if (status === "loading") {
+        return (
+          <div className="min-h-screen flex items-center justify-center">
+            <p className="text-gray-500 text-sm">Loading your runs…</p>
+          </div>
+        );
+      }
+      
+      if (!backendReady) {
+        // Not authenticated: you could redirect, or show a message.
+        // For now just show nothing / a simple message.
+        return (
+          <div className="min-h-screen flex items-center justify-center">
+            <p className="text-gray-500 text-sm">Please sign in to view your runs.</p>
+          </div>
+        );
+      }
+      
 //11-23-25 Sunday 11am - For my runs page
 
 //============================ Actions (END) ============================

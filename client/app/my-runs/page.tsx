@@ -30,5 +30,6 @@ export default async function MyRunsPage() {
     redirect("/login?next=/my-runs");
   }
 
-  return <MyRunsClient userEmail={session.user.email} />;
+  //return <MyRunsClient userEmail={session.user.email} />;
+  return <MyRunsClient />;
 }

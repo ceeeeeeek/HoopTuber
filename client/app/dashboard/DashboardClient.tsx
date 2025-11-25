@@ -207,12 +207,15 @@ async function apiRemoveVideoFromFolder(folderId: string, videoIds: string[]) {
 
 export default function DashboardClient() {
   //auth/session
-  const { data: session } = useSession();
+  //const { data: session } = useSession();
+  const { data: session, status } = useSession(); //include status
   //also grab `status` so we know when the session is ready
   //const { data: session, status } = useSession(); //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
   //const userName = session?.user?.name || ""; //not used but if you plan to show a greeting later (“Welcome back, Chris”), we can re-add it then
   const userEmail = session?.user?.email || "";
   //const userEmail = session?.user?.email ?? "";
+  //Backend is "ready" for this user once they're authenticated and we have an email
+  const backendReady = status === "authenticated" && !!userEmail;
 
   if (typeof window !== "undefined") {
     console.log("Dashboard session", session);
@@ -284,7 +287,9 @@ export default function DashboardClient() {
   //for creating a new run inside dropdown
   const [newRunName, setNewRunName] = useState("");
   //which video card has the "Assign to Run" dropdown open
-  const [runMenuFor, setRunMenuFor] = useState<string | null>(null);   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
+  const [runMenuFor, setRunMenuFor] = useState<string | null>(null);
+  //Which highlight cards have their "Assigned runs" section expanded 
+  const [openRunsMetaIds, setOpenRunsMetaIds] = useState<Set<string>>(new Set());   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
 
   // highlightId -> array of runs where that highlight is assigned
   const [assignedRunsByHighlightId, setAssignedRunsByHighlightId] = useState<
@@ -419,7 +424,7 @@ export default function DashboardClient() {
     }
   }, [userEmail]);
 
-//Derive a map of highlightVideoIds → runs[] and render it.
+//Derive a map of highlightIds → runs[] and render it.
 //Map highlightId -> array of runs that contain it
 const runsByHighlightId = useMemo(() => {
   const map = new Map<string, RunSummary[]>();
@@ -437,41 +442,83 @@ const runsByHighlightId = useMemo(() => {
 
 
 //-----------------------useEffect() Hooks Here (Start)-----------------------
-  //useEffect A -this useEffect only handles highlights + folders for the dropdown menu
-  useEffect(() => {
-    if (!userEmail) return;
+  //useEffect A - this useEffect only handles highlights + folders for the dropdown menu
+  // useEffect(() => {
+  //   if (!userEmail) return;
   
+  //   load();
+  //   loadFolders();
+  //   // loadRunCount(); // if you have it
+  // }, [userEmail, load, loadFolders]);
+  //useEffect A - this useEffect only handles highlights + folders for the dropdown menu
+  useEffect(() => {
+    if (!backendReady) return; // NEW: wait for authenticated user
+  
+    console.log("Dashboard load() called with userEmail =", userEmail); // optional debug
     load();
     loadFolders();
-    // loadRunCount(); // if you have it
-  }, [userEmail, load, loadFolders]);
+  }, [backendReady, load, loadFolders, userEmail]);
 
   //useEffect B - useEffect() to load runs list for Assign Run dropdown - 11-23-25 Sunday 5pm
   //this useEffect only handles loading runs for the Assign-to-Run dropdown menu
+  // useEffect(() => {
+  //   if (!userEmail) return;
+  
+  //   let cancelled = false;
+  
+  //   const loadRunsForDashboard = async () => {
+  //     try {
+  //       setLoadingRuns(true);
+  //       setRunsError(null);
+  //       const items = await apiListRuns(userEmail);
+  
+  //       if (cancelled) return;
+  
+  //       setRuns(items);
+  
+  //       //derive mapping highlightId -> runs
+  //       const map = buildAssignedRunsMap(items);
+  //       setAssignedRunsByHighlightId(map);
+  //     } catch (e: any) {
+  //       console.error("Dashboard apiListRuns error", e);
+  //       if (!cancelled) {
+  //         setRunsError(e?.message || "Failed to load runs.");
+  //         setRuns([]);
+  //         setAssignedRunsByHighlightId({});
+  //       }
+  //     } finally {
+  //       if (!cancelled) {
+  //         setLoadingRuns(false);
+  //       }
+  //     }
+  //   };
+  
+  //   loadRunsForDashboard();
+  
+  //   return () => {
+  //     cancelled = true;
+  //   };
+  // }, [userEmail]);
+  // Load runs for the "Assign Run" dropdown once backend is ready
+  //useEffect B - useEffect() to load runs list for Assign Run dropdown - 11-23-25 Sunday 5pm 
   useEffect(() => {
-    if (!userEmail) return;
-  
+    if (!backendReady) return; 
+
     let cancelled = false;
-  
-    const loadRunsForDashboard = async () => {
+
+    const loadRuns = async () => { // renamed for clarity 
       try {
         setLoadingRuns(true);
         setRunsError(null);
         const items = await apiListRuns(userEmail);
-  
-        if (cancelled) return;
-  
-        setRuns(items);
-  
-        //derive mapping highlightId -> runs
-        const map = buildAssignedRunsMap(items);
-        setAssignedRunsByHighlightId(map);
+        if (!cancelled) {
+          setRuns(items);
+        }
       } catch (e: any) {
         console.error("Dashboard apiListRuns error", e);
         if (!cancelled) {
           setRunsError(e?.message || "Failed to load runs.");
           setRuns([]);
-          setAssignedRunsByHighlightId({});
         }
       } finally {
         if (!cancelled) {
@@ -479,34 +526,59 @@ const runsByHighlightId = useMemo(() => {
         }
       }
     };
-  
-    loadRunsForDashboard();
-  
+
+    loadRuns();
+
     return () => {
       cancelled = true;
     };
-  }, [userEmail]);
+  }, [backendReady, userEmail]); //depend on backendReady
+
   
 
 //useEffect C - useEffect() loads or sets runCount for the stat card - My Runs / Team Groups count for this user
+// useEffect(() => {
+//   if (!userEmail) return;
+
+//   let cancelled = false;
+
+//   (async () => {
+//     try {
+//       const count = await apiGetRunCount(userEmail);
+//       if (!cancelled) setRunCount(count);
+//     } catch {
+//       if (!cancelled) setRunCount(0);
+//     }
+//   })();
+
+//   return () => {
+//     cancelled = true;
+//   };
+// }, [userEmail]);
+//useEffect C - useEffect() loads or sets runCount for the stat card - My Runs / Team Groups count for this user
+// Load My Runs / Team Groups count once backend is ready
 useEffect(() => {
-  if (!userEmail) return;
+  if (!backendReady) return; 
 
   let cancelled = false;
 
   (async () => {
     try {
       const count = await apiGetRunCount(userEmail);
-      if (!cancelled) setRunCount(count);
+      if (!cancelled) {
+        setRunCount(count);
+      }
     } catch {
-      if (!cancelled) setRunCount(0);
+      if (!cancelled) {
+        setRunCount(0); 
+      }
     }
   })();
 
   return () => {
     cancelled = true;
   };
-}, [userEmail]);
+}, [backendReady, userEmail]); //depend on backendReady
 
 //-----------------------useEffect() Hooks Here (End)-----------------------
 
@@ -1036,10 +1108,7 @@ useEffect(() => {
                 {sortedHighlights.map((h) => {  {/*11-08-25 Sunday 2:18pm Update - Use sortedHighlights */}
                   const isEditing = editingId === h.jobId;                 //use jobId
                   const vis = (h.visibility || "private") as FolderVisibility;
-                  // which runs contain this highlightId?
-                  const assignedRuns = runs.filter((run) =>
-                    (run.highlightIds || []).includes(h.jobId)
-                  );
+
 
                   return (
                     // <li key={h.jobId} className="bg-white border rounded-lg p-4 flex flex-col gap-3">
@@ -1111,239 +1180,51 @@ useEffect(() => {
                         </span>
                       </div>
 
-                      {/*Open/Delete Buttons*/}
-                      {/*Open/Delete + Move + Assign to Run*/}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <a
-                          href={h.signedUrl || "#"} // prefer signedUrl from FastAPI
-                          target="_blank"
-                          rel="noreferrer"
-                          className={cn(
-                            "inline-flex items-center gap-2 px-3 py-2 rounded-md text-white",
-                            h.signedUrl ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"
-                          )}
-                        >
-                          <Play className="w-4 h-4" />
-                          Open
-                        </a>
-
-                        <button
-                          onClick={() => onDelete(h.jobId)}
-                          className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 text-red-700 hover:bg-red-100"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete
-                        </button>
-
-                        {/* Move to Folder button (dropdown menu) — 11-13-25 Thursday Update 2pm */}
-                        <div className="relative">
-                          <button
-                            onClick={() =>
-                              setMoveMenuFor(prev => (prev === h.jobId ? null : h.jobId))
-                            }
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200"
-                          >
-                            <FolderIcon className="w-4 h-4" />
-                            Move
-                            <ChevronDown className="w-3 h-3" />
-                          </button>
-
-                          {moveMenuFor === h.jobId && (
-                            <div
-                              ref={menuRef}
-                              className="absolute z-20 right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-2"
-                            >
-                              {folders.length === 0 ? (
-                                <div className="p-2 text-sm text-gray-600">
-                                  No folders yet. Create one below.
-                                </div>
-                              ) : (
-                                <ul className="max-h-60 overflow-auto">
-                                  {folders.map(f => (
-                                    <li key={f.folderId}>
-                                      <button
-                                        className="w-full text-left px-2 py-1 rounded hover:bg-gray-50"
-                                        onClick={async () => {
-                                          await moveVideoToFolder(h.jobId, f.folderId);
-                                          setMoveMenuFor(null);
-                                        }}
-                                      >
-                                        {f.name}
-                                      </button>
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-
-                              {/* quick create-in-place */}
-                              {creatingForVideo === h.jobId ? (
-                                <div className="mt-2 flex gap-2">
-                                  <input
-                                    value={newFolderName}
-                                    onChange={e => setNewFolderName(e.target.value)}
-                                    placeholder="New folder name"
-                                    className="flex-1 border rounded px-2 py-1 text-sm"
-                                  />
-                                  <button
-                                    onClick={() => setCreatingForVideo(null)}
-                                    className="px-2 py-1 text-sm border rounded"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    onClick={() => createFolderAndMove(h.jobId)}
-                                    className="px-2 py-1 text-sm rounded bg-orange-500 text-white hover:bg-orange-600"
-                                  >
-                                    Create
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => setCreatingForVideo(h.jobId)}
-                                  className="mt-2 w-full px-2 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
-                                >
-                                  + New folder…
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* === ASSIGN TO RUN button (dropdown menu) - 11-18-25 Tuesday Update 10am === */}
-                        <div className="relative">
-                          <button
-                            onClick={() =>
-                              setRunMenuFor(prev => (prev === h.jobId ? null : h.jobId))
-                            }
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-50 text-gray-800 hover:bg-gray-100"
-                          >
-                            <DribbleIcon className="w-4 h-4" />
-                            Assign Run
-                            <ChevronDown className="w-4 h-4" />
-                          </button>
-
-                          {runMenuFor === h.jobId && (
-                          <div
-                            ref={runMenuRef}
-                            className="absolute z-30 right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-2"
-                          >
-                            <p className="text-xs text-gray-500 mb-1">Your Runs</p>
-
-                            {/*show loading / error / runs list */}
-                            {loadingRuns && (
-                              <p className="text-gray-400 text-sm italic px-2 py-1">
-                                Loading runs…
-                              </p>
-                            )}
-
-                            {!loadingRuns && runsError && (
-                              <p className="text-red-500 text-xs px-2 py-1">
-                                {runsError}
-                              </p>
-                            )}
-
-                            {!loadingRuns && !runsError && runs.length === 0 && (
-                              <p className="text-gray-400 text-sm italic px-2 py-1">
-                                No runs yet. Create one below.
-                              </p>
-                            )}
-
-                            {!loadingRuns && !runsError && runs.length > 0 && (
-                              <ul className="max-h-48 overflow-auto mb-2">
-                                {runs.map((run) => (
-                                  <li key={run.runId}>
-                                    <button
-                                      type="button"
-                                      className="w-full text-left px-2 py-1 rounded hover:bg-gray-50 text-sm flex flex-col"
-                                      onClick={() => assignVideoToRun(h.jobId, run.runId)}
-                                    >
-                                      <span className="font-medium text-gray-900">
-                                        {run.name}
-                                      </span>
-                                      <span className="text-[11px] text-gray-500">
-                                        Owned by {run.ownerEmail}
-                                      </span>
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-
-                            <div className="border-t my-2" />
-
-                            {/* Inline New Run Form*/}
-                            <div className="flex flex-col gap-2">
-                              <input
-                                type="text"
-                                placeholder="New run name"
-                                value={newRunName}
-                                onChange={(e) => setNewRunName(e.target.value)}
-                                className="w-full px-2 py-1 border rounded-md"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => createRunAndAssign(h.jobId)}
-                                className="px-3 py-1 rounded-md text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-                                disabled={!newRunName.trim()}
-                              >
-                                Create &amp; Assign
-                              </button>
-                            </div>
-                          </div>
-                          )}
-                        </div>
-                      </div>
-                      {/*11-23-25 Sunday 8pm - show which runs this highlight is assigned to */}
-                      {assignedRuns.length > 0 && (
-                        <div className="mt-1 text-xs text-gray-600">
-                          Assigned to{" "}
-                          {assignedRuns.map((run) => (
-                            <span
-                              key={run.runId}
-                              className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 mr-1"
-                            >
-                              <DribbleIcon className="w-3 h-3 text-purple-600" />
-                              <Link
-                                href={`/my-runs?runId=${encodeURIComponent(run.runId)}`}
-                                className="font-medium text-purple-700 hover:underline"
-                              >
-                                {run.name}
-                              </Link>
-                            </span>
-                          ))}
-                        </div>                       
-                      )}
                       {/* Assigned to Run(s) summary with expand/collapse */}
                       {(() => {
-                        const assignedRuns = assignedRunsByHighlightId[h.jobId] || [];
-                        if (assignedRuns.length === 0) return null;
+                        const assignedRuns = runsByHighlightId.get(h.jobId) || [];
 
-                        const isOpen = openAssignedForHighlightId.has(h.jobId);
+                        if (assignedRuns.length === 0) {
+                          return (
+                            <div className="mt-1 text-xs text-gray-500">
+                              Assigned to 0 runs
+                            </div>
+                          );
+                        }
+
+                        const isOpen = openRunsMetaIds.has(h.jobId);
 
                         return (
-                          <div className="mt-2 text-xs text-gray-600">
+                          <div className="mt-2 text-xs text-gray-700">
                             <button
                               type="button"
-                              onClick={() => toggleAssignedOpen(h.jobId)}
-                              className="inline-flex items-center gap-1 text-purple-700 hover:text-purple-900"
+                              className="inline-flex items-center gap-1 text-purple-700 hover:underline"
+                              onClick={() => {
+                                setOpenRunsMetaIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(h.jobId)) {
+                                    next.delete(h.jobId);
+                                  } else {
+                                    next.add(h.jobId);
+                                  }
+                                  return next;
+                                });
+                              }}
                             >
                               {isOpen ? (
-                                <>
-                                  <ChevronUp className="w-3 h-3" />
-                                  Hide assigned runs
-                                </>
+                                <ChevronUp className="w-3 h-3" />
                               ) : (
-                                <>
-                                  <ChevronDown className="w-3 h-3" />
-                                  Assigned to {assignedRuns.length} run
-                                  {assignedRuns.length > 1 ? "s" : ""}
-                                </>
+                                <ChevronDown className="w-3 h-3" />
                               )}
+                              <span>
+                                Assigned to {assignedRuns.length}{" "}
+                                {assignedRuns.length === 1 ? "run" : "runs"}
+                              </span>
                             </button>
 
                             {isOpen && (
                               <div className="mt-1">
-                                {assignedRuns.map(run => (
+                                {assignedRuns.map((run) => (
                                   <span
                                     key={run.runId}
                                     className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 mr-1 mb-1"
