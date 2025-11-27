@@ -41,7 +41,7 @@ def download_from_gcs(gcs_uri: str, dest_path: str):
 def upload_to_gcs(local_path: str, bucket_name: str, dst_key: str) -> str:
     bucket = storage_client.bucket(bucket_name)
     blob   = bucket.blob(dst_key)
-    blob.upload_from_filename(local_path)
+    blob.upload_from_filename(local_path, timeout=600)
     return f"gs://{bucket_name}/{dst_key}"
 
 def make_highlight(in_path: str, out_path: str, gemini_output):

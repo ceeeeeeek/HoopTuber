@@ -66,7 +66,8 @@ app.add_middleware(
     #allow_origins=['http://localhost:3000'],
     allow_origins=['http://localhost:3000',
     "https://www.hooptuber.com",
-    "https://hooptuber.com" 
+    "https://hooptuber.com",
+    "https://app.hooptuber.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],

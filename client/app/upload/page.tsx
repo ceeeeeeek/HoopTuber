@@ -442,7 +442,7 @@ export default function UploadPage() {
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-orange-300 transition-colors">
                     <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold mb-2">{selectedFile ? selectedFile.name : "Choose Basketball Video"}</h3>
-                    <p className="text-gray-600 mb-4">MP4, MOV, AVI - Any size supported</p>
+                    <p className="text-gray-600 mb-4">MP4 - Any size supported</p>
 
                     <input
                       type="file"
@@ -519,6 +519,20 @@ export default function UploadPage() {
                   <p className="text-center text-gray-500 text-sm">
                     {selectedFile?.name}
                   </p>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      if (currentUploadId) {
+                        pollingService.stopPollingJob(currentUploadId);
+                        uploadQueue.errorJob(currentUploadId, 'Cancelled by user');
+                        setUploadState('idle');
+                        setCurrentUploadId(null);
+                      }
+                    }}
+                  >
+                    Cancel Upload
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -546,27 +560,27 @@ export default function UploadPage() {
                       <p className="text-gray-600 mb-4">
                         {uploadResult.fileName} ({(uploadResult.fileSize! / 1024 / 1024).toFixed(2)} MB)
                       </p>
-                      <div className="relative w-full max-w-md mx-auto">
-
-                     
+                      <div className="relative w-full mx-auto">
                       <video
-                ref={videoRef}
-                className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
-                src={downloadUrl}
-               
-                muted // muted to allow autoplay
-                playsInline
-                controls            // controls appear once playing starts
-                onEnded={() => setEnded(true)}
-              />
-
+                      ref={videoRef}
+                      className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
+                      src={downloadUrl}
+                    
+                      muted // muted to allow autoplay
+                      playsInline
+                      controls            // controls appear once playing starts
+                        onEnded={() => setEnded(true)}
+                      />
+                      
                       {uploadResult.shotEvents && uploadResult.shotEvents.length > 0 && (
                         <div className="mt-8 space-y-4">
                           <h3 className="text-lg font-semibold mb-4 flex items-center">
                             <Zap className="w-4 h-4 mr-2 text-orange-500" />
                             Review & Edit Highlights
                           </h3>
-                          <div className="w-full max-w-6xl mx-auto space-y-6"> 
+                          {/* ADJUST WIDTH OF PANELS HERE !!!*/}
+                          <div className="w-full max-w-3xl mx-auto space-y-6"> 
+                            {/* ADJUST WIDTH OF PANELS HERE !!!*/} 
                           {uploadResult.shotEvents.map((shot, idx) => (
                             <HighlightReviewPanel
                               key={idx}

@@ -16,7 +16,7 @@ import ProfileDropdown from "../app-components/ProfileDropdown";
 type Visibility = "public" | "unlisted" | "private";                    
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
-
+const CURR_DOMAIN = process.env.NEXTAUTH_URL || "http://localhost:3000";
 /**
  * Format duration in seconds to a human-readable string
  * - Under 60s: "XXs"
@@ -327,7 +327,7 @@ export default function DashboardClient() {
                       {/*Open/Delete*/}
                       <div className="flex items-center gap-2">
                         <a
-                          href={h.signedUrl || "#"} //prefer signedUrl from FastAPI
+                          href={`/upload/${h.jobId}` || h.signedUrl} //prefer signedUrl from FastAPI
                           target="_blank"
                           rel="noreferrer"
                           className={cn(

@@ -130,10 +130,35 @@ def process_video_and_summarize(file_path):
         return {"ok": False, "error": str(e)}
     
 def convert_timestamp_to_seconds(timestamp):
-    parts = timestamp.split(':')
-    hours, minutes, seconds = map(int, parts)
-    total_seconds = (hours * 3600) + (minutes * 60) + seconds
-    return total_seconds
+    """
+    Convert timestamp to seconds. Handles multiple formats:
+    - HH:MM:SS (e.g., "00:05:30")
+    - MM:SS (e.g., "05:30")
+    - SS (e.g., "30")
+    """
+    try:
+        parts = timestamp.split(':')
+
+        if len(parts) == 3:
+            # HH:MM:SS format
+            hours, minutes, seconds = map(int, parts)
+            total_seconds = (hours * 3600) + (minutes * 60) + seconds
+        elif len(parts) == 2:
+            # MM:SS format (assume hours = 0)
+            minutes, seconds = map(int, parts)
+            total_seconds = (minutes * 60) + seconds
+        elif len(parts) == 1:
+            # SS format (assume hours and minutes = 0)
+            total_seconds = int(parts[0])
+        else:
+            logging.error(f"Invalid timestamp format: {timestamp}")
+            raise ValueError(f"Invalid timestamp format: {timestamp}")
+
+        logging.info(f"Converted timestamp {timestamp} to {total_seconds} seconds")
+        return total_seconds
+    except (ValueError, AttributeError) as e:
+        logging.error(f"Error converting timestamp '{timestamp}': {e}")
+        raise ValueError(f"Could not convert timestamp '{timestamp}' to seconds: {e}")
 
 def timestamp_maker(gem_output):
     logging.info(f"DEBUG @ timestamp_maker: gemini output before process is: {type(gem_output)}")
@@ -156,20 +181,29 @@ def timestamp_maker(gem_output):
                 parsed = json.loads(parsed) # try to parse again if it's a string
         except json.JSONDecodeError as e:
             raise ValueError(f"Gemini output is a str but not valid JSON: {e}")
-    
+
     # Now process the parsed data
     #if isinstance(parsed, list):
     makes_timestamps = [] # ONLY MAKES TIMESTAMPS
 
-    for shot in parsed:
-        if "TimeStamp" in shot and "Outcome" in shot:
-            #if shot["Outcome"].lower() == "make" or shot["Outcome"].lower() == "miss" or shot["Outcome"].lower() == "made" or shot["Outcome"].lower() == "missed": # TESTING ALL TIMESTAMPSs
-            if shot["Outcome"]:
-                # make_timestamps.append(shot["TimeStamp"])
-                test_timestamp = shot["TimeStamp"]
-                timestamp_undefined = convert_timestamp_to_seconds(test_timestamp)
-                print(f"DEBUG for timestamp conversion: converted timestamp: {timestamp_undefined}")
-                makes_timestamps.append(timestamp_undefined)
+    for idx, shot in enumerate(parsed):
+        try:
+            if "TimeStamp" in shot and "Outcome" in shot:
+                #if shot["Outcome"].lower() == "make" or shot["Outcome"].lower() == "miss" or shot["Outcome"].lower() == "made" or shot["Outcome"].lower() == "missed": # TESTING ALL TIMESTAMPSs
+                if shot["Outcome"]:
+                    # make_timestamps.append(shot["TimeStamp"])
+                    test_timestamp = shot["TimeStamp"]
+                    timestamp_undefined = convert_timestamp_to_seconds(test_timestamp)
+                    print(f"DEBUG for timestamp conversion: converted timestamp: {timestamp_undefined}")
+                    makes_timestamps.append(timestamp_undefined)
+        except Exception as e:
+            logging.error(f"Error processing shot at index {idx}: {shot}. Error: {e}")
+            # Continue processing other shots even if one fails
+            continue
+
+    if not makes_timestamps:
+        logging.warning("No valid timestamps extracted from Gemini output")
+
     return makes_timestamps
     #elif isinstance(parsed, dict):
         #raise ValueError("Gemini output is a dict, not a list of shots")

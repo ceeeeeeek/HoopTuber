@@ -89,7 +89,7 @@ export default function HighlightReviewPanel({
   };
 
   return (
-    <div className="border rounded-lg bg-white shadow-sm overflow-hidden w-full max-w-5xl mx-auto">
+    <div className="border rounded-lg bg-white shadow-sm overflow-hidden w-full max-w-7xl mx-auto">
 
       {/* Header */}
       <button
