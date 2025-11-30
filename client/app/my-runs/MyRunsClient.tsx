@@ -64,6 +64,16 @@ export function DribbleIcon({ className }: { className?: string }) {
 const API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
+//11/30/25 Update: Abort-related “NetworkError when attempting to fetch resource” won’t be treated as real failures.
+//Your UI states (highlightsError, folderError, etc.) will only show for real failures, not cancelled requests.
+//Combined with the polling you already wired up, /dashboard will feel much less “glitchy” and should stay in sync as soon as the worker writes the highlight docs.
+//helper so aborted fetches don't show as "real" errors
+function isAbortError(err: unknown): boolean {
+  return (
+    err instanceof DOMException && err.name === "AbortError"
+  ) || (err as any)?.name === "AbortError";
+}
+
 //typed visibility for runs
 type RunVisibility = "public" | "private" | "unlisted";
 
@@ -245,10 +255,15 @@ export default function MyRunsClient() {
             const items = await apiListRuns(userEmail);
             setRuns(items);
 
-        } catch (e: any) {
-            //console.error("loadRuns error", e);
-            console.error("MyRuns apiListRuns error", e);
-            setError(e?.message || "Failed to load runs.");
+          } catch (err: any) {
+            //treat aborted fetches as non-errors
+            if (isAbortError(err)) {
+              console.debug("MyRuns loadRuns aborted, ignoring");
+              return;
+            }
+            //real error handling + state reset
+            console.error("MyRuns apiListRuns error", err);
+            setError(err?.message || "Failed to load runs.");
         setRuns([]);
         } finally {
         setLoading(false);
@@ -261,12 +276,38 @@ export default function MyRunsClient() {
     //     if (!userEmail) return;
     //     loadRuns();
     //   }, [userEmail, loadRuns]);
+    // useEffect(() => {
+    //     //don’t fire until auth is fully ready
+    //     if (!backendReady) return;
+    //     loadRuns();
+    //   }, [backendReady, loadRuns]);
+
+    //11-30-25 Sunday 1:30pm - Added polling useEffect - polling to keep in sync with uploads + assignments
+    //Poll runs so /my-runs updates instantly after uploads or assignments
+    //Single-shot effect – no polling, no twitch
     useEffect(() => {
-        //don’t fire until auth is fully ready
-        if (!backendReady) return;
-        loadRuns();
-      }, [backendReady, loadRuns]);
-      
+      if (!userEmail || !backendReady) return; //guard
+
+      let cancelled = false; 
+
+      const tick = async () => {
+        if (cancelled) return;         
+        try {
+          await loadRuns();             // reuse loader
+        } catch (err) {
+          //ignore aborts, log real errors
+          if (isAbortError(err)) return;
+          console.error("MyRuns load error", err);
+        }
+      };
+
+      //run once whenever deps change (auth becomes ready, userEmail changes)
+      tick();
+
+      return () => {
+        cancelled = true;              
+      };
+    }, [userEmail, backendReady, loadRuns]); //dependency/deps array
 
     //11-22-25 Saturday 12am - For my runs page
 

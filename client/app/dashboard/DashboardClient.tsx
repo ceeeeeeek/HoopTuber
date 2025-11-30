@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation"; //to read ?refresh=...
 import { useSession } from "next-auth/react";                            
 import {
   Play, Upload, UploadIcon, BarChart2, BarChart3, Clock3, Users,
@@ -59,6 +60,16 @@ export type RunSummary = {
 
 const API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+
+//11/30/25 Update: Abort-related “NetworkError when attempting to fetch resource” won’t be treated as real failures.
+//Your UI states (highlightsError, folderError, etc.) will only show for real failures, not cancelled requests.
+//Combined with the polling you already wired up, /dashboard will feel much less “glitchy” and should stay in sync as soon as the worker writes the highlight docs.
+//helper so aborted fetches don't show as "real" errors
+function isAbortError(err: unknown): boolean {
+  return (
+    err instanceof DOMException && err.name === "AbortError"
+  ) || (err as any)?.name === "AbortError";
+}
 
 //11-23-25 Sunday 4pm - Connected to my runs page
 //=== RUNS API HELPERS (START - used only for the dashboard "My Runs/Team Groups" stat) === //
@@ -216,6 +227,9 @@ export default function DashboardClient() {
   //const userEmail = session?.user?.email ?? "";
   //Backend is "ready" for this user once they're authenticated and we have an email
   const backendReady = status === "authenticated" && !!userEmail;
+  // read the `refresh` query param from /dashboard?refresh=<jobId>
+  const searchParams = useSearchParams();             
+  const refreshKey = searchParams?.get("refresh") ?? null;
 
   if (typeof window !== "undefined") {
     console.log("Dashboard session", session);
@@ -378,12 +392,17 @@ export default function DashboardClient() {
         : [];
 
       setFolders(foldersArr);
-    } catch (e: any) {
-      console.error("loadFolders() error", e);
-      setFolderError(e?.message || "Failed to load folders.");
-      setFolders([]);
+    } catch (err: any) { //renamed e for error to err
+      //ignore aborted fetches quietly
+      if (isAbortError(err)) {
+        console.debug("loadFolders() aborted, ignoring"); 
+        return;
+      }
+      console.error("loadFolders() error", err);          
+      setFolderError(err?.message || "Failed to load folders."); 
+      setFolders([]);                                      
     } finally {
-      setFoldersLoading(false);
+      setFoldersLoading(false);                            
     }
   }, [userEmail]);
 
@@ -411,16 +430,21 @@ export default function DashboardClient() {
       const j = await r.json();
       console.log("highlights raw JSON", j);
 
-      // ✅ Your FastAPI returns { items: [...] }
+      //✅ Your FastAPI returns { items: [...] }
       const items = Array.isArray(j?.items) ? (j.items as HighlightItem[]) : [];
 
       setHighlights(items);
-    } catch (e: any) {
-      console.error("load() error", e);
-      setHighlightsError(e?.message || "Failed to load.");
-      setHighlights([]);
+    } catch (err: any) { //renamed e for error to err
+      //ignore aborted fetches quietly
+      if (isAbortError(err)) {
+        console.debug("load() aborted, ignoring"); 
+        return;
+      }
+      console.error("load() error", err);                   
+      setHighlightsError(err?.message || "Failed to load."); 
+      setHighlights([]);                                    
     } finally {
-      setHighlightsLoading(false);
+      setHighlightsLoading(false);                          
     }
   }, [userEmail]);
 
@@ -451,13 +475,53 @@ const runsByHighlightId = useMemo(() => {
   //   // loadRunCount(); // if you have it
   // }, [userEmail, load, loadFolders]);
   //useEffect A - this useEffect only handles highlights + folders for the dropdown menu
-  useEffect(() => {
-    if (!backendReady) return; // NEW: wait for authenticated user
+  // useEffect(() => {
+  //   if (!backendReady) return; //wait for authenticated user
   
-    console.log("Dashboard load() called with userEmail =", userEmail); // optional debug
-    load();
-    loadFolders();
-  }, [backendReady, load, loadFolders, userEmail]);
+  //   console.log("Dashboard load() called with userEmail =", userEmail); // optional debug
+  //   load();
+  //   loadFolders();
+  // }, [backendReady, load, loadFolders, userEmail]);
+  //11-30-25 Sunday 1:30pm Update
+  //11-30-25 Sunday 1:30pm Update
+  // NEW: make dashboard loading event-driven instead of polling every 5s
+  useEffect(() => {
+    if (!backendReady || !userEmail) return; 
+
+    let cancelled = false; 
+
+    const tick = async () => { 
+      if (cancelled) return;   
+      try {
+        await load();          //loads highlights
+        await loadFolders();   //loads folders
+      } catch (err) {
+        //still ignore aborts, but no polling-interval logs
+        if (isAbortError(err)) return;
+        console.error("Dashboard load error", err); //message text
+      }
+    };
+
+    //single immediate load whenever deps change
+    tick();
+
+    return () => {
+      cancelled = true; 
+    };
+  }, [backendReady, userEmail, load, loadFolders, refreshKey]); //depencdencies/deps array, incl. refreshKey
+
+  //11-30-25 Sunday 1:30pm Update - Fix to the “Loading highlights…” under Highlight Videos gallery in dashboard page: 
+  //added refreshKey to dependancy array so that When the worker finishes and your upload page hits the Complete state, you now have a unique jobId.
+  //Clicking Show in Dashboard sends the user to /dashboard?refresh=<jobId>.
+  //On the dashboard:
+  //useSearchParams() reads that refresh value into refreshKey.
+  //The polling useEffect depends on refreshKey.
+  //If you arrive from /upload with a different refresh value than last time, React re-runs this effect:
+  //It calls tick() immediately (no wait).
+  //It starts a fresh 5-second polling interval.
+  //So every time a new job finishes and you go “Show in Dashboard”, the dashboard does an instant re-fetch of highlights + folders, instead of waiting until the next poll tick or getting stuck showing stale “Loading highlights…”.
+  //Ultimately, this should make /dashboard feel much more instantaneous and in-sync with your worker as soon as the highlight docs are written
+  
 
   //useEffect B - useEffect() to load runs list for Assign Run dropdown - 11-23-25 Sunday 5pm
   //this useEffect only handles loading runs for the Assign-to-Run dropdown menu
@@ -514,15 +578,20 @@ const runsByHighlightId = useMemo(() => {
         if (!cancelled) {
           setRuns(items);
         }
-      } catch (e: any) {
-        console.error("Dashboard apiListRuns error", e);
+      } catch (err: any) { //renamed e for error to err
+        //ignore aborted fetches quietly
+        if (isAbortError(err)) {
+          console.debug("Dashboard apiListRuns aborted, ignoring"); 
+          return;
+        }
+        console.error("Dashboard apiListRuns error", err);         
         if (!cancelled) {
-          setRunsError(e?.message || "Failed to load runs.");
-          setRuns([]);
+          setRunsError(err?.message || "Failed to load runs.");     
+          setRuns([]);                                              
         }
       } finally {
         if (!cancelled) {
-          setLoadingRuns(false);
+          setLoadingRuns(false);                                    
         }
       }
     };
@@ -532,7 +601,7 @@ const runsByHighlightId = useMemo(() => {
     return () => {
       cancelled = true;
     };
-  }, [backendReady, userEmail]); //depend on backendReady
+  }, [backendReady, userEmail]);
 
   
 
@@ -568,9 +637,14 @@ useEffect(() => {
       if (!cancelled) {
         setRunCount(count);
       }
-    } catch {
+    } catch (err: any) { //renamed to err
+      //ignore aborted fetches quietly
+      if (isAbortError(err)) {
+        console.debug("apiGetRunCount aborted, ignoring"); 
+        return;
+      }
       if (!cancelled) {
-        setRunCount(0); 
+        setRunCount(0);                                  
       }
     }
   })();

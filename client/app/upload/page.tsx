@@ -470,11 +470,25 @@ export default function UploadPage() {
                           </Button>
                         )}
                         {/*Show in Dashboard Button */}
-                        <Link href="/dashboard">
-                          <Button variant="secondary" className="mt-2">
-                            Show in Dashboard
-                          </Button>
-                        </Link>
+                        {/*11/30-25 Update - When we know the jobId, include it as a `refresh` query param
+                            so /dashboard?refresh=<jobId> is different for every completed upload 
+                            -Each finished upload has a unique jobId.
+                            -Clicking Show in Dashboard now goes to /dashboard?refresh=<that jobId>.
+                            -Next.js treats /dashboard?refresh=a and /dashboard?refresh=b as different route states, which we’ll use in the dashboard effect. */}
+                        {jobId ? (
+                          <Link href={`/dashboard?refresh=${encodeURIComponent(jobId)}`}>
+                            <Button variant="secondary" className="mt-2">
+                              Show in Dashboard
+                            </Button>
+                          </Link>
+                        ) : (
+                          //fallback if, for some reason, we don't have a jobId
+                          <Link href="/dashboard">
+                            <Button variant="secondary" className="mt-2">
+                              Show in Dashboard
+                            </Button>
+                          </Link>
+                        )}
                       </div>
                     </div>
 
