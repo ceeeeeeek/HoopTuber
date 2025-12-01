@@ -1,4 +1,4 @@
-//client/app/dashboard/DashboardClient.tsx — Thursday 11-13-25 Version 11am
+//client/app/dashboard/DashboardClient.tsx — Sunday 11-30-25 Version 6:30pm
 //now highlights-only and pointed at FastAPI
 
 "use client";
@@ -35,7 +35,7 @@ type HighlightItem = {
 };
 
 //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
-// folder shape
+//folder shape
 type HighlightFolder = {
   folderId: string;
   name: string;
@@ -218,16 +218,14 @@ async function apiRemoveVideoFromFolder(folderId: string, videoIds: string[]) {
 
 export default function DashboardClient() {
   //auth/session
-  //const { data: session } = useSession();
-  const { data: session, status } = useSession(); //include status
-  //also grab `status` so we know when the session is ready
+  const { data: session, status } = useSession(); //include status; also grab `status` so we know when the session is ready
   //const { data: session, status } = useSession(); //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
   //const userName = session?.user?.name || ""; //not used but if you plan to show a greeting later (“Welcome back, Chris”), we can re-add it then
   const userEmail = session?.user?.email || "";
   //const userEmail = session?.user?.email ?? "";
   //Backend is "ready" for this user once they're authenticated and we have an email
   const backendReady = status === "authenticated" && !!userEmail;
-  // read the `refresh` query param from /dashboard?refresh=<jobId>
+  //read the `refresh` query param from /dashboard?refresh=<jobId>
   const searchParams = useSearchParams();             
   const refreshKey = searchParams?.get("refresh") ?? null;
 
@@ -236,11 +234,15 @@ export default function DashboardClient() {
     console.log("Dashboard userEmail", userEmail);
   }
 
+  //useState calls begin here
   //highlights state (but now typed for FastAPI items)
   const [highlights, setHighlights] = useState<HighlightItem[]>([]);
   //const [loading, setHighlightsLoading] = useState(true);
   const [highlightsLoading, setHighlightsLoading] = useState(false);
   const [highlightsError, setHighlightsError] = useState<string | null>(null);
+
+  //Track which highlight card has its inline player open
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
   //rename state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -248,9 +250,10 @@ export default function DashboardClient() {
 
   //little help accordion
   const [helpOpen, setHelpOpen] = useState(false);
+  //useState calls end here
 
   //11-08-25 Saturday 2:18pm Update - Added Filter Button to Dashboard + New sorting/filtering state and UI hooks for dashboard page
-  // ===Filter state===
+  //===Filter state===
   type SortField = "createdAt" | "visibility" | "alphabetical" | null;    
   type SortDirection = "asc" | "desc";                                    
 
@@ -289,7 +292,6 @@ export default function DashboardClient() {
   const [creatingForVideo, setCreatingForVideo] = useState<string | null>(null); //inline "new folder" mini form
   const [newFolderName, setNewFolderName] = useState("");                 //input model for mini form
 
-
   //separate ref for the Assign-to-Run dropdown
   const runMenuRef = useRef<HTMLDivElement | null>(null); //ref for "Assign-to-Run" dropdown menu -   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
 
@@ -305,12 +307,12 @@ export default function DashboardClient() {
   //Which highlight cards have their "Assigned runs" section expanded 
   const [openRunsMetaIds, setOpenRunsMetaIds] = useState<Set<string>>(new Set());   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
 
-  // highlightId -> array of runs where that highlight is assigned
+  //highlightId -> array of runs where that highlight is assigned
   const [assignedRunsByHighlightId, setAssignedRunsByHighlightId] = useState<
     Record<string, RunSummary[]>
   >({});
 
-  // expand/collapse for the “Assigned to …” section per highlight card
+  //expand/collapse for the “Assigned to …” section per highlight card
   const [openAssignedForHighlightId, setOpenAssignedForHighlightId] = useState<
   Set<string>
   >(new Set());
@@ -386,7 +388,7 @@ export default function DashboardClient() {
       const j = await apiListFolders(userEmail);
       console.log("folders raw JSON", j);
 
-      // ✅ FastAPI returns { items: [...] } here too
+      //FastAPI returns { items: [...] } here too
       const foldersArr = Array.isArray(j?.items)
         ? (j.items as HighlightFolder[])
         : [];
@@ -407,7 +409,7 @@ export default function DashboardClient() {
   }, [userEmail]);
 
 
-  // =====Fetch from FastAPI instead of /api/highlightVideos =====
+  //=====Fetch from FastAPI instead of /api/highlightVideos =====
   //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
   const load = useCallback(async () => {
     if (!userEmail) return;
@@ -467,24 +469,8 @@ const runsByHighlightId = useMemo(() => {
 
 //-----------------------useEffect() Hooks Here (Start)-----------------------
   //useEffect A - this useEffect only handles highlights + folders for the dropdown menu
-  // useEffect(() => {
-  //   if (!userEmail) return;
-  
-  //   load();
-  //   loadFolders();
-  //   // loadRunCount(); // if you have it
-  // }, [userEmail, load, loadFolders]);
-  //useEffect A - this useEffect only handles highlights + folders for the dropdown menu
-  // useEffect(() => {
-  //   if (!backendReady) return; //wait for authenticated user
-  
-  //   console.log("Dashboard load() called with userEmail =", userEmail); // optional debug
-  //   load();
-  //   loadFolders();
-  // }, [backendReady, load, loadFolders, userEmail]);
   //11-30-25 Sunday 1:30pm Update
-  //11-30-25 Sunday 1:30pm Update
-  // NEW: make dashboard loading event-driven instead of polling every 5s
+  //make dashboard loading event-driven instead of polling every 5s
   useEffect(() => {
     if (!backendReady || !userEmail) return; 
 
@@ -509,9 +495,8 @@ const runsByHighlightId = useMemo(() => {
       cancelled = true; 
     };
   }, [backendReady, userEmail, load, loadFolders, refreshKey]); //depencdencies/deps array, incl. refreshKey
-
   //11-30-25 Sunday 1:30pm Update - Fix to the “Loading highlights…” under Highlight Videos gallery in dashboard page: 
-  //added refreshKey to dependancy array so that When the worker finishes and your upload page hits the Complete state, you now have a unique jobId.
+  //added refreshKey to useEffect A's dependancy array so that when the worker finishes and your upload page hits the Complete state, you now have a unique jobId.
   //Clicking Show in Dashboard sends the user to /dashboard?refresh=<jobId>.
   //On the dashboard:
   //useSearchParams() reads that refresh value into refreshKey.
@@ -522,47 +507,8 @@ const runsByHighlightId = useMemo(() => {
   //So every time a new job finishes and you go “Show in Dashboard”, the dashboard does an instant re-fetch of highlights + folders, instead of waiting until the next poll tick or getting stuck showing stale “Loading highlights…”.
   //Ultimately, this should make /dashboard feel much more instantaneous and in-sync with your worker as soon as the highlight docs are written
   
-
   //useEffect B - useEffect() to load runs list for Assign Run dropdown - 11-23-25 Sunday 5pm
   //this useEffect only handles loading runs for the Assign-to-Run dropdown menu
-  // useEffect(() => {
-  //   if (!userEmail) return;
-  
-  //   let cancelled = false;
-  
-  //   const loadRunsForDashboard = async () => {
-  //     try {
-  //       setLoadingRuns(true);
-  //       setRunsError(null);
-  //       const items = await apiListRuns(userEmail);
-  
-  //       if (cancelled) return;
-  
-  //       setRuns(items);
-  
-  //       //derive mapping highlightId -> runs
-  //       const map = buildAssignedRunsMap(items);
-  //       setAssignedRunsByHighlightId(map);
-  //     } catch (e: any) {
-  //       console.error("Dashboard apiListRuns error", e);
-  //       if (!cancelled) {
-  //         setRunsError(e?.message || "Failed to load runs.");
-  //         setRuns([]);
-  //         setAssignedRunsByHighlightId({});
-  //       }
-  //     } finally {
-  //       if (!cancelled) {
-  //         setLoadingRuns(false);
-  //       }
-  //     }
-  //   };
-  
-  //   loadRunsForDashboard();
-  
-  //   return () => {
-  //     cancelled = true;
-  //   };
-  // }, [userEmail]);
   // Load runs for the "Assign Run" dropdown once backend is ready
   //useEffect B - useEffect() to load runs list for Assign Run dropdown - 11-23-25 Sunday 5pm 
   useEffect(() => {
@@ -604,28 +550,8 @@ const runsByHighlightId = useMemo(() => {
   }, [backendReady, userEmail]);
 
   
-
 //useEffect C - useEffect() loads or sets runCount for the stat card - My Runs / Team Groups count for this user
-// useEffect(() => {
-//   if (!userEmail) return;
-
-//   let cancelled = false;
-
-//   (async () => {
-//     try {
-//       const count = await apiGetRunCount(userEmail);
-//       if (!cancelled) setRunCount(count);
-//     } catch {
-//       if (!cancelled) setRunCount(0);
-//     }
-//   })();
-
-//   return () => {
-//     cancelled = true;
-//   };
-// }, [userEmail]);
-//useEffect C - useEffect() loads or sets runCount for the stat card - My Runs / Team Groups count for this user
-// Load My Runs / Team Groups count once backend is ready
+//Load My Runs / Team Groups count once backend is ready
 useEffect(() => {
   if (!backendReady) return; 
 
@@ -653,11 +579,10 @@ useEffect(() => {
     cancelled = true;
   };
 }, [backendReady, userEmail]); //depend on backendReady
-
 //-----------------------useEffect() Hooks Here (End)-----------------------
 
   //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
-  //(CHANGED source): derive stats from FastAPI items
+  //derive stats from FastAPI items
   const stats = useMemo(() => {
     const count = highlights.length;
     const totalSeconds = highlights.reduce((acc, h) => acc + (h.durationSeconds || 0), 0);
@@ -748,7 +673,6 @@ useEffect(() => {
       const r = await fetch(`${API_BASE}/highlights/${jobId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      //body: JSON.stringify(body),
       body: JSON.stringify({ ownerEmail: userEmail, ...body }),  
     });
     if (!r.ok) {
@@ -768,7 +692,7 @@ useEffect(() => {
     const nextIds = Array.from(new Set([...(folder.videoIds || []), jobId]));
     await apiPatchFolder(folderId, { videoIds: nextIds });
 
-    // refresh local state
+    //refresh local state
     setFolders(prev =>
       prev.map(f => (f.folderId === folderId ? { ...f, videoIds: nextIds } : f))
     );
@@ -783,7 +707,7 @@ useEffect(() => {
       const nextIds = (folder.videoIds || []).filter(id => id !== jobId);
       await apiRemoveVideoFromFolder(folderId, nextIds);
 
-      // refresh local state
+      //refresh local state
       setFolders(prev =>
         prev.map(f => (f.folderId === folderId ? { ...f, videoIds: nextIds } : f))
       );
@@ -802,7 +726,7 @@ useEffect(() => {
     setMoveMenuFor(null);
   }, [userEmail, newFolderName, loadFolders, moveVideoToFolder]);
 
-  // Drag polish (visual hints only)
+  //Drag polish (visual hints only) - to drag videos into folders (11/30/25 Sunday - WILL UPDATE MORE LATER)
     const onDragStartVideo = useCallback((e: React.DragEvent, jobId: string) => {
       e.dataTransfer.setData("text/hooptuber-job-id", jobId);
       e.dataTransfer.effectAllowed = "copyMove";
@@ -852,7 +776,7 @@ useEffect(() => {
     const newRun = await apiCreateRun(userEmail, newRunName.trim());
     setNewRunName("");
   
-    // First, add the new run locally with this highlightId
+    //First, add the new run locally with this highlightId
     setRuns(prev => {
       const updatedRun: RunSummary = {
         ...newRun,
@@ -863,7 +787,7 @@ useEffect(() => {
       return next;
     });
   
-    // Then actually assign in backend (idempotent because we already added in local state above)
+    //Then actually assign in backend (idempotent because we already added in local state above)
     await apiAssignToRun(newRun.runId, jobId);
   
     setRunMenuFor(null);
@@ -930,7 +854,7 @@ useEffect(() => {
     );
   };
 
-  //====================== UI (same look/feel) ======================
+  //====================== RENDER UI (START) ======================
   return (
     <div className="min-h-screen bg-gray-50">
       {/*Header*/}
@@ -959,7 +883,7 @@ useEffect(() => {
         <h1 className="text-3xl font-bold text-gray-900">Gallery for Your Basketball Videos</h1>
         <p className="text-gray-600 mt-2">Manage your uploaded videos and generated highlights</p>
 
-        {/* Stats (CHANGED data source) */}
+        {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
           <div className="p-4 bg-white rounded-lg border">
             <div className="text-3xl font-bold">{stats.videosUploaded}</div>
@@ -1108,7 +1032,7 @@ useEffect(() => {
                   <button
                     type="button"
                     onClick={() => {
-                      // Clear: remove sorting entirely
+                      //Clear: remove sorting entirely
                       setAppliedField(null);
                       setAppliedDirection("asc");
                       setPendingField(null);
@@ -1123,7 +1047,7 @@ useEffect(() => {
                     <button
                       type="button"
                       onClick={() => {
-                        // Cancel: discard pending changes
+                        //Cancel: discard pending changes
                         setPendingField(appliedField);
                         setPendingDirection(appliedDirection);
                         closeFilter();
@@ -1177,7 +1101,6 @@ useEffect(() => {
 
             {!highlightsLoading && !highlightsError && highlights.length > 0 && (
               <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-4"> {/*for highlight video boxes */}
-              {/*<ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"> */}
                 {/*{highlights.map((h) => {*/}
                 {sortedHighlights.map((h) => {  {/*11-08-25 Sunday 2:18pm Update - Use sortedHighlights */}
                   const isEditing = editingId === h.jobId;                 //use jobId
@@ -1185,11 +1108,10 @@ useEffect(() => {
 
 
                   return (
-                    // <li key={h.jobId} className="bg-white border rounded-lg p-4 flex flex-col gap-3">
                     <li
                       key={h.jobId}
                       className="bg-white border rounded-lg p-4 flex flex-col gap-3"
-                      draggable //allow drag
+                      draggable //allow drag functionality to drag item
                       onDragStart={(e) => onDragStartVideo(e, h.jobId)} //drag start handler
                     > {/*11-13-25 Thursday Update 2pm*/}
                       {/* Title/rename*/}
@@ -1257,7 +1179,27 @@ useEffect(() => {
                       {/*Open/Delete Buttons*/}
                       {/*Open/Delete + Move + Assign to Run*/}
                       <div className="flex flex-wrap items-center gap-2">
+                        {/* Open button: left-click expands inline player, right-click can open /video/[jobId] 
+                        - Even though we preventDefault on onClick, the browser context menu still uses the href. 
+                        So “Open link in new tab” / middle-click will go to /video/[jobId], but a normal left click triggers the inline toggle. */}
                         <a
+                          href={`/video/${encodeURIComponent(h.jobId)}`} //link to dedicated video page
+                          onClick={(e) => {
+                            //intercept normal left-click to toggle inline player instead of navigation
+                            e.preventDefault();
+                            setExpandedJobId((prev) => (prev === h.jobId ? null : h.jobId));
+                          }}
+                          //still styled like a primary action button
+                          className={cn(
+                            "inline-flex items-center gap-2 px-3 py-2 rounded-md text-white",
+                            h.signedUrl ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"
+                          )}
+                        >
+                          <Play className="w-4 h-4" />
+                          Open
+                        </a>
+
+                        {/* <a
                           href={h.signedUrl || "#"} // prefer signedUrl from FastAPI
                           target="_blank"
                           rel="noreferrer"
@@ -1268,7 +1210,7 @@ useEffect(() => {
                         >
                           <Play className="w-4 h-4" />
                           Open
-                        </a>
+                        </a> */}
 
                         <button
                           onClick={() => onDelete(h.jobId)}
@@ -1352,7 +1294,7 @@ useEffect(() => {
                           )}
                         </div>
 
-                        {/* === ASSIGN TO RUN button (dropdown menu) - 11-18-25 Tuesday Update 10am === */}
+                        {/*=== ASSIGN TO RUN button (dropdown menu) - 11-18-25 Tuesday Update 10am === */}
                         <div className="relative">
                           <button
                             onClick={() =>
@@ -1437,7 +1379,23 @@ useEffect(() => {
                         </div>
                       </div>
 
-                      {/* Assigned to Run(s) summary with expand/collapse */}
+                      {/*12-01-25 10am Update - inline video player when this card is expanded on Dashboard page */}
+                      {expandedJobId === h.jobId && h.signedUrl && (
+                        <div className="mt-3">
+                          <div className="w-full bg-black rounded-lg overflow-hidden">
+                            <video
+                              //basic YouTube-style layout: 16:9, black letterbox, native controls
+                              className="w-full aspect-video"
+                              src={h.signedUrl}
+                              controls
+                              //optional: start playing immediately when expanded
+                              //autoPlay
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/*Assigned to Run(s) summary with expand/collapse */}
                       {(() => {
                         const assignedRuns = runsByHighlightId.get(h.jobId) || [];
 
@@ -1543,10 +1501,9 @@ useEffect(() => {
               <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {folders.map((f) => {
                   const isEditing = editingFolderId === f.folderId;
-                  //const [open, setOpen] = useState(true); // per-folder expand (small trick)
                   const isOpen = openFolderIds.has(f.folderId);  
 
-                  // resolve video objects for this folder
+                  //resolve video objects for this folder
                   const videosInFolder = (f.videoIds || [])
                     .map(id => highlights.find(h => h.jobId === id))
                     .filter(Boolean) as HighlightItem[];
@@ -1641,10 +1598,6 @@ useEffect(() => {
                           ) : (
                             <ul className="space-y-2">
                               {videosInFolder.map(v => (
-                                // <li key={v.jobId} className="text-sm text-gray-800 flex items-center gap-2">
-                                //   <Play className="w-3 h-3" />
-                                //   {v.title || v.originalFileName || v.jobId}
-                                // </li>
                                 <li 
                                   key={v.jobId} 
                                   className="text-sm text-gray-800 flex items-center justify-between gap-2"
@@ -1690,9 +1643,10 @@ useEffect(() => {
             )}
           </div>
         </section>
-        {/* =================== END Highlight Folders=================== */}
+        {/*=================== END Highlight Folders=================== */}
         {/*11-13-25 Thursday Update 2pm*/}
       </main>
     </div>
   );
 }
+//====================== RENDER UI (END) ======================

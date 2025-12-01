@@ -1,6 +1,5 @@
-//client/app/my-runs/MyRunsClient.tsx - 11-19-25 Wednesday Version 3pm 
+//client/app/my-runs/MyRunsClient.tsx - Sunday 11-30-25 Version 6:30pm
 
-//comment for version / wiring
 "use client"; 
 
 import React, { useState, useEffect, useCallback, useMemo } from "react"; 
@@ -10,8 +9,8 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import ProfileDropdown from "../app-components/ProfileDropdown";
 
-// 🔁 Dribbling icon – same look as before
-// (copied from your previous MyRunsClient)          
+//Dribbling icon
+//(copied from your previous MyRunsClient)          
 export function DribbleIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -178,7 +177,7 @@ async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
     }
   
     const data = await r.json();
-    // backend should return { inviteUrl: "https://..." }
+    // backend should return {inviteUrl: "https://..." }
     if (typeof data.inviteUrl === "string") {
       return data.inviteUrl;
     }
@@ -193,14 +192,14 @@ async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
 
 //11-22-25 Satuday 12am - For my runs page
 //===================== COMPONENT (START) ============================
-// Props come from server wrapper in app/my-runs/page.tsx         
+//Props come from server wrapper in app/my-runs/page.tsx         
 //export default function MyRunsClient({ userEmail }: { userEmail: string }) {
 export default function MyRunsClient() {
     const { data: session, status } = useSession();
     const userEmail = session?.user?.email || "";
 
-    // Flag so we only hit the backend once we know:
-    // 1) auth is ready AND 2) we actually have a logged-in email.
+    //Flag so we only hit the backend once we know:
+    //1) auth is ready AND 2) we actually have a logged-in email.
     const backendReady = status === "authenticated" && !!userEmail;
 
     const [runs, setRuns] = useState<RunsSummary[]>([]);           
@@ -268,19 +267,7 @@ export default function MyRunsClient() {
         } finally {
         setLoading(false);
         }
-    //}, [userEmail]);
     }, [backendReady, status, userEmail]);
-
-    //(load on mount) but now uses loadRuns + member logic
-    // useEffect(() => {
-    //     if (!userEmail) return;
-    //     loadRuns();
-    //   }, [userEmail, loadRuns]);
-    // useEffect(() => {
-    //     //don’t fire until auth is fully ready
-    //     if (!backendReady) return;
-    //     loadRuns();
-    //   }, [backendReady, loadRuns]);
 
     //11-30-25 Sunday 1:30pm - Added polling useEffect - polling to keep in sync with uploads + assignments
     //Poll runs so /my-runs updates instantly after uploads or assignments
@@ -293,7 +280,7 @@ export default function MyRunsClient() {
       const tick = async () => {
         if (cancelled) return;         
         try {
-          await loadRuns();             // reuse loader
+          await loadRuns();             //reuse loader
         } catch (err) {
           //ignore aborts, log real errors
           if (isAbortError(err)) return;
@@ -309,86 +296,7 @@ export default function MyRunsClient() {
       };
     }, [userEmail, backendReady, loadRuns]); //dependency/deps array
 
-    //11-22-25 Saturday 12am - For my runs page
-
-    //load runs from FastAPI using ownerEmail
-    // useEffect(() => {
-    //     if (!userEmail) return;
-
-    //     let cancelled = false;
-
-    //     (async () => {
-    //     try {
-    //         setLoading(true);
-    //         setError(null);
-    //         const items = await apiListRuns(userEmail);
-    //         if (!cancelled) setRuns(items);
-    //     } catch (e: any) {
-    //         if (!cancelled) setError(e?.message || "Failed to load runs");
-    //     } finally {
-    //         if (!cancelled) setLoading(false);
-    //     }
-    //     })();
-
-    //     return () => {
-    //     cancelled = true;
-    //     };
-    // }, [userEmail]);
-
-    // // simple guard (shouldn’t usually hit because page.tsx already checks)
-    // if (!userEmail) {
-    //     return (
-    //     <main className="min-h-screen bg-slate-50">
-    //         <div className="max-w-6xl mx-auto px-4 py-10 text-gray-600">
-    //         Missing user email. Please sign in again.
-    //         </div>
-    //     </main>
-    //     );
-    // }
-//===================== COMPONENT (END) ============================
-
-//============================ Actions (START) ============================
-//11-22-25 Saturday 12am - For my runs page
-    // const handleCreateRun = async () => {
-    //     if (!userEmail) {
-    //     alert("You need to be logged in to create a run.");
-    //     return;
-    //     }
-    
-    //     const name = window.prompt("Name your run", "Wednesday Run");
-    //     if (!name) return; // cancelled or empty
-    
-    //     try {
-    //     // optional: you can show a subtle loading state if you want
-    //     const res = await fetch(`${API_BASE}/runs`, {
-    //         method: "POST",
-    //         headers: { "Content-Type": "application/json" },
-    //         body: JSON.stringify({
-    //         name,
-    //         ownerEmail: userEmail,
-    //         // visibility optional here; backend defaults to "private"
-    //         }),
-    //     });
-    
-    //     if (!res.ok) {
-    //         console.error("Failed to create run", await res.text());
-    //         alert("Failed to create run. Please try again.");
-    //         return;
-    //     }
-    
-    //     const data = await res.json();
-    //     const newRun = data.run;
-    
-    //     // Prepend new run into current list
-    //     setRuns((prev) => [newRun, ...(prev || [])]);
-    //     } catch (err) {
-    //     console.error("Error creating run", err);
-    //     alert("Network error while creating run.");
-    //     }
-    // };
-//11-22-25 Saturday 12am - For my runs page
-
-//11-23-25 Sunday 11am - For my runs page
+    //11-23-25 Sunday 11am - For my runs page
     const handleCreateRun = async () => {
         if (!userEmail) return;
         const name = prompt("Name your run:");
@@ -497,13 +405,11 @@ export default function MyRunsClient() {
           </div>
         );
       }
-      
 //11-23-25 Sunday 11am - For my runs page
 
 //============================ Actions (END) ============================
-//11-22-25 Saturday 12am - For my runs page
 
-//============================ RENDER (START)============================
+//============================ RENDER UI (START)============================
 return (
     <div className="min-h-screen bg-gray-50">
       {/* Header (same as Dashboard page) –UI */}
@@ -864,4 +770,4 @@ return (
     </div>
   );
 }
-//============================ RENDER (END)============================
+//============================ RENDER UI (END)============================
