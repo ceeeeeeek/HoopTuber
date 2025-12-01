@@ -15,10 +15,16 @@ from google.cloud import storage
 from datetime import timedelta
 from datetime import datetime
 from urllib.parse import urlparse
-
 #typing + datetime helpers for pagination tokens
 from typing import Dict, Any                                           
-from google.cloud.firestore import Query                                
+#from google.cloud.firestore import Query  #Don't need this import directly because I = already use firestore.Query.DESCENDING
+
+#12-01-25 Monday 11am Update - Adding Pydantic model
+#payload for creating a video comment
+class VideoCommentCreate(BaseModel):
+    highlightId: str
+    authorEmail: str
+    text: str
 
 #load_dotenv()
 #load env file
@@ -46,6 +52,8 @@ SERVICE_ACCOUNT = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 FOLDER_COLLECTION = os.getenv("FIRESTORE_FOLDER_COLLECTION", "highlightFolders")
 #RUNS_COLLECTION = "runs" #11-21-25 Friday 4pm - For my runs page
 RUNS_COLLECTION = os.getenv("FIRESTORE_RUNS_COLLECTION", "runs") #11-22-25 Saturday 12pm - For my runs page
+#top-level collection for per-video comments
+COMMENTS_COLLECTION = os.getenv("FIRESTORE_COMMENTS_COLLECTION", "videoComments")
 
 #clients
 storage_client   = storage.Client(project=PROJECT_ID)
@@ -480,7 +488,8 @@ def list_highlights(
             "ownerEmail": data.get("ownerEmail"),
             "userId": data.get("userId"),
             "status": data.get("status"),
-            "durationSeconds": duration_sec, #11-08-25 Saturday 11:42am - For 'Total Footage' stat
+            "durationSeconds": duration_sec, #11-08-25 Saturday 11:42am Update - For 'Total Footage' stat
+            "description": data.get("description"),  #12-01-25 Monday 11am Update - surface description            #12-01-25 Monday 11am Update 
         }
         if signed and data.get("outputGcsUri"):
             try:
@@ -518,6 +527,11 @@ def update_highlight(job_id: str, body: dict = Body(...)):
         updates["visibility"] = visibility 
         updates["isPublic"] = visibility == "public"  #optional convenience flag
 
+    #12-01-25 Monday 11am Update - allow updating description from video page
+    description = body.get("description")
+    if description is not None:
+        updates["description"] = description
+
     #allow updates to highlightVideoLength from your dashboard in the future
     highlight_len = body.get("highlightVideoLength")
     if highlight_len is not None:
@@ -545,6 +559,7 @@ def update_highlight(job_id: str, body: dict = Body(...)):
         "userId": firestoreFields.get("userId"),
         "status": firestoreFields.get("status"),
         "highlightVideoLength": firestoreFields.get("highlightVideoLength"),  #11-10-25 Monday 7pm - For 'Total Footage' stat in dashboard page to be accurate
+        "description": firestoreFields.get("description"), #12-01-25 Monday 11am Update - allow updating description from video page
     }}
 
 
@@ -578,6 +593,102 @@ def delete_highlight(job_id: str):
 
     return {"ok": True, "deleted": True}
 #Sunday 11-02-25 Update 7:55pm - PATCH & DELETE for highlights
+
+#12-01-25 Monday 11am Update - Video Comments API
+def _comments_collection():
+    return firestore_client.collection(COMMENTS_COLLECTION)
+
+
+@app.get("/video-comments")
+def list_video_comments(
+    highlightId: str = Query(..., alias="highlightId"),
+    limit: int = Query(50, ge=1, le=100),
+    pageToken: Optional[str] = None,
+):
+    """
+    List comments for a given highlightId (jobId), newest first.
+    """
+    #base query
+    q = (
+        _comments_collection()
+        .where("highlightId", "==", highlightId)
+        .order_by("createdAt", direction=firestore.Query.DESCENDING)
+    )
+
+    #simple pagination by last doc id
+    if pageToken:
+        last_doc = _comments_collection().document(pageToken).get()
+        if last_doc.exists:
+            q = q.start_after(last_doc)
+
+    docs = list(q.limit(limit).stream())
+    items = []
+    last = None
+    for d in docs:
+        data = d.to_dict() or {}
+        last = d
+        items.append(
+            {
+                "id": d.id,
+                "highlightId": data.get("highlightId"),
+                "authorEmail": data.get("authorEmail"),
+                "text": data.get("text"),
+                "createdAt": str(data.get("createdAt")),
+            }
+        )
+
+    next_token = last.id if last and len(docs) == limit else None
+    return {"items": items, "nextPageToken": next_token}
+
+
+@app.post("/video-comments")
+def create_video_comment(payload: VideoCommentCreate):
+    """
+    Create a new comment on a highlight.
+
+    Rules:
+      - If visibility == 'public': anyone may comment.
+      - Else: only ownerEmail may comment.
+    """
+    highlight_id = payload.highlightId.strip()
+    if not highlight_id:
+        raise HTTPException(status_code=400, detail="highlightId is required")
+
+    #Fetch the highlight/job doc
+    job_snap = _job_doc(highlight_id).get()
+    if not job_snap.exists:
+        raise HTTPException(status_code=404, detail="highlight not found")
+
+    job_data = job_snap.to_dict() or {}
+    visibility = (job_data.get("visibility") or "private").lower()
+    owner_email = (job_data.get("ownerEmail") or "").strip()
+
+    #Enforce commenting rules
+    if visibility != "public" and payload.authorEmail.strip() != owner_email:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the owner can comment on private/unlisted highlights",
+        )
+
+    doc_ref = _comments_collection().document()
+    comment_doc = {
+        "highlightId": highlight_id,
+        "authorEmail": payload.authorEmail.strip(),
+        "text": payload.text.strip(),
+        "createdAt": firestore.SERVER_TIMESTAMP,
+        "visibilityAtCommentTime": visibility,
+    }
+    doc_ref.set(comment_doc)
+
+    # Read back with concrete timestamp
+    stored = doc_ref.get().to_dict() or {}
+    stored["id"] = doc_ref.id
+
+    return {"ok": True, "item": stored}
+#12-01-25 Monday 11am Update - Video Comments API
+#Gives you a way to add comments to individual highlight videos, with rules based on visibility.
+#Gives GET /video-comments?highlightId=<jobId>&limit=50&pageToken=...
+#and POST /video-comments with JSON body { highlightId, authorEmail, text }
 
 #11-13-25 Thursday 2pm - For future folder support
 @app.get("/folders")
@@ -769,7 +880,7 @@ def update_run(run_id: str, body: dict = Body(...)):
 
         run = doc.to_dict()
 
-        # Extract the fields allowed to update
+        #Extract the fields allowed to update
         new_name = body.get("name")
         new_visibility = body.get("visibility")
 
@@ -792,7 +903,7 @@ def update_run(run_id: str, body: dict = Body(...)):
 
         doc_ref.update(update_data)
 
-        # Return the updated run
+        #Return the updated run
         updated = doc_ref.get().to_dict()
 
         return {"success": True, "run": updated}
@@ -816,7 +927,7 @@ def delete_run(run_id: str):
 
         run = doc.to_dict()
 
-        # Only owner can delete
+        #Only owner can delete
         owner_email = run.get("ownerEmail")
         if not owner_email:
             raise HTTPException(status_code=403, detail="Owner missing")

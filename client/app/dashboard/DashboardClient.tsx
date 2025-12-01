@@ -959,7 +959,7 @@ useEffect(() => {
               onClick={() => setHelpOpen((v) => !v)}
             >
               {helpOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              How it works
+              How The Dashboard Gallery Works
             </button>
           </div>
 
@@ -1077,8 +1077,13 @@ useEffect(() => {
 
           {helpOpen && (
             <div className="mt-3 p-3 text-sm text-gray-700 bg-white border rounded-md">
-              Upload from your computer on the <b>Upload</b> page. When AI finishes,
-              the highlight appears here. Use the visibility menu to set <b>Public</b>, <b>Unlisted</b>, or <b>Private</b>.
+              <pre>Begin by uploading basketball footage from your computer on the <b>Upload</b> page.</pre> 
+              When the HoopTuber AI analyzing is finished, all your highlight videos will appear here in the Highlight Videos gallery! 
+           {/*<pre>Use the dropdown visibility menu to set the highlight video as <b>Public</b>, <b>Unlisted</b>, or <b>Private</b>.</pre>
+              <pre>Use the Assign Run button to assign a highlight video to a run.</pre>
+              <pre>Use the Move button to organize your highlight videos and place them in highlight folders.</pre> */}
+              <pre>Left click the Play button to watch the highlight video in the Highlight Videos gallery.</pre>
+              <pre>Right click the button & open a new tab to watch the video in the HoopTuber Video Player.</pre>
             </div>
           )}
 
@@ -1196,7 +1201,7 @@ useEffect(() => {
                           )}
                         >
                           <Play className="w-4 h-4" />
-                          Open
+                          Play
                         </a>
 
                         {/* <a

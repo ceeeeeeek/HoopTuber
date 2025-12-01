@@ -37,6 +37,7 @@ interface JobDoc {
   highlightDurationSeconds?: number;
   status?: string;
   error?: string | null;
+  description?: string; //description comes from Firestore
 }
 
 interface DownloadResponse {
@@ -98,69 +99,93 @@ export default function VideoPage() {
   //--- Fetch job details + signed URL from your real backend ---
   useEffect(() => {
     if (!jobId) return;
-
+  
     let cancelled = false;
-
+  
     const fetchData = async () => {
       try {
         setLoading(true);
         setError(null);
-
-        // 1) GET /jobs/{job_id}
+  
+        //1) GET /jobs/{job_id}
         const jobRes = await fetch(
           `${API_BASE}/jobs/${encodeURIComponent(jobId as string)}`
         );
-
+  
         if (!jobRes.ok) {
           const txt = await jobRes.text();
           throw new Error(
             `Failed to load job: ${jobRes.status} ${jobRes.statusText} – ${txt}`
           );
         }
-
+  
         const jobData: JobDoc = await jobRes.json();
-
+  
         if (cancelled) return;
-
+  
         setJob(jobData);
-
-        //seed UI state
+  
+        //seed title + visibility
         setTitle(
           jobData.title ||
             jobData.originalFileName ||
             "Untitled highlight"
         );
         setVisibility(jobData.visibility || "private");
-
-        //Optional: if you later store description in Firestore, read it here:
-        //setDescription((jobData as any).description || "");
-
-        //2) GET /jobs/{job_id}/download for signed GCS URL
+  
+        //seed description from Firestore
+        setDescription(jobData.description ?? "");
+  
+        //2) GET /jobs/{job_id}/download for signed URL
         const dlRes = await fetch(
           `${API_BASE}/jobs/${encodeURIComponent(
             jobId as string
           )}/download`
         );
-
+  
         if (!dlRes.ok) {
           const txt = await dlRes.text();
           throw new Error(
             `Failed to get signed URL: ${dlRes.status} ${dlRes.statusText} – ${txt}`
           );
         }
-
+  
         const dlJson: DownloadResponse = await dlRes.json();
-
+  
         if (!dlJson.ok || !dlJson.url) {
           throw new Error("Download endpoint did not return a URL");
         }
-
+  
         if (cancelled) return;
         setSignedUrl(dlJson.url);
-
-        //3) (OPTIONAL / TODO) load comments from backend here once you have endpoints
-        //For now, we start with an empty comment list.
-        setComments([]);
+  
+        //3)Load comments from /video-comments
+        try {
+          const commentsRes = await fetch(
+            `${API_BASE}/video-comments?` +
+              `highlightId=${encodeURIComponent(jobId as string)}` +
+              `&limit=50`
+          );
+          if (commentsRes.ok) {
+            const json = await commentsRes.json();
+            const items = (json.items ?? []) as any[];
+  
+            const mapped: Comment[] = items.map((c) => ({
+              id: c.id,
+              authorEmail: c.authorEmail,
+              text: c.text,
+              createdAt: c.createdAt,
+            }));
+  
+            if (!cancelled) {
+              setComments(mapped);
+            }
+          } else {
+            console.warn("Failed to load comments", commentsRes.status);
+          }
+        } catch (err) {
+          console.warn("Error loading comments", err);
+        }
       } catch (err: any) {
         if (cancelled) return;
         console.error("VideoPage load error", err);
@@ -169,18 +194,20 @@ export default function VideoPage() {
         if (!cancelled) setLoading(false);
       }
     };
-
+  
     fetchData();
-
+  
     return () => {
       cancelled = true;
     };
   }, [jobId]);
+  
 
   const isOwner = !!job?.ownerEmail && job.ownerEmail === userEmail;
   const isPrivate = job?.visibility === "private";
   const isUnlisted = job?.visibility === "unlisted";
   const isPublic = job?.visibility === "public";
+  const commentsAllowed = isPublic || isOwner; //12-01-25 Update: allow the owner to comment on private/unlisted videos too. However, in general, only on public videos: everyone can comment
 
   //view gating: you can tighten this later if needed
   const viewerCanSee =
@@ -241,67 +268,131 @@ export default function VideoPage() {
     }
   };
 
-  //--- Save description (CURRENTLY FRONTEND-ONLY STUB) ---
-  const handleSaveDescription = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!isOwner) return;
+    //--- Save description (NOW WIRED TO BACKEND) ---
+    const handleSaveDescription = async (e: FormEvent) => {
+        e.preventDefault();
+        if (!isOwner) return;
+        if (!jobId) return;
+    
+        try {
+        setSavingDescription(true);
+    
+        const payload = {
+            description: description.trim(),
+        };
+    
+        const res = await fetch(
+            `${API_BASE}/highlights/${encodeURIComponent(jobId as string)}`,
+            {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+            }
+        );
+    
+        if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(
+            `Failed to save description: ${res.status} ${res.statusText} – ${txt}`
+            );
+        }
+    
+        const json = await res.json();
+        const updated = json.item as Partial<JobDoc> | undefined;
+    
+        //sync local job state with what Firestore now has
+        if (updated) {
+            setJob((prev) =>
+            prev
+                ? {
+                    ...prev,
+                    description: updated.description ?? payload.description,
+                }
+                : prev
+            );
+        }
+        } catch (err: any) {
+        console.error("Error saving description", err);
+        alert(err?.message || "Failed to save description");
+        } finally {
+        setSavingDescription(false);
+        }
+    };
 
-    //Right now your FastAPI backend does NOT store a description field.
-    //You can extend /highlights/{job_id} to store `description` in Firestore.
-    //For now we just keep it in local component state.
-    try {
-      setSavingDescription(true);
-      //TODO: wire to real backend once you add description support
-      console.log(
-        "TODO: send description to backend for jobId=",
-        jobId,
-        "description=",
-        description
-      );
-    } finally {
-      setSavingDescription(false);
-    }
-  };
-
-  //--- Comment handling (FRONTEND-ONLY; backend TODO) ---
-  const handleAddComment = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!jobId || !viewerCanSee) return;
-    if (!newComment.trim()) return;
-
-    //If you want to restrict commenting to logged-in users only:
-    if (!userEmail) {
-      alert("You must be logged in to comment.");
-      return;
-    }
-
-    try {
-      setPostingComment(true);
-
-      const now = new Date().toISOString();
-      const localComment: Comment = {
-        id: `local-${now}`,
-        authorEmail: userEmail,
-        text: newComment.trim(),
-        createdAt: now,
-      };
-
-      //optimistic local update
-      setComments((prev) => [localComment, ...prev]);
-      setNewComment("");
-
-      //TODO: POST to something like /video-comments
-      //await fetch(`${API_BASE}/video-comments`, { ... })
-    } catch (err) {
-      console.error("Error adding comment (stub)", err);
-      //On failure you might want to roll back the optimistic comment
-    } finally {
-      setPostingComment(false);
-    }
-  };
-
+    //--- Comment handling (NOW CONNECTED TO BACKEND) ---
+    const handleAddComment = async (e: FormEvent) => {
+        e.preventDefault();
+        if (!jobId || !viewerCanSee) return;
+        if (!newComment.trim()) return;
+    
+        if (!userEmail) {
+        alert("You must be logged in to comment.");
+        return;
+        }
+    
+        try {
+        setPostingComment(true);
+    
+        //optimistic local update
+        const now = new Date().toISOString();
+        const optimistic: Comment = {
+            id: `local-${now}`,
+            authorEmail: userEmail,
+            text: newComment.trim(),
+            createdAt: now,
+        };
+        setComments((prev) => [optimistic, ...prev]);
+        setNewComment("");
+    
+        //POST to /video-comments (FastAPI)
+        const res = await fetch(`${API_BASE}/video-comments`, {
+            method: "POST",
+            headers: {
+            "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+            highlightId: jobId,
+            authorEmail: userEmail,
+            text: optimistic.text,
+            }),
+        });
+    
+        if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(
+            `Failed to post comment: ${res.status} ${res.statusText} – ${txt}`
+            );
+        }
+    
+        const json = await res.json();
+        const stored = json.item as {
+            id: string;
+            authorEmail: string;
+            text: string;
+            createdAt: string;
+        };
+    
+        //replace the optimistic comment with the stored version
+        setComments((prev) => [
+            stored,
+            ...prev.filter((c) => c.id !== optimistic.id),
+        ]);
+        } catch (err: any) {
+        console.error("Error adding comment", err);
+        alert(err?.message || "Failed to add comment");
+    
+        //rollback optimistic add on error
+        setComments((prev) =>
+            prev.filter((c) => !c.id.startsWith("local-"))
+        );
+        } finally {
+        setPostingComment(false);
+        }
+    };
+  
   //--- Render ---
-
   if (!jobId) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -503,65 +594,63 @@ export default function VideoPage() {
               Comments
             </h2>
 
-            {isPublic ? (
-              <>
-                {/*Add comment form */}
+            {commentsAllowed ? (
+                <>
+                {/* Add comment form */}
                 <form onSubmit={handleAddComment} className="space-y-2">
-                  <textarea
+                    <textarea
                     rows={3}
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
                     className="w-full border rounded px-2 py-1 text-sm resize-none"
                     placeholder={
-                      userEmail
-                        ? "Add a public comment…"
+                        userEmail
+                        ? "Add a comment…"
                         : "Log in to add a comment…"
                     }
                     disabled={!userEmail || postingComment}
-                  />
-                  <div className="flex justify-end">
+                    />
+                    <div className="flex justify-end">
                     <button
-                      type="submit"
-                      disabled={
-                        !userEmail ||
-                        !newComment.trim() ||
-                        postingComment
-                      }
-                      className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-60"
+                        type="submit"
+                        disabled={
+                        !userEmail || !newComment.trim() || postingComment
+                        }
+                        className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-60"
                     >
-                      {postingComment ? "Posting…" : "Comment"}
+                        {postingComment ? "Posting…" : "Comment"}
                     </button>
-                  </div>
+                    </div>
                 </form>
 
-                {/*Comment list */}
+                {/* Comment list */}
                 {comments.length === 0 ? (
-                  <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-500">
                     No comments yet. Be the first to comment.
-                  </p>
+                    </p>
                 ) : (
-                  <ul className="space-y-2 max-h-64 overflow-auto">
+                    <ul className="space-y-2 max-h-64 overflow-auto">
                     {comments.map((c) => (
-                      <li
+                        <li
                         key={c.id}
                         className="border rounded px-2 py-1 text-xs"
-                      >
+                        >
                         <div className="flex justify-between mb-1">
-                          <span className="font-medium">
+                            <span className="font-medium">
                             {c.authorEmail}
-                          </span>
-                          <span className="text-gray-500">
+                            </span>
+                            <span className="text-gray-500">
                             {formatDate(c.createdAt)}
-                          </span>
+                            </span>
                         </div>
                         <p className="text-gray-800 whitespace-pre-wrap">
-                          {c.text}
+                            {c.text}
                         </p>
-                      </li>
+                        </li>
                     ))}
-                  </ul>
+                    </ul>
                 )}
-              </>
+                </>
             ) : (
               <p className="text-xs text-gray-500">
                 Comments are only available on public videos. This
