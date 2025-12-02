@@ -252,6 +252,8 @@ export default function DashboardClient() {
   const [helpOpen, setHelpOpen] = useState(false);
   //useState calls end here
 
+  const [folderPlayingJobId, setFolderPlayingJobId] = useState<string | null>(null);
+
   //11-08-25 Saturday 2:18pm Update - Added Filter Button to Dashboard + New sorting/filtering state and UI hooks for dashboard page
   //===Filter state===
   type SortField = "createdAt" | "visibility" | "alphabetical" | null;    
@@ -374,6 +376,22 @@ export default function DashboardClient() {
     });
   }, []);
   //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
+
+  //12-01-25 Monday 3pm - Helper to get playback URL from highlight item
+  const getHighlightPlaybackUrl = (jobId: string): string | null => {
+    const h = highlights.find((x) => x.jobId === jobId);
+    if (!h) return null;
+  
+    //Prefer whatever field you’re already using for playback
+    return (
+      (h as any).signedUrl ||
+      (h as any).outputSignedUrl ||
+      (h as any).outputGcsUriSigned ||
+      (h as any).outputGcsUri ||
+      null
+    );
+  };
+  
 
   //loader to load folders for this user
   //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
@@ -1187,7 +1205,7 @@ useEffect(() => {
                         {/* Open button: left-click expands inline player, right-click can open /video/[jobId] 
                         - Even though we preventDefault on onClick, the browser context menu still uses the href. 
                         So “Open link in new tab” / middle-click will go to /video/[jobId], but a normal left click triggers the inline toggle. */}
-                        <a
+                        {/* <a
                           href={`/video/${encodeURIComponent(h.jobId)}`} //link to dedicated video page
                           onClick={(e) => {
                             //intercept normal left-click to toggle inline player instead of navigation
@@ -1199,6 +1217,26 @@ useEffect(() => {
                             "inline-flex items-center gap-2 px-3 py-2 rounded-md text-white",
                             h.signedUrl ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"
                           )}
+                        >
+                          <Play className="w-4 h-4" />
+                          Play
+                        </a> */}
+                        
+                        <a
+                          href={`/video/${encodeURIComponent(h.jobId)}`}
+                          onClick={(e) => {
+                            if (
+                              e.button === 0 &&
+                              !e.metaKey &&
+                              !e.ctrlKey &&
+                              !e.shiftKey &&
+                              !e.altKey
+                            ) {
+                              e.preventDefault();
+                              setExpandedJobId((prev) => (prev === h.jobId ? null : h.jobId));
+                            }
+                          }}
+                          className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-[11px] font-medium text-purple-700 hover:bg-purple-100"
                         >
                           <Play className="w-4 h-4" />
                           Play
@@ -1471,7 +1509,7 @@ useEffect(() => {
           </div>
         </section>
         {/*11-13-25 Thursday Update 2pm*/}
-        {/* ===================== Highlight Folders ===================== */}
+        {/*===================== Highlight Folders ===================== */}
         <section className="mt-14">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -1577,7 +1615,7 @@ useEffect(() => {
                         </div>
                       </div>
 
-                      {/* folder actions */}
+                      {/*folder actions */}
                       <div className="flex items-center gap-2">
                         <button
                           className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 text-red-700 hover:bg-red-100"
@@ -1592,7 +1630,7 @@ useEffect(() => {
                         </button>
                       </div>
 
-                      {/* folder contents */}
+                      {/*folder contents */}
                       {/*open && ( */}
                       {isOpen && (
                         <div className="mt-2">
@@ -1602,39 +1640,73 @@ useEffect(() => {
                             </div>
                           ) : (
                             <ul className="space-y-2">
-                              {videosInFolder.map(v => (
-                                <li 
-                                  key={v.jobId} 
-                                  className="text-sm text-gray-800 flex items-center justify-between gap-2"
+                              {videosInFolder.map((v) => (
+                                <li
+                                  key={v.jobId}
+                                  className="text-sm text-gray-800 flex flex-col gap-1"
                                   draggable
                                   onDragStart={(e) => onDragStartVideo(e, v.jobId)}
-                                  >
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <Play className="w-3 h-3 flex-none" />
-                                    <span className="truncate">
-                                      {v.title || v.originalFileName || v.jobId}
-                                    </span>
+                                >
+                                  {/* Top row: title + actions */}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <Play className="w-3 h-3 flex-none" />
+                                      <span className="truncate">
+                                        {v.title || v.originalFileName || v.jobId}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      {/* Play link:
+                                          - plain left click => inline player
+                                          - right-click / cmd+click / ctrl+click => go to /video/[jobId]
+                                      */}
+                                      <a
+                                        href={`/video/${encodeURIComponent(v.jobId)}`}
+                                        onClick={(e) => {
+                                          if (
+                                            e.button === 0 &&
+                                            !e.metaKey &&
+                                            !e.ctrlKey &&
+                                            !e.shiftKey &&
+                                            !e.altKey
+                                          ) {
+                                            e.preventDefault();
+                                            setFolderPlayingJobId((prev) =>
+                                              prev === v.jobId ? null : v.jobId
+                                            );
+                                          }
+                                        }}
+                                        className="px-2 py-1 text-xs rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                      >
+                                        Play
+                                      </a>
+
+                                      {/* Remove ONLY from this folder */}
+                                      <button
+                                        onClick={() => removeVideoFromFolder(f.folderId, v.jobId)}
+                                        className="px-2 py-1 text-xs rounded bg-red-50 text-red-700 hover:bg-red-100"
+                                        title="Remove from folder"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
                                   </div>
-                                
-                                  <div className="flex items-center gap-2">
-                                    {/* Play (opens the signed URL) */}
-                                    <button
-                                      onClick={() => openVideoByJobId(v.jobId)}
-                                      className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
-                                      title="Play"
-                                    >
-                                      Play
-                                    </button>
-                                
-                                    {/* Remove ONLY from this folder */}
-                                    <button
-                                      onClick={() => removeVideoFromFolder(f.folderId, v.jobId)}
-                                      className="px-2 py-1 text-xs rounded bg-red-50 text-red-700 hover:bg-red-100"
-                                      title="Remove from folder"
-                                    >
-                                      Remove
-                                    </button>
-                                  </div>
+
+                                  {/* Inline video player inside the folder card */}
+                                  {folderPlayingJobId === v.jobId && (
+                                    <div className="mt-2 w-full">
+                                      <div className="w-full overflow-hidden rounded-md bg-black">
+                                        <video
+                                          className="w-full h-auto"
+                                          controls
+                                          src={getHighlightPlaybackUrl(v.jobId) || undefined}
+                                        >
+                                          Sorry, your browser doesn&apos;t support embedded videos.
+                                        </video>
+                                      </div>
+                                    </div>
+                                  )}
                                 </li>
                               ))}
                             </ul>

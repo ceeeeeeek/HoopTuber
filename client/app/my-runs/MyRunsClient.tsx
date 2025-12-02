@@ -90,6 +90,14 @@ type RunsSummary = {
     maxMembers?: number;
   };
 
+  //12-01-25 Monday 4pm - Highlight summary type
+  type HighlightSummary = {
+    jobId: string;
+    title?: string;
+    originalFileName?: string;
+  };
+  
+
 //11-22-25 Satuday 12am - For my runs page
 //===================== RUNS API HELPERS (START) =====================
 async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
@@ -206,6 +214,9 @@ export default function MyRunsClient() {
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
 
+    //12-01-25 Monday 4pm - Highlight summary map state
+    const [highlightMap, setHighlightMap] = useState<Record<string, HighlightSummary>>({});
+
     //For creating a run
     const [creating, setCreating] = useState<boolean>(false);
 
@@ -295,6 +306,57 @@ export default function MyRunsClient() {
         cancelled = true;              
       };
     }, [userEmail, backendReady, loadRuns]); //dependency/deps array
+
+    //12-01-25 Monday 4pm - Load highlight metadata for mapping IDs to names
+    useEffect(() => {
+      if (!backendReady || !userEmail) return;
+    
+      let cancelled = false;
+    
+      const loadHighlightMetadata = async () => {
+        try {
+          const url = `${API_BASE}/highlights?ownerEmail=${encodeURIComponent(
+            userEmail
+          )}&limit=500`;
+          const r = await fetch(url, { cache: "no-store" });
+    
+          if (!r.ok) {
+            const text = await r.text().catch(() => "");
+            throw new Error(
+              `Failed to load highlights: ${r.status} ${r.statusText} ${text}`
+            );
+          }
+    
+          const data = await r.json();
+          const items = Array.isArray(data?.items)
+            ? (data.items as HighlightSummary[])
+            : [];
+    
+          if (cancelled) return;
+    
+          const map: Record<string, HighlightSummary> = {};
+          for (const h of items) {
+            if (h.jobId) {
+              map[h.jobId] = h;
+            }
+          }
+          setHighlightMap(map);
+        } catch (err: any) {
+          if (isAbortError(err)) {
+            console.debug("MyRuns load highlights aborted, ignoring");
+            return;
+          }
+          console.error("MyRuns load highlights error", err);
+          // We can silently fall back to showing raw IDs if this fails
+        }
+      };
+    
+      loadHighlightMetadata();
+    
+      return () => {
+        cancelled = true;
+      };
+    }, [backendReady, userEmail]);    
 
     //11-23-25 Sunday 11am - For my runs page
     const handleCreateRun = async () => {
@@ -708,8 +770,7 @@ return (
                         </div>
                       </div>
                     )}
-
-                    {/* Highlight IDs list – (simple debug-style) */}
+                    {/* Highlight IDs list – (simple debug-style)
                     {(run.highlightIds?.length || 0) > 0 && (
                       <div className="mt-3 border-t pt-2">
                         <p className="text-[11px] font-semibold text-gray-500 mb-1">
@@ -724,6 +785,28 @@ return (
                               {hId}
                             </span>
                           ))}
+                        </div>
+                      </div>
+                    )} */}
+                    {(run.highlightIds?.length || 0) > 0 && (
+                      <div className="mt-3 border-t pt-2">
+                        <p className="text-[11px] font-semibold text-gray-500 mb-1">
+                          Highlights
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {run.highlightIds?.map((hId) => {
+                            const meta = highlightMap[hId];
+                            const label = meta?.title || meta?.originalFileName || hId;
+
+                            return (
+                              <span
+                                key={hId}
+                                className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-mono text-orange-700"
+                              >
+                                {label}
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
