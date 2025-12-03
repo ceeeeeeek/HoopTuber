@@ -1,5 +1,5 @@
-// client/app/api/auth/[...nextauth]/auth-options.ts - Wednesday 10-22-25 Update
-// NEW — re-export your NextAuth options so both the route handler AND server code can import them.
+//client/app/api/auth/[...nextauth]/auth-options.ts - 12-02-25 Tuesday 7pm Version
+//re-export your NextAuth options so both the route handler AND server code can import them.
 
 import type { NextAuthOptions } from "next-auth"
 import GoogleProvider from "next-auth/providers/google"

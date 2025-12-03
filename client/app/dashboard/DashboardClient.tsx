@@ -733,7 +733,7 @@ useEffect(() => {
     [folders, setFolders]
   );
 
-  // Dropdown item: create a new folder in-line for this specific video (NEW)
+  // Dropdown item: create a new folder in-line for this specific video
   const createFolderAndMove = useCallback(async (jobId: string) => {
     if (!newFolderName.trim()) return;
     const res = await apiCreateFolder(userEmail, newFolderName.trim());
@@ -1399,7 +1399,7 @@ useEffect(() => {
 
                             <div className="border-t my-2" />
 
-                            {/* Inline New Run Form*/}
+                            {/*Inline New Run Form*/}
                             <div className="flex flex-col gap-2">
                               <input
                                 type="text"
@@ -1647,7 +1647,7 @@ useEffect(() => {
                                   draggable
                                   onDragStart={(e) => onDragStartVideo(e, v.jobId)}
                                 >
-                                  {/* Top row: title + actions */}
+                                  {/*Top row: title + actions */}
                                   <div className="flex items-center justify-between gap-2">
                                     <div className="flex items-center gap-2 min-w-0">
                                       <Play className="w-3 h-3 flex-none" />
@@ -1657,7 +1657,7 @@ useEffect(() => {
                                     </div>
 
                                     <div className="flex items-center gap-2">
-                                      {/* Play link:
+                                      {/*Play link:
                                           - plain left click => inline player
                                           - right-click / cmd+click / ctrl+click => go to /video/[jobId]
                                       */}
@@ -1682,7 +1682,7 @@ useEffect(() => {
                                         Play
                                       </a>
 
-                                      {/* Remove ONLY from this folder */}
+                                      {/*Remove ONLY from this folder */}
                                       <button
                                         onClick={() => removeVideoFromFolder(f.folderId, v.jobId)}
                                         className="px-2 py-1 text-xs rounded bg-red-50 text-red-700 hover:bg-red-100"
@@ -1693,7 +1693,7 @@ useEffect(() => {
                                     </div>
                                   </div>
 
-                                  {/* Inline video player inside the folder card */}
+                                  {/*Inline video player inside the folder card */}
                                   {folderPlayingJobId === v.jobId && (
                                     <div className="mt-2 w-full">
                                       <div className="w-full overflow-hidden rounded-md bg-black">

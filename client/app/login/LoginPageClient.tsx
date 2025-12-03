@@ -1,3 +1,4 @@
+//client/app/login/LoginPageClient.tsx - 12-02-25 Tuesday 7pm Version 
 "use client"
 
 import { useState } from "react"
@@ -9,68 +10,93 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Play, ArrowLeft, Mail, Lock } from "lucide-react"
 import Link from "next/link"
-import { useSearchParams, useRouter } from "next/navigation"
+import {useRouter, useSearchParams} from "next/navigation"
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true)
-  const [name, setName] = useState("");
+  //const [name, setName] = useState("");
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const router = useRouter()
 
-  const search = useSearchParams()
-  const next = search.get("next") ?? "/dashboard"
+  //Signup profile fields
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
+  const [birthday, setBirthday] = useState("") // YYYY-MM-DD
+  const [phone, setPhone] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+
+  //Validation Error State
+  const [error, setError] = useState<string | null>(null)
+  
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const next = searchParams.get("next") || "/upload";
+  //const next = searchParams.get("next") ?? "/dashboard"
 
   async function handleCredentialsSignIn(e: React.FormEvent) {
-    e.preventDefault()
+      e.preventDefault()
+      setError(null)
 
-//     const res = await signIn("credentials", {
-//       redirect: false, // don't auto-redirect, handle manually
-//       email,
-//       password,
-//       callbackUrl: next,
-//     })
-
-//     if (res?.ok) {
-//       router.push(next)
-//     } else {
-//       alert("Invalid email or password")
-//     }
-//   }
-
-if (isLogin) {
-    // **Sign In** via NextAuth credentials
+  //Login Flow
+  if (isLogin) {
+    //**Sign In** via NextAuth credentials
     const res = await signIn("credentials", {
       redirect: false,
       email,
       password,
       callbackUrl: next,
     });
+
     if (res?.ok) router.push(next);
     else alert("Invalid email or password");
     return;
+  }
+
+  //12-02-25 Tuesday 5pm: Sign up validation
+  if (!email.includes("@") || !email.includes(".")) {
+    setError("Please enter a valid, real email address.")
+    return
+  }
+
+  if (password.length < 8) {
+    setError("Password must be at least 8 characters long.")
+    return
+  }
+
+  if (password !== confirmPassword) {
+    setError("Passwords do not match.")
+    return
   }
 
   // **Create Account** via your signup API, then auto sign in
   const r = await fetch("/api/auth/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, password }),
-  });
+    //body: JSON.stringify({ name, email, password }),
+    body: JSON.stringify({
+      firstName,
+      lastName,
+      email,
+      birthday,
+      phone,
+      password
+      }),
+    });
 
-  if (!r.ok) {
-    const msg = await r.json().catch(() => ({}));
-    alert(msg?.error || "Signup failed");
-    return;
-  }
+    if (!r.ok) {
+      const msg = await r.json().catch(() => ({}));
+      alert(msg?.error || "Signup failed");
+      return;
+    }
 
-  // Immediately sign in the new user
+  //Auto sign-in ater signup/Immediately sign in the new user
   const res = await signIn("credentials", {
     redirect: false,
     email,
     password,
     callbackUrl: next,
   });
+  
   if (res?.ok) router.push(next);
   else router.push("/login?next=" + encodeURIComponent(next));
 }
@@ -78,7 +104,7 @@ if (isLogin) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Header */}
+        {/*Header */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center space-x-2 mb-6">
             <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
@@ -105,27 +131,38 @@ if (isLogin) {
 
           <CardContent className="space-y-4">
 
-            {/* <form onSubmit={handleCredentialsSignIn} className="space-y-4">
-              {!isLogin && (
-                <div className="space-y-2">
-                  <Label htmlFor="name">Full Name</Label>
-                  <Input id="name" placeholder="Enter your full name" />
-                </div>
-              )} */}
-
+        {/*REGISTRATION FORM */}
         <form onSubmit={handleCredentialsSignIn} className="space-y-4">
-            {!isLogin && (
-                <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
-                <Input
-                    id="name"
-                    placeholder="Enter your full name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                />
-                </div>
-            )}
+              {/*extra signup-only fields at the top */}
+              {!isLogin && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder="First name"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                    />
+                    <Input
+                      placeholder="Last name"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                    />
+                  </div>
 
+                  <Input
+                    type="date"
+                    value={birthday}
+                    onChange={(e) => setBirthday(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Phone number"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                </>
+              )}
+
+              {/*Email block (helper text for signup) */}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <div className="relative">
@@ -139,8 +176,15 @@ if (isLogin) {
                     onChange={(e) => setEmail(e.target.value)}
                   />
                 </div>
+                {/*helper text for signup mode */}
+                {!isLogin && (
+                  <p className="text-xs text-gray-500">
+                    Please use a valid email (e.g. @gmail.com, @yahoo.com...).
+                  </p>
+                )}
               </div>
 
+              {/*Password block (helper text + confirm binding) */}
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
@@ -154,8 +198,15 @@ if (isLogin) {
                     onChange={(e) => setPassword(e.target.value)}
                   />
                 </div>
+                {/*password length hint (signup only) */}
+                {!isLogin && (
+                  <p className="text-xs text-gray-500">
+                    Password must be at least 8 characters long.
+                  </p>
+                )}
               </div>
 
+              {/*Confirm password block*/}
               {!isLogin && (
                 <div className="space-y-2">
                   <Label htmlFor="confirm-password">Confirm Password</Label>
@@ -166,11 +217,16 @@ if (isLogin) {
                       type="password"
                       placeholder="Confirm your password"
                       className="pl-10"
+                      //wire to state
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
                     />
                   </div>
                 </div>
               )}
 
+
+              {/*Remember me + Forgot password*/}
               {isLogin && (
                 <div className="flex items-center justify-between">
                   <label className="flex items-center space-x-2 text-sm">
@@ -186,11 +242,19 @@ if (isLogin) {
                 </div>
               )}
 
+              {/*inline error message from signup/login validation */}
+              {error && (
+                <p className="text-sm text-red-600">
+                  {error}
+                </p>
+              )}
+
               <Button type="submit" className="w-full bg-orange-500 hover:bg-orange-600">
                 {isLogin ? "Sign In" : "Create Account"}
               </Button>
             </form>
-
+            
+            {/* Separator*/}
             <div className="relative">
               <Separator />
               <span className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-sm text-gray-500">
@@ -225,7 +289,7 @@ if (isLogin) {
               Continue with Google
             </Button>
 
-            {/* Toggle between login/signup */}
+            {/*Toggle between login/signup */}
             <p className="text-center text-sm text-gray-600">
               {isLogin ? "Don't have an account? " : "Already have an account? "}
               <button
@@ -236,6 +300,7 @@ if (isLogin) {
               </button>
             </p>
 
+            {/*Terms + Privacy */}
             {!isLogin && (
               <p className="text-xs text-gray-500 text-center">
                 By creating an account, you agree to our{" "}
@@ -251,6 +316,7 @@ if (isLogin) {
           </CardContent>
         </Card>
 
+        {/*Back to home link*/}
         <div className="text-center mt-6">
           <Link
             href="/"

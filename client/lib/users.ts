@@ -1,4 +1,4 @@
-// lib/users.ts
+//lib/users.ts - 12-02-25 Tuesday 7pm Version
 import { Firestore } from "@google-cloud/firestore";
 import path from "path";
 import bcrypt from "bcryptjs";
@@ -15,13 +15,22 @@ const firestore = new Firestore({
 const USERS = () => firestore.collection("users");
 const emailKey = (e: string) => String(e).trim().toLowerCase();
 
-export type UserDoc = {
-  id: string;      // email lower-cased
-  name: string;
+//12-02-25 Tuesday 3pm - Updated the Firestore write to use these expanded signup schema
+export interface UserDoc {
+  id: string;
+  name?: string | null;
   email: string;
-  passwordHash: string;
-  createdAtIso: string;
-};
+  passwordHash?: string | null;
+  provider?: string | null;
+  createdAt?: FirebaseFirestore.Timestamp | null;
+  updatedAt?: FirebaseFirestore.Timestamp | null;
+
+  //optional profile fields
+  firstName?: string | null;
+  lastName?: string | null;
+  birthday?: string | null;  //store as string "YYYY-MM-DD"
+  phone?: string | null;
+}
 
 export async function findUserByEmail(email: string): Promise<UserDoc | null> {
   const id = emailKey(email);
@@ -29,18 +38,28 @@ export async function findUserByEmail(email: string): Promise<UserDoc | null> {
   return snap.exists ? ({ id, ...(snap.data() as any) } as UserDoc) : null;
 }
 
-export async function createUser(name: string, email: string, password: string): Promise<UserDoc> {
-  const id = emailKey(email);
-  const hash = await bcrypt.hash(password, 12);
-  const nowIso = new Date().toISOString();
-
-  const doc: Omit<UserDoc, "id"> = {
+//Create a new user document
+export async function createUser({
+  id,
+  name,
+  email,
+  passwordHash,
+  firstName,
+  lastName,
+  birthday,
+  phone,
+}: Omit<UserDoc, "createdAt" | "updatedAt">) {
+  return USERS().doc(id).set({
     name,
-    email: id,
-    passwordHash: hash,
-    createdAtIso: nowIso,
-  };
-
-  await USERS().doc(id).set(doc);
-  return { id, ...doc };
+    email,
+    passwordHash,
+    firstName,
+    lastName,
+    birthday,
+    phone,
+    provider: "credentials",
+    createdAt: new Date(), //or FieldValue.serverTimestamp()
+    updatedAt: new Date(),
+  });
 }
+

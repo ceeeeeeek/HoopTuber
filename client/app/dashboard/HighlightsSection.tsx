@@ -67,7 +67,7 @@ export default function HighlightsSection() {
     };
 
     run();
-  }, [session?.user?.email, bump]); // PRESERVED + NEW bump
+  }, [session?.user?.email, bump]);
 
   //manual refresh
   const onRefresh = () => setBump((n) => n + 1);
@@ -132,7 +132,7 @@ export default function HighlightsSection() {
                       const r = await fetch(`${API_BASE.replace(/\/+$/, "")}/highlights/${h.jobId}`, {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ title: newTitle }), // NEW
+                        body: JSON.stringify({ title: newTitle }),  
                       });
                       if (r.ok) onRefresh();
                       else alert("Rename failed");

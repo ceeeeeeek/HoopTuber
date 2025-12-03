@@ -1,4 +1,4 @@
-// app/api/auth/signup/route.ts
+//app/api/auth/signup/route.ts - 12-02-25 Tuesday 7pm Version - Hashed Credentials Signup Route for Next.js 14+ with Firestore and Zod 
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
@@ -29,13 +29,27 @@ const mailer = nodemailer.createTransport({
 const USERS = () => firestore.collection("users");
 const emailKey = (e: string) => String(e).trim().toLowerCase();
 
+// const SignupSchema = z.object({
+//   name: z.string().min(1),
+//   email: z.string().email(),
+//   password: z.string().min(8),
+// });
+
+//12-02-25 Tuesday 3pm - Expanded signup schema
 const SignupSchema = z.object({
-  name: z.string().min(1),
-  email: z.string().email(),
-  password: z.string().min(8),
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  email: z.string().email("Invalid email address"),
+  birthday: z
+    .string()
+    .min(1, "Birthday is required")
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Use format YYYY-MM-DD"),//optional: enforce YYYY-MM-DD
+  phone: z.string().min(7, "Phone number is too short"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
-// Optional: share this with your nextauth route (DRY). For now, inline:
+
+//Optional: share this with your nextauth route (DRY). For now, inline:
 async function saveLeadAndNotify({
   user, provider, kind, sourcePath,
 }: {
@@ -94,14 +108,28 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const parsed = SignupSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ ok:false, error:"Invalid signup payload" }, { status: 400 });
-    }
 
-    const { name, email, password } = parsed.data;
+    // if (!parsed.success) {
+    //   return NextResponse.json({ ok:false, error:"Invalid signup payload" }, { status: 400 });
+    // }
+    // const { name, email, password } = parsed.data;
+    //12-02-25 Tuesday 3pm - Updated the POST handler to use these expanded signup schema
+    if (!parsed.success) {
+      console.error("Invalid signup payload", parsed.error.format());
+      return NextResponse.json(
+        { error: "Invalid signup payload" },
+        { status: 400 }
+      );
+    }
+    const { firstName, lastName, email, birthday, phone, password } =
+      parsed.data;
+
+    const name = `${firstName} ${lastName}`.trim();
+    //12-02-25 Tuesday 3pm - Updated the POST handler to use these expanded signup schema
+
     const id = emailKey(email);
 
-    // prevent duplicates
+    //prevent duplicates
     const exists = await USERS().doc(id).get();
     if (exists.exists) {
       return NextResponse.json({ ok:false, error:"Email already registered" }, { status: 409 });
@@ -109,11 +137,24 @@ export async function POST(req: Request) {
 
     // hash & store
     const passwordHash = await bcrypt.hash(password, 12);
+    // await USERS().doc(id).set({
+    //   email,
+    //   name,
+    //   passwordHash,
+    //   createdAt: FieldValue.serverTimestamp(),
+    // });
+    //12-02-25 Tuesday 3pm - Updated the Firestore write to use these expanded signup schema
     await USERS().doc(id).set({
+      name,                  // full name, for backwards compatibility
+      firstName,
+      lastName,
       email,
-      name,
+      birthday,
+      phone,
       passwordHash,
+      provider: "credentials",
       createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     await saveLeadAndNotify({
