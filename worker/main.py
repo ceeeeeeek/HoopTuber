@@ -8,6 +8,9 @@ import logging # for render logs
 from utils import convert_to_mp4, add_watermark
 import math
 
+# vertex version of process_video_and_summarize
+from VideoInputTest import vertex_summarize 
+
 
 from utils import format_gemini_output # COMBINES GEMINI OUTPUT AND TUPLE ARRAY FOR FRONTEND
 
@@ -44,6 +47,8 @@ def upload_to_gcs(local_path: str, bucket_name: str, dst_key: str) -> str:
     blob.upload_from_filename(local_path, timeout=600)
     return f"gs://{bucket_name}/{dst_key}"
 
+
+# TIP: HANDLES CREATING HIGHLIGHT JSON FROM GCS URI
 def make_highlight(in_path: str, out_path: str, gemini_output):
     highlighter = CreateHighlightVideo2()
     # REAL HIGHLIGHT PIPELINE:
@@ -69,7 +74,97 @@ def get_video_length_seconds(out_path):
     data = json.loads(result.stdout)
 
     duration = float(data["format"]["duration"])    
-    return math.ceil(duration) # round up to nearest second                   
+    return math.ceil(duration) # round up to nearest second       
+
+def handle_job_vertex(msg: pubsub_v1.subscriber.message.Message):
+    try:
+        payload = json.loads(msg.data.decode("utf-8"))
+        job_id        = payload["jobId"]
+        user_id       = payload.get("userId")
+        input_gcs_uri = payload["videoGcsUri"]     # gs://...
+        out_key       = f"{job_id}/highlight.mp4"
+        json_key      = f"{job_id}/analysis.json"
+        print(f"DEBUG (VERTEX: Paylod: {payload}, Processing {job_id} for {user_id}, gcs_uri={input_gcs_uri}")
+        update_job(job_id, {"status": "processing", "startedAt": firestore.SERVER_TIMESTAMP})
+        print(f"=== handle_job() started for jobId={payload.get('jobId')} ===", flush=True)
+        try:
+            print(f"Sending to Vertex AI: {input_gcs_uri}")
+            vertex_response = vertex_summarize(input_gcs_uri)
+            print(f"DEBUG: Vertex response type: {type(vertex_response)}")
+            print(f"DEBUG: Vertex response content: {vertex_response}")
+        except Exception as e:
+            raise RuntimeError(f"Vertex AI processing failed: {e}")
+        with tempfile.TemporaryDirectory() as td:
+            local_json_path = os.path.join(td, "analysis.json")
+            with open(local_json_path, "w") as f:
+                json.dump(vertex_response, f, indent=2)
+
+                analysis_gcs_uri = upload_to_gcs(local_json_path, OUT_BUCKET, json_key)
+            update_job(job_id, {
+                "status": "done",
+                "shotEvents": vertex_response,
+                "analysisGcsUri": analysis_gcs_uri,
+                "finishedAt": firestore.SERVER_TIMESTAMP,
+            })
+            logging.info(f"===JOB DONE: analysis saved, Vertex")
+            msg.ack()
+    except Exception as e:
+        print("(HANDLE_JOB_VERTEX FUNC) ERROR processing message:", e, flush=True)
+        try:
+            job_id_err = json.loads(msg.data.decode("utf-8")).get("jobId")
+            if job_id_err:
+                update_job(job_id_err, {
+                    "status": "error",
+                    "error": str(e),
+                    "finishedAt": firestore.SERVER_TIMESTAMP
+                })
+        except:
+            pass # If we can't parse Job ID, we can't save error to DB
+            
+        msg.ack() # A
+
+# TIP: HANDLES RENDER JOBS FOR VERTEX VERSION OF APP
+def handle_render_job(msg: pubsub_v1.subscriber.message.Message): 
+    try:
+        payload = json.loads(msg.data.decode("utf-8"))
+        job_id = payload["jobId"]
+        source_gcs_uri = payload["videoGcsUri"]
+        
+        # CRUCIAL INPUT: This is the user's FINAL edited list of clips!
+        user_edits = payload["finalClips"] 
+        
+        print(f"--- RENDER JOB: Starting FFmpeg for {job_id} ---")
+        update_job(job_id, {"status": "rendering", "startedAt": firestore.SERVER_TIMESTAMP})
+
+        with tempfile.TemporaryDirectory() as td:
+            in_path = os.path.join(td, "original.mp4")
+            out_path = os.path.join(td, "final_highlight.mp4")
+
+            # 1. Download Original Source (Heavy I/O)
+            logging.info("Downloading original source file for FFmpeg...")
+            download_from_gcs(source_gcs_uri, in_path)
+
+            # 2. Render Final Video (Heavy CPU)
+            # This function uses the user_edits (start/end times) for cutting/concatenation
+            make_highlight(in_path, out_path, user_edits)
+
+            # 3. Upload Result to the "posts" bucket
+            final_key = f"{job_id}/final_render.mp4"
+            final_uri = upload_to_gcs(out_path, OUT_BUCKET, final_key)
+
+        # 4. Update Database
+        update_job(job_id, {
+            "status": "ready",
+            "finalVideoUrl": final_uri,
+            "finishedAt": firestore.SERVER_TIMESTAMP
+        })
+        print(f"Render Complete. Final URL: {final_uri}")
+        msg.ack()
+
+    except Exception as e:
+        # Error handling logic...
+        msg.ack()
+
 
 def handle_job(msg: pubsub_v1.subscriber.message.Message):
     try:
@@ -186,10 +281,20 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
             msg.ack() # ACKNOWLEDGE TO AVOID INF LOOP
         print("(HANDLE_JOB FUNC) ERROR processing message:", e, flush=True)
 
+def dispatch_job(msg):
+    payload = json.loads(msg.data.decode("utf-8"))
+    mode = payload.get("mode", "legacy")
+    
+    if mode == "vertex":
+        return handle_job_vertex(msg)
+    elif mode == "render":
+        return handle_render_job(msg)
+    else:
+        return handle_job(msg)
 def main():
     subscriber = pubsub_v1.SubscriberClient()
     subscription_path = subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_ID)
-    streaming_pull_future = subscriber.subscribe(subscription_path, callback=handle_job)
+    streaming_pull_future = subscriber.subscribe(subscription_path, callback=dispatch_job)
     print(f"Worker listening on {subscription_path}", flush=True)
     try:
         while True:

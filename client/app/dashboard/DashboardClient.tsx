@@ -325,6 +325,7 @@ export default function DashboardClient() {
                       </div>
 
                       {/*Open/Delete*/}
+                      {/*`/upload/${h.jobId}` */}
                       <div className="flex items-center gap-2">
                         <a
                           href={`/upload/${h.jobId}` || h.signedUrl} //prefer signedUrl from FastAPI

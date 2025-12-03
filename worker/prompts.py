@@ -198,3 +198,30 @@ def prompt_shot_outcomes_only():
     Your response should be a structured JSON array of shot events, where each event is represented as an object with the keys 'TimeStamp' and 'Outcome'. 
     Do not include any explanations, text, or formatting such as code fences—output only the pure JSON."""
     return prompt
+
+def prompt_shot_outcomes_only2():
+    prompt = """
+    Act as a world-class basketball analyst with a precise understanding of basketball shot mechanics.
+    Analyze the video to identify every distinct shot attempt.
+    
+    RETURN OUTPUT AS A JSON ARRAY ONLY. NO MARKDOWN. NO CODE FENCES.
+
+    For each shot, extract:
+    1. "TimeStamp": The precise time of the shot.
+       CRITICAL FORMATTING RULE: You MUST use HH:MM:SS format.
+       - Correct: "00:01:45" (for 1 minute 45 seconds)
+       - Correct: "00:00:05" (for 5 seconds)
+       - INCORRECT: "1:45", "01:45", "5s"
+       - ALWAYS include the hour "00" if the video is under an hour.
+
+    2. "Outcome": "Make", "Miss".
+
+    ### EXAMPLE DESIRED OUTPUT:
+    [
+        {"TimeStamp": "00:03:12", "Outcome": "Make"},
+        {"TimeStamp": "00:14:05", "Outcome": "Miss"}
+    ]
+    
+    Analyze the video now and return the JSON array:
+    """
+    return prompt

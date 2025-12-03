@@ -60,7 +60,6 @@ async def rate_limit_handler(request, exc):
         content={"detail": "Rate limit exceeded. Try again later."}
     )
 
-
 app.add_middleware(
     CORSMiddleware,
     #allow_origins=['http://localhost:3000'],
@@ -183,14 +182,14 @@ def _make_keys(original_name: str, job_id: str) -> tuple[str, str, str]:
     print(f"DEBUG: uploading to blob_name={blob_name}")
     return blob_name, gcs_uri, safe_name
 
-def _publish_job(job_id: str, raw_gcs_uri: str, user_id: Optional[str] = None, owner_email: Optional[str] = None):
+def _publish_job(job_id: str, raw_gcs_uri: str, user_id: Optional[str] = None, owner_email: Optional[str] = None, mode="vertex"):
     """Publish a message the Background Worker will process."""
     payload = {
         "jobId": job_id,
         "videoGcsUri": raw_gcs_uri,
         "outBucket": OUT_BUCKET,
         "userId": user_id,
-        "ownerEmail": owner_email
+        "ownerEmail": owner_email,
     }
     # .result() to surface publish errors immediately
     publisher.publish(topic_path, json.dumps(payload).encode("utf-8")).result(timeout=10)
@@ -278,7 +277,7 @@ async def upload_video(
 
         # 4) Publish to Pub/Sub so the Background Worker starts processing
         try:
-            _publish_job(job_id, raw_gcs_uri, user_id=userId, owner_email=owner_email)
+            _publish_job(job_id, raw_gcs_uri, user_id=userId, owner_email=owner_email, mode="old")
         except Exception as e:
             _job_doc(job_id).set({"status": "publish_error", "error": str(e)}, merge=True)
             raise HTTPException(status_code=502, detail=f"Enqueue failed: {e}")
@@ -489,6 +488,71 @@ async def unsubscribe(email):
         return {"success": True}
     except HTTPException as e:
         return {"error": f"Error @unsubscribe: {str(e)}"}
+    
+@app.post("/publish_render_job")
+def publish_render_job(body: dict = Body(...)):
+    """
+    Publishes a rendering job where the user has submitted edited clip ranges.
+    Payload Example:
+    {
+      "jobId": "123",
+      "videoGcsUri": "gs://bucket/uploads/123/original.mp4",
+      "finalClips": [
+         {"start": 10.2, "end": 15.4},
+         {"start": 22.0, "end": 28.3}
+      ]
+    }
+    """
+    job_id = body.get("jobId")
+    gcs_uri = body.get("videoGcsUri")
+    final_clips = body.get("finalClips")
+    user_id = body.get("userId")
+    owner_email = body.get("ownerEmail")
+
+    # Validate incoming payload
+    if not job_id or not gcs_uri or not final_clips:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing jobId, videoGcsUri, or finalClips"
+        )
+
+    # Build the Pub/Sub payload
+    payload = {
+        "jobId": job_id,
+        "videoGcsUri": gcs_uri,
+        "finalClips": final_clips,
+        "mode": "render",         # ★ Trigger worker.render pipeline
+        "userId": user_id,
+        "ownerEmail": owner_email
+    }
+
+    # Publish render job to Pub/Sub
+    try:
+        publisher.publish(
+            topic_path,
+            json.dumps(payload).encode("utf-8")
+        ).result(timeout=10)
+    except Exception as e:
+        # Save error for UI visibility
+        _job_doc(job_id).update({
+            "status": "render_publish_error",
+            "error": str(e),
+            "updatedAt": firestore.SERVER_TIMESTAMP
+        })
+        raise HTTPException(status_code=502, detail=f"Render publish failed: {e}")
+
+    # Update Firestore job status immediately
+    _job_doc(job_id).update({
+        "status": "render_queued",
+        "finalClips": final_clips,
+        "renderQueuedAt": firestore.SERVER_TIMESTAMP
+    })
+
+    return {
+        "ok": True,
+        "message": "Render job queued",
+        "jobId": job_id
+    }
 
 @app.get("/healthz")
 def healthz():

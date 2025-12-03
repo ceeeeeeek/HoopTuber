@@ -131,3 +131,6 @@ __pycache__
 
 *hoopuber-leads.json
 .DS_Store
+
+worker/vertex_test.py
+hi.txt

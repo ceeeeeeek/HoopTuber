@@ -1,7 +1,10 @@
 import os
 import subprocess
 import google.genai as genai
+from google.genai import types
 from dotenv import load_dotenv
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part
 import time
 import json, re
 import glob
@@ -9,7 +12,7 @@ import tempfile
 import logging
 load_dotenv()
 from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
-from prompts import prompt_4, json_input, prompt_shot_outcomes_only
+from prompts import prompt_4, json_input, prompt_shot_outcomes_only, prompt_shot_outcomes_only2
 from uuid import uuid4 
 from utils import convert_to_mp4
 
@@ -19,10 +22,77 @@ import asyncio
 
 logging.basicConfig(level=logging.INFO)
 
+load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv('GOOGLE_VERTEX_CREDS')
+
+
 if not api_key:
     raise ValueError("GEMINI_API_KEY environment variable not set")
+
 client = genai.Client()
+vertexai.init(project=os.getenv("GOOGLE_CLOUD_PROJECT"), location="us-central1")
+
+
+def vertex_basic_test():
+    project_id = "hooptuber-dev-1234"
+    location = "us-central1"
+    vertexai.init(project=project_id, location=location)
+    model = GenerativeModel("gemini-2.5-flash-lite")
+    response = model.generate_content("")
+    return response.text
+
+"""
+VERTEX_TEST2: testing this function out, able to analyze from GCS
+
+
+"""
+def vertex_summarize(gcs_uri):
+    vertex_client = genai.Client(
+        vertexai=True,
+        project="hooptuber-dev-1234",
+        location="us-central1"
+    )
+    try:
+        max_retries = 2
+        for attempt in range(max_retries):
+            logging.info(f"DEBUG: Vertex summarize, attempt {attempt+1}")
+            model = "gemini-2.5-flash"
+            prompt = prompt_shot_outcomes_only2()
+            response = vertex_client.models.generate_content(
+                model=model,
+                contents=[
+                    prompt,
+                    types.Part.from_uri(
+                        file_uri = gcs_uri,
+                        mime_type = "video/mp4"
+                    ),
+                ],
+            )
+            logging.info(f"VERTEX: Response received.")
+            break
+            
+        print(type(response))
+
+        text_response = response.text
+        raw_text = getattr(response, "text", None)
+        if not raw_text:
+            try:
+                raw_text = response.candidates[0].content.parts[0].text
+            except Exception as e:
+                return {"ok": False, "error": f"VERTEX: No text in Gemini response: {e}"}
+        clean_text = strip_code_fences(raw_text).strip() # return output as a string for now
+        print("VERTEX RAW GEMINI OUTPUT:", strip_code_fences(raw_text))
+        try:
+            parsed = json.loads(clean_text)
+        except json.JSONDecodeError as e:
+            logging.info(f"(VERTEX_SUMMARIZE): Failed to parse Gemini output as JSON: {e} ")
+            return clean_text
+        return parsed
+    except FileNotFoundError:
+        return {"ok": False, "error": f"VERTEX: File not found: {gcs_uri}"}
+    except Exception as e:
+        return {"ok": False, "VERTEX: error": str(e)}
 
 class SlowVideo:
     def __init__(self, input_path, output_path, speed_factor=0.5):

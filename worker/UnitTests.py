@@ -6,6 +6,9 @@ from utils import convert_to_mp4
 # FUNCTION RETURNS FORMATTED DICT FOR FRONTEND
 from utils import format_gemini_output 
 
+gcs_uri = "gs://hooptuber-raw-1757394912/uploads/06217305-9f30-48bd-9e58-65a0509245ab/meshooting2.mp4"
+
+
 if __name__ == "__main__":
     Creator = CreateHighlightVideo2()
     file_path = "videoDataset/meshooting2.mp4"

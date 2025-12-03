@@ -25,6 +25,8 @@ interface HighlightReviewPanelProps {
   shotType?: string;
   shotLocation?: string;
   subject?: string;
+  onClipClick?: (index: number) => void; // NEW: Callback for jumping to clip
+  isActive?: boolean; // NEW: Visual indicator for currently playing clip
 }
 
 export default function HighlightReviewPanel({
@@ -36,6 +38,8 @@ export default function HighlightReviewPanel({
   shotType: initialShotType,
   shotLocation: initialShotLocation,
   subject = "LeBron James",
+  onClipClick,
+  isActive = false,
 }: HighlightReviewPanelProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [shotType, setShotType] = useState(initialShotType || "");
@@ -89,25 +93,48 @@ export default function HighlightReviewPanel({
   };
 
   return (
-    <div className="border rounded-lg bg-white shadow-sm overflow-hidden w-full max-w-7xl mx-auto">
+    <div className={`border rounded-lg bg-white shadow-sm overflow-hidden w-full max-w-7xl mx-auto ${
+      isActive ? 'ring-2 ring-orange-500 ring-offset-2' : ''
+    }`}>
 
       {/* Header */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
-      >
-        <div className="flex items-center space-x-3">
-          <Badge variant="secondary">Highlight {index + 1}</Badge>
-          <span className="text-sm text-gray-600">
-            {timestampStart} - {timestampEnd}
-          </span>
-        </div>
-        {isExpanded ? (
-          <ChevronUp className="w-5 h-5 text-gray-500" />
-        ) : (
-          <ChevronDown className="w-5 h-5 text-gray-500" />
+      <div className="flex">
+        {/* Left: Jump to Clip Button */}
+        {onClipClick && (
+          <button
+            onClick={() => onClipClick(index)}
+            className={`px-4 py-3 flex items-center justify-center hover:bg-orange-50 transition-colors border-r ${
+              isActive ? 'bg-orange-100' : ''
+            }`}
+            title="Jump to this clip"
+          >
+            <span className="text-lg">▶</span>
+          </button>
         )}
-      </button>
+
+        {/* Right: Expand/Collapse Button */}
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className={`flex-1 px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors ${
+            isActive ? 'bg-orange-50' : ''
+          }`}
+        >
+          <div className="flex items-center space-x-3">
+            <Badge variant={isActive ? "default" : "secondary"} className={isActive ? "bg-orange-500" : ""}>
+              Highlight {index + 1}
+            </Badge>
+            <span className="text-sm text-gray-600">
+              {timestampStart} - {timestampEnd}
+            </span>
+            {isActive && <span className="text-xs text-orange-600 font-semibold">● PLAYING</span>}
+          </div>
+          {isExpanded ? (
+            <ChevronUp className="w-5 h-5 text-gray-500" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-gray-500" />
+          )}
+        </button>
+      </div>
 
       {/* Expandable Panel */}
       <AnimatePresence>
