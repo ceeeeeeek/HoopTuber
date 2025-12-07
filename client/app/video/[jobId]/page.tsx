@@ -1,4 +1,4 @@
-//client/app/video/[jobId]/page.tsx - 12-01-25 Update - This dyanmic route file page.tsx handles the video job page rendering based on jobId.
+//client/app/video/[jobId]/page.tsx - 12-07-25 Sunday Update 1pm - This dyanmic route file page.tsx handles the video job page rendering based on jobId.
 //That gives you URLs like: /video/4ed3e82d-8ab4-4954-9497-fe614bbf7ffa
 //…and matches the href={/video/${encodeURIComponent(h.jobId)}} you already use in the dashboard.
 //+
@@ -11,8 +11,8 @@
 //Show a comments section: Lists existing comments for that video (from GET /comments?highlightId=... – you’ll add these endpoints to FastAPI / Firestore).
 //Lets allowed users post a new comment via POST /comments.
 //Only allows comments if:
-// The video is public, or
-// The signed-in user is the owner (you can tighten this later if you want).
+//The video is public, or
+//The signed-in user is the owner (you can tighten this later if you want).
 
 "use client";
 
@@ -42,7 +42,7 @@ interface JobDoc {
 
 interface DownloadResponse {
   ok: boolean;
-  url?: string; // signed URL
+  url?: string; //signed URL
   expiresInMinutes?: number;
   shot_events?: any[];
 }
@@ -69,204 +69,220 @@ function formatDuration(seconds?: number) {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+
 export default function VideoPage() {
-  const params = useParams<{ jobId: string }>();
-  const jobId = params?.jobId;
-  const router = useRouter();
+    const params = useParams<{ jobId: string }>();
+    const jobId = params?.jobId;
+    const router = useRouter();
 
-  const { data: session, status: sessionStatus } = useSession();
-  const userEmail = (session?.user as any)?.email as string | undefined;
+    const { data: session, status: sessionStatus } = useSession();
+    const userEmail = (session?.user as any)?.email as string | undefined;
 
-  const [job, setJob] = useState<JobDoc | null>(null);
-  const [signedUrl, setSignedUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+    const [job, setJob] = useState<JobDoc | null>(null);
+    const [signedUrl, setSignedUrl] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-  //editable meta
-  const [title, setTitle] = useState("");
-  const [visibility, setVisibility] = useState<Visibility>("private");
-  const [savingMeta, setSavingMeta] = useState(false);
+    //editable meta
+    const [title, setTitle] = useState("");
+    const [visibility, setVisibility] = useState<Visibility>("private");
+    const [savingMeta, setSavingMeta] = useState(false);
 
-  //description (currently local only; backend does not persist it yet)
-  const [description, setDescription] = useState("");
-  const [savingDescription, setSavingDescription] = useState(false);
+    //description (currently local only; backend does not persist it yet)
+    const [description, setDescription] = useState("");
+    const [savingDescription, setSavingDescription] = useState(false);
 
-  //comments (local stub; backend endpoints still TODO)
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [newComment, setNewComment] = useState("");
-  const [postingComment, setPostingComment] = useState(false);
+    //comments (local stub; backend endpoints still TODO)
+    const [comments, setComments] = useState<Comment[]>([]);
+    const [newComment, setNewComment] = useState("");
+    const [postingComment, setPostingComment] = useState(false);
+    
+    //12-07-25 Sunday 12:30pm - View tracking: count a view when user watches at least threshold of the video (half the video) or 30s, whichever is smaller 
+    //Track view progress so each page load counts max 1 view
+    const viewProgressRef = React.useRef<{
+        hasCounted: boolean;
+        thresholdSeconds: number;
+        continuousSeconds: number;
+        lastTime: number | null;
+      }>({
+        hasCounted: false,
+        thresholdSeconds: 0,
+        continuousSeconds: 0,
+        lastTime: null,
+      });
+      
 
-  //--- Fetch job details + signed URL from your real backend ---
-  useEffect(() => {
-    if (!jobId) return;
-  
-    let cancelled = false;
-  
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-  
-        //1) GET /jobs/{job_id}
-        const jobRes = await fetch(
-          `${API_BASE}/jobs/${encodeURIComponent(jobId as string)}`
-        );
-  
-        if (!jobRes.ok) {
-          const txt = await jobRes.text();
-          throw new Error(
-            `Failed to load job: ${jobRes.status} ${jobRes.statusText} – ${txt}`
-          );
-        }
-  
-        const jobData: JobDoc = await jobRes.json();
-  
-        if (cancelled) return;
-  
-        setJob(jobData);
-  
-        //seed title + visibility
-        setTitle(
-          jobData.title ||
-            jobData.originalFileName ||
-            "Untitled highlight"
-        );
-        setVisibility(jobData.visibility || "private");
-  
-        //seed description from Firestore
-        setDescription(jobData.description ?? "");
-  
-        //2) GET /jobs/{job_id}/download for signed URL
-        const dlRes = await fetch(
-          `${API_BASE}/jobs/${encodeURIComponent(
-            jobId as string
-          )}/download`
-        );
-  
-        if (!dlRes.ok) {
-          const txt = await dlRes.text();
-          throw new Error(
-            `Failed to get signed URL: ${dlRes.status} ${dlRes.statusText} – ${txt}`
-          );
-        }
-  
-        const dlJson: DownloadResponse = await dlRes.json();
-  
-        if (!dlJson.ok || !dlJson.url) {
-          throw new Error("Download endpoint did not return a URL");
-        }
-  
-        if (cancelled) return;
-        setSignedUrl(dlJson.url);
-  
-        //3)Load comments from /video-comments
+    //--- Fetch job details + signed URL from your real backend ---
+    useEffect(() => {
+        if (!jobId) return;
+    
+        let cancelled = false;
+    
+        const fetchData = async () => {
         try {
-          const commentsRes = await fetch(
-            `${API_BASE}/video-comments?` +
-              `highlightId=${encodeURIComponent(jobId as string)}` +
-              `&limit=50`
-          );
-          if (commentsRes.ok) {
-            const json = await commentsRes.json();
-            const items = (json.items ?? []) as any[];
-  
-            const mapped: Comment[] = items.map((c) => ({
-              id: c.id,
-              authorEmail: c.authorEmail,
-              text: c.text,
-              createdAt: c.createdAt,
-            }));
-  
-            if (!cancelled) {
-              setComments(mapped);
+            setLoading(true);
+            setError(null);
+    
+            //1) GET /jobs/{job_id}
+            const jobRes = await fetch(
+            `${API_BASE}/jobs/${encodeURIComponent(jobId as string)}`
+            );
+    
+            if (!jobRes.ok) {
+            const txt = await jobRes.text();
+            throw new Error(
+                `Failed to load job: ${jobRes.status} ${jobRes.statusText} – ${txt}`
+            );
             }
-          } else {
-            console.warn("Failed to load comments", commentsRes.status);
-          }
-        } catch (err) {
-          console.warn("Error loading comments", err);
+    
+            const jobData: JobDoc = await jobRes.json();
+    
+            if (cancelled) return;
+    
+            setJob(jobData);
+    
+            //seed title + visibility
+            setTitle(
+            jobData.title ||
+                jobData.originalFileName ||
+                "Untitled highlight"
+            );
+            setVisibility(jobData.visibility || "private");
+    
+            //seed description from Firestore
+            setDescription(jobData.description ?? "");
+    
+            //2) GET /jobs/{job_id}/download for signed URL
+            const dlRes = await fetch(
+            `${API_BASE}/jobs/${encodeURIComponent(
+                jobId as string
+            )}/download`
+            );
+    
+            if (!dlRes.ok) {
+            const txt = await dlRes.text();
+            throw new Error(
+                `Failed to get signed URL: ${dlRes.status} ${dlRes.statusText} – ${txt}`
+            );
+            }
+    
+            const dlJson: DownloadResponse = await dlRes.json();
+    
+            if (!dlJson.ok || !dlJson.url) {
+            throw new Error("Download endpoint did not return a URL");
+            }
+    
+            if (cancelled) return;
+            setSignedUrl(dlJson.url);
+    
+            //3)Load comments from /video-comments
+            try {
+            const commentsRes = await fetch(
+                `${API_BASE}/video-comments?` +
+                `highlightId=${encodeURIComponent(jobId as string)}` +
+                `&limit=50`
+            );
+            if (commentsRes.ok) {
+                const json = await commentsRes.json();
+                const items = (json.items ?? []) as any[];
+    
+                const mapped: Comment[] = items.map((c) => ({
+                id: c.id,
+                authorEmail: c.authorEmail,
+                text: c.text,
+                createdAt: c.createdAt,
+                }));
+    
+                if (!cancelled) {
+                setComments(mapped);
+                }
+            } else {
+                console.warn("Failed to load comments", commentsRes.status);
+            }
+            } catch (err) {
+            console.warn("Error loading comments", err);
+            }
+        } catch (err: any) {
+            if (cancelled) return;
+            console.error("VideoPage load error", err);
+            setError(err?.message || "Failed to load video");
+        } finally {
+            if (!cancelled) setLoading(false);
         }
-      } catch (err: any) {
-        if (cancelled) return;
-        console.error("VideoPage load error", err);
-        setError(err?.message || "Failed to load video");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-  
-    fetchData();
-  
-    return () => {
-      cancelled = true;
-    };
-  }, [jobId]);
-  
+        };
+    
+        fetchData();
+    
+        return () => {
+        cancelled = true;
+        };
+    }, [jobId]);
+    
 
-  const isOwner = !!job?.ownerEmail && job.ownerEmail === userEmail;
-  const isPrivate = job?.visibility === "private";
-  const isUnlisted = job?.visibility === "unlisted";
-  const isPublic = job?.visibility === "public";
-  const commentsAllowed = isPublic || isOwner; //12-01-25 Update: allow the owner to comment on private/unlisted videos too. However, in general, only on public videos: everyone can comment
+    const isOwner = !!job?.ownerEmail && job.ownerEmail === userEmail;
+    const isPrivate = job?.visibility === "private";
+    const isUnlisted = job?.visibility === "unlisted";
+    const isPublic = job?.visibility === "public";
+    const commentsAllowed = isPublic || isOwner; //12-01-25 Update: allow the owner to comment on private/unlisted videos too. However, in general, only on public videos: everyone can comment
 
-  //view gating: you can tighten this later if needed
-  const viewerCanSee =
-    !job?.visibility || // if missing, default to visible for owner
-    isPublic ||
-    isUnlisted ||
-    isOwner;
+    //view gating: you can tighten this later if needed
+    const viewerCanSee =
+        !job?.visibility || //if missing, default to visible for owner
+        isPublic ||
+        isUnlisted ||
+        isOwner;
 
-  //--- Save title + visibility via PATCH /highlights/{job_id} ---
-  const handleSaveMeta = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!jobId) return;
-    if (!isOwner) return;
+    //--- Save title + visibility via PATCH /highlights/{job_id} ---
+    const handleSaveMeta = async (e: FormEvent) => {
+        e.preventDefault();
+        if (!jobId) return;
+        if (!isOwner) return;
 
-    try {
-      setSavingMeta(true);
+        try {
+        setSavingMeta(true);
 
-      const payload = {
-        title: title.trim() || null,
-        visibility,
-      };
+        const payload = {
+            title: title.trim() || null,
+            visibility,
+        };
 
-      const res = await fetch(
-        `${API_BASE}/highlights/${encodeURIComponent(
-          jobId as string
-        )}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
-
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(
-          `Failed to save metadata: ${res.status} ${res.statusText} – ${txt}`
+        const res = await fetch(
+            `${API_BASE}/highlights/${encodeURIComponent(
+            jobId as string
+            )}`,
+            {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+            }
         );
-      }
 
-      //Refresh local job state with the new values
-      setJob((prev) =>
-        prev
-          ? {
-              ...prev,
-              title: payload.title || undefined,
-              visibility: payload.visibility,
-            }
-          : prev
-      );
-    } catch (err: any) {
-      console.error("Error saving metadata", err);
-      alert(err?.message || "Failed to save metadata");
-    } finally {
-      setSavingMeta(false);
-    }
-  };
+        if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(
+            `Failed to save metadata: ${res.status} ${res.statusText} – ${txt}`
+            );
+        }
+
+        //Refresh local job state with the new values
+        setJob((prev) =>
+            prev
+            ? {
+                ...prev,
+                title: payload.title || undefined,
+                visibility: payload.visibility,
+                }
+            : prev
+        );
+        } catch (err: any) {
+        console.error("Error saving metadata", err);
+        alert(err?.message || "Failed to save metadata");
+        } finally {
+        setSavingMeta(false);
+        }
+    };
 
     //--- Save description (NOW WIRED TO BACKEND) ---
     const handleSaveDescription = async (e: FormEvent) => {
@@ -391,7 +407,95 @@ export default function VideoPage() {
         setPostingComment(false);
         }
     };
+
+    //12-06-25 Saturday 9pm - View tracking: count a view when user watches at least threshold of the video (half the video) or 30s, whichever is smaller 
+    //Standalone view tracking: count a view when user
+    //watches at least threshold (half the video or 30s) *continuously*.
+    function handleStandaloneTimeUpdate(
+        ev: React.SyntheticEvent<HTMLVideoElement>
+    ) {
+        if (!jobId || !job) return;
+    
+        const video = ev.currentTarget;
+    
+        //Prefer the stored highlightDurationSeconds; fall back to video.duration
+        const duration =
+        (job.highlightDurationSeconds ?? 0) > 0
+            ? job.highlightDurationSeconds!
+            : video.duration || 0;
+    
+        if (!duration || !Number.isFinite(duration)) return;
+    
+        //threshold = 30s OR half the video, whichever is smaller
+        const threshold = Math.min(30, duration / 2);
+    
+        const vp = viewProgressRef.current;
+    
+        //Keep thresholdSeconds in sync for debugging / future UI
+        if (!vp.thresholdSeconds || vp.thresholdSeconds !== threshold) {
+        vp.thresholdSeconds = threshold;
+        }
+    
+        //Already counted a view for this page load
+        if (vp.hasCounted) return;
+    
+        const current = video.currentTime;
+    
+        //First tick: seed lastTime and wait for the next update
+        if (vp.lastTime == null) {
+        vp.lastTime = current;
+        return;
+        }
+    
+        const delta = current - vp.lastTime;
+    
+        //If time jumped backwards or too far forward (seek/skip),
+        //treat as an interruption and reset the continuous timer.
+        if (delta <= 0 || delta > 1.5) {
+        vp.continuousSeconds = 0;
+        vp.lastTime = current;
+        return;
+        }
+    
+        //Normal playback – accumulate uninterrupted watch time
+        vp.continuousSeconds += delta;
+        vp.lastTime = current;
+    
+        if (vp.continuousSeconds < vp.thresholdSeconds) return;
+    
+        //Reached the continuous-watch threshold – count 1 view and fire backend
+        vp.hasCounted = true;
+    
+        (async () => {
+        try {
+            const r = await fetch(`${API_BASE}/video-engagement/view`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ highlightId: jobId }),
+            });
+    
+            if (!r.ok) return;
+    
+            //Optional: if the API returns the new viewsCount, you could
+            //update local UI state here.
+        } catch (err) {
+            console.error("record_view (standalone) failed:", err);
+        }
+        })();
+    }
   
+    
+      //12-07-25 Sunday 12:30pm - View tracking: count a view when user watches at least threshold of the video (half the video) or 30s, whichever is smaller 
+      const handleStandaloneInterrupt = (ev: React.SyntheticEvent<HTMLVideoElement>) => {
+        const video = ev.currentTarget;
+        const vp = viewProgressRef.current;
+
+        if (vp.hasCounted) return;
+      
+        vp.continuousSeconds = 0;
+        vp.lastTime = video.currentTime;
+      };
+      
   //--- Render ---
   if (!jobId) {
     return (
@@ -477,11 +581,14 @@ export default function VideoPage() {
           <div className="bg-black rounded-xl overflow-hidden shadow">
             {signedUrl ? (
               <video
-                className="w-full aspect-video"
+                className="w-full aspect-video rounded-lg bg-black"
                 src={signedUrl}
                 controls
-                // if you want autoplay: uncomment
-                // autoPlay
+                //if you want autoplay: uncomment
+                //autoPlay
+                onTimeUpdate={handleStandaloneTimeUpdate}
+                onPause={handleStandaloneInterrupt}
+                onSeeking={handleStandaloneInterrupt}
               />
             ) : (
               <div className="w-full aspect-video flex items-center justify-center text-gray-200">

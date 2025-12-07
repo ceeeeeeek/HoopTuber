@@ -1,9 +1,9 @@
-//client/app/dashboard/DashboardClient.tsx — Sunday 11-30-25 Version 6:30pm
+//client/app/dashboard/DashboardClient.tsx — 12-07-25 Sunday Update 1pm
 //now highlights-only and pointed at FastAPI
 
 "use client";
 
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import {useEffect, useMemo, useState, useCallback, useRef} from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation"; //to read ?refresh=...
 import { useSession } from "next-auth/react";                            
@@ -15,6 +15,7 @@ import {
 import cn from "clsx";                                                  
 import ProfileDropdown from "../app-components/ProfileDropdown";         
 import { DribbleIcon } from "@/components/icons/DribbleIcon";
+import type React from "react"; //for React.SyntheticEvent typings
 
 type FolderVisibility = "public" | "unlisted" | "private";  
 type RunVisibility = "public" | "private" | "unlisted";
@@ -31,7 +32,10 @@ type HighlightItem = {
   outputGcsUri?: string;                                          
   durationSeconds?: number;                                        
   status?: string;                                                
-  visibility?: FolderVisibility;                                        
+  visibility?: FolderVisibility;   
+  description?: string;
+  likesCount?: number; //engagement counters from backend
+  viewsCount?: number; //engagement counters from backend                                  
 };
 
 //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
@@ -44,7 +48,6 @@ type HighlightFolder = {
   createdAt?: string;
   updatedAt?: string;
 };
-//11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
 
 export type RunSummary = {
   runId: string;
@@ -129,7 +132,7 @@ const apiCreateRun = async (
     body: JSON.stringify({
       name,
       ownerEmail,
-      visibility: "private", // default
+      visibility: "private", //default
     }),
   });
 
@@ -219,10 +222,8 @@ async function apiRemoveVideoFromFolder(folderId: string, videoIds: string[]) {
 export default function DashboardClient() {
   //auth/session
   const { data: session, status } = useSession(); //include status; also grab `status` so we know when the session is ready
-  //const { data: session, status } = useSession(); //11-21-25 Friday 1am - Fix to Highlight Videos and Highlight Folders error not populating correctly
   //const userName = session?.user?.name || ""; //not used but if you plan to show a greeting later (“Welcome back, Chris”), we can re-add it then
   const userEmail = session?.user?.email || "";
-  //const userEmail = session?.user?.email ?? "";
   //Backend is "ready" for this user once they're authenticated and we have an email
   const backendReady = status === "authenticated" && !!userEmail;
   //read the `refresh` query param from /dashboard?refresh=<jobId>
@@ -237,12 +238,25 @@ export default function DashboardClient() {
   //useState calls begin here
   //highlights state (but now typed for FastAPI items)
   const [highlights, setHighlights] = useState<HighlightItem[]>([]);
-  //const [loading, setHighlightsLoading] = useState(true);
   const [highlightsLoading, setHighlightsLoading] = useState(false);
   const [highlightsError, setHighlightsError] = useState<string | null>(null);
 
-  //Track which highlight card has its inline player open
-  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  //12-06-25 Saturday 6:45pm - Track a *set* of open inline players instead of one at a time -
+  //therefore multiple highlight cards/highlight videos in the Highlight Video Gallery can have multiple inline video players open
+  const [openInlineJobIds, setOpenInlineJobIds] = useState<Set<string>>(new Set());
+
+  //12-07-25 Sunday 12:30pm - View tracking with *continuous* watch time per highlight card
+  type ViewProgress = {
+    thresholdSeconds: number;     //min(30s, half of video)
+    hasCounted: boolean;          //already counted 1 view this page load
+    continuousSeconds: number;    //uninterrupted watch time since last reset
+    lastTime: number | null;      //last video.currentTime we saw
+  };
+  
+  //per-session progress so we only count 1 “view” per card per reload
+  const viewProgressRef = useRef<Record<string, ViewProgress>>({});
+  //12-06-25 Saturday 8pm - View view progress tracking per highlight video card - to track view count for engagement stats
+
 
   //rename state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -253,6 +267,10 @@ export default function DashboardClient() {
   //useState calls end here
 
   const [folderPlayingJobId, setFolderPlayingJobId] = useState<string | null>(null);
+
+  //12-06-25 Saturday 5pm - added for Engagement stats row in DashboardClient.tsx
+  //per-highlight comment counts, keyed by jobId
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
 
   //11-08-25 Saturday 2:18pm Update - Added Filter Button to Dashboard + New sorting/filtering state and UI hooks for dashboard page
   //===Filter state===
@@ -309,16 +327,6 @@ export default function DashboardClient() {
   //Which highlight cards have their "Assigned runs" section expanded 
   const [openRunsMetaIds, setOpenRunsMetaIds] = useState<Set<string>>(new Set());   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
 
-  //highlightId -> array of runs where that highlight is assigned
-  const [assignedRunsByHighlightId, setAssignedRunsByHighlightId] = useState<
-    Record<string, RunSummary[]>
-  >({});
-
-  //expand/collapse for the “Assigned to …” section per highlight card
-  const [openAssignedForHighlightId, setOpenAssignedForHighlightId] = useState<
-  Set<string>
-  >(new Set());
-
   //=== Dropdown outside-click / escape close ===
   const menuRef = useRef<HTMLDivElement | null>(null); //ref for folder Move/"Move to Folder" dropdown menu
   //needed to have a separate ref (separate from the ref for the Assign-to-Run menu) like this one for folder Move/"Move to Folder" dropdown menu - 11-13-25 Thursday 2pm - For Move folder support
@@ -352,20 +360,6 @@ export default function DashboardClient() {
       document.removeEventListener("mousedown", onClick);
     };
   }, []);
-
-  //Small helper to open a highlight URL from a jobId
-  const openVideoByJobId = useCallback((jobId: string) => {
-    const item = highlights.find(h => h.jobId === jobId);
-    if (!item) return;
-    //Try signed URL if you have it in your item; otherwise fall back to GCS URI
-    const url =
-      (item as any).signedUrl || 
-      (item as any).outputUrl ||
-      (item as any).signedOutputUrl ||
-      (item as any).outputGcsUriSigned ||
-      (item as any).outputGcsUri;
-    if (url) window.open(url, "_blank");
-  }, [highlights]);
 
   const toggleFolderOpen = useCallback((id: string) => {
     setOpenFolderIds((prev) => {
@@ -447,13 +441,67 @@ export default function DashboardClient() {
         throw new Error(`GET /highlights ${r.status}: ${txt}`);
       }
 
-      const j = await r.json();
-      console.log("highlights raw JSON", j);
+      const json = await r.json();
+      console.log("highlights raw JSON", json);
 
-      //✅ Your FastAPI returns { items: [...] }
-      const items = Array.isArray(j?.items) ? (j.items as HighlightItem[]) : [];
+      //Your FastAPI returns { items: [...] }
+      //Normalise all highlight items and make sure likes/views are numbers
+      const rawItems = Array.isArray(json?.items) ? json.items : [];
 
-      setHighlights(items);
+      const mapped: HighlightItem[] = rawItems.map((raw: any) => ({
+        jobId: raw.jobId,
+        originalFileName: raw.originalFileName,
+        title: raw.title ?? raw.originalFileName ?? "Untitled",
+        visibility: raw.visibility ?? "private",
+        finishedAt: raw.finishedAt,
+        createdAt: raw.createdAt,
+        outputGcsUri: raw.outputGcsUri,
+        analysisGcsUri: raw.analysisGcsUri,
+        ownerEmail: raw.ownerEmail,
+        userId: raw.userId,
+        status: raw.status,
+        durationSeconds: raw.durationSeconds,
+        description: raw.description,
+
+        //engagement fields from backend
+        likesCount: raw.likesCount ?? 0,
+        viewsCount: raw.viewsCount ?? 0,
+
+        //keep any signed URL your backend returned
+        signedUrl: raw.signedUrl,
+      }));
+
+      setHighlights(mapped);
+      //fetch per-highlight comment counts from /video-comments
+        try {
+          const counts: Record<string, number> = {};
+
+          await Promise.all(
+            rawItems.map(async (h) => {
+              try {
+                const res = await fetch(
+                  `${API_BASE}/video-comments?` +
+                    `highlightId=${encodeURIComponent(h.jobId)}` +
+                    `&limit=50`,
+                  { cache: "no-store" }
+                );
+
+                if (!res.ok) return;
+
+                const json = await res.json();
+                const commentItems = Array.isArray(json.items) ? json.items : [];
+                counts[h.jobId] = commentItems.length;
+              } catch (err) {
+                //avoid killing the whole dashboard if one highlight’s comments fail
+                console.warn("Failed to load comment count for", h.jobId, err);
+              }
+            })
+          );
+
+          setCommentCounts(counts);
+        } catch (err) {
+          console.warn("Error loading comment counts", err);
+        }
     } catch (err: any) { //renamed e for error to err
       //ignore aborted fetches quietly
       if (isAbortError(err)) {
@@ -527,14 +575,14 @@ const runsByHighlightId = useMemo(() => {
   
   //useEffect B - useEffect() to load runs list for Assign Run dropdown - 11-23-25 Sunday 5pm
   //this useEffect only handles loading runs for the Assign-to-Run dropdown menu
-  // Load runs for the "Assign Run" dropdown once backend is ready
+  //Load runs for the "Assign Run" dropdown once backend is ready
   //useEffect B - useEffect() to load runs list for Assign Run dropdown - 11-23-25 Sunday 5pm 
   useEffect(() => {
     if (!backendReady) return; 
 
     let cancelled = false;
 
-    const loadRuns = async () => { // renamed for clarity 
+    const loadRuns = async () => { 
       try {
         setLoadingRuns(true);
         setRunsError(null);
@@ -639,13 +687,13 @@ useEffect(() => {
   //11-13-25 Thursday 10am - For 'Total Footage' stat
 
   //11-08-25 Saturday 2:18pm Update
-  // Derived, sorted view of highlights based on applied filter settings  
+  //Derived, sorted view of highlights based on applied filter settings  
   const sortedHighlights = useMemo(() => {                                
     const items = [...highlights];                                        
     const field = appliedField;                                           
     const dir = appliedDirection === "asc" ? 1 : -1;                      
 
-    if (!field) return items; //no sorting applied                       
+    if (!field) return items;                   
 
     if (field === "alphabetical") {                                       
       items.sort((a, b) => {
@@ -733,7 +781,7 @@ useEffect(() => {
     [folders, setFolders]
   );
 
-  // Dropdown item: create a new folder in-line for this specific video
+  //Dropdown item: create a new folder in-line for this specific video
   const createFolderAndMove = useCallback(async (jobId: string) => {
     if (!newFolderName.trim()) return;
     const res = await apiCreateFolder(userEmail, newFolderName.trim());
@@ -783,7 +831,6 @@ useEffect(() => {
             : run
         );
   
-      setAssignedRunsByHighlightId(buildAssignedRunsMap(next));
       return next;
     });
   };
@@ -801,7 +848,6 @@ useEffect(() => {
         highlightIds: Array.from(new Set([...(newRun.highlightIds || []), jobId])),
       };
       const next = [updatedRun, ...prev];
-      setAssignedRunsByHighlightId(buildAssignedRunsMap(next));
       return next;
     });
   
@@ -811,17 +857,6 @@ useEffect(() => {
     setRunMenuFor(null);
   };
 
-  const toggleAssignedOpen = (highlightId: string) => {
-    setOpenAssignedForHighlightId(prev => {
-      const next = new Set(prev);
-      if (next.has(highlightId)) {
-        next.delete(highlightId);
-      } else {
-        next.add(highlightId);
-      }
-      return next;
-    });
-  };
   
   //=====================RUNS - Assign-to-Run button + dropdown menu FUNCTIONS/ACTIONS (END) ======================
   //11-18-25 Tuesday 10am - For Assign-to-Run button + dropdown menu
@@ -872,6 +907,140 @@ useEffect(() => {
     );
   };
 
+  //12-06-25 Saturday 8pm - View view progress tracking likes per highlight video card - to track like counts for engagement stats
+  async function handleLikeClick(jobId: string) {
+    try {
+      const r = await fetch(`${API_BASE}/video-engagement/like`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ highlightId: jobId }),
+      });
+  
+      if (!r.ok) return;
+  
+      const json = await r.json();
+      const newCount =
+        typeof json?.likesCount === "number"
+          ? json.likesCount
+          : undefined;
+  
+      setHighlights((prev) =>
+        prev.map((h) =>
+          h.jobId === jobId
+            ? {
+                ...h,
+                likesCount:
+                  newCount ?? ((h.likesCount ?? 0) + 1),
+              }
+            : h
+        )
+      );
+    } catch (err) {
+      console.error("record_like failed:", err);
+    }
+  }
+  
+  //12-07-25 Sunday 12:30pm - View tracking with *continuous* watch time per highlight card
+  //Reset the continuous-watch timer for this inline player (used on pause/seek)
+  const handleInlineInterrupt = (
+    h: HighlightItem,
+    ev: React.SyntheticEvent<HTMLVideoElement>
+  ) => {
+    const video = ev.currentTarget;
+    const vp = viewProgressRef.current[h.jobId];
+    if (!vp || vp.hasCounted) return;
+
+    vp.continuousSeconds = 0;
+    vp.lastTime = video.currentTime;
+  };
+
+  //12-06-25 Saturday 8pm - View view progress tracking per highlight video card - to track view counts for engagement stats
+  //"1 view" : view counter will tick up once per card when the viewer crosses the 30s / half-length of the video threshold 
+  //12-07-25 Sunday 12:30pm - Count a view only after continuous watch time
+  const handleInlineTimeUpdate = async (
+    h: HighlightItem,
+    ev: React.SyntheticEvent<HTMLVideoElement>
+  ) => {
+    const video = ev.currentTarget;
+    const duration = h.durationSeconds ?? video.duration;
+
+    if (!duration || !Number.isFinite(duration)) return;
+
+    //still use min(30s, half of the video)
+    const threshold = Math.min(30, duration / 2);
+
+    //ensure we have progress state for this card
+    let vp = viewProgressRef.current[h.jobId];
+    if (!vp) {
+      vp = viewProgressRef.current[h.jobId] = {
+        thresholdSeconds: threshold,
+        hasCounted: false,
+        continuousSeconds: 0,
+        lastTime: video.currentTime,
+      };
+    } else if (!vp.hasCounted && vp.thresholdSeconds !== threshold) {
+      //keep threshold in sync if duration changes
+      vp.thresholdSeconds = threshold;
+    }
+
+    if (vp.hasCounted) return;
+
+    const current = video.currentTime;
+
+    //first tick: just seed lastTime
+    if (vp.lastTime == null) {
+      vp.lastTime = current;
+      return;
+    }
+
+    const delta = current - vp.lastTime;
+
+    //If time jumped backwards or too far forwards, treat as a seek/interrupt.
+    //This prevents "skip straight to the middle" from counting as watch time.
+    if (delta <= 0 || delta > 1.5) {
+      vp.continuousSeconds = 0;
+      vp.lastTime = current;
+      return;
+    }
+
+    //normal forward playback – accumulate continuous watch time
+    vp.continuousSeconds += delta;
+    vp.lastTime = current;
+
+    if (vp.continuousSeconds < vp.thresholdSeconds) return;
+
+    //continuous-watch requirement. Count a view once per card.
+    vp.hasCounted = true;
+
+    try {
+      const r = await fetch(`${API_BASE}/video-engagement/view`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          highlightId: h.jobId,
+          source: "dashboard-inline",
+        }),
+      });
+
+      if (!r.ok) return;
+
+      const json = await r.json().catch(() => null);
+      const newViews =
+        typeof json?.viewsCount === "number"
+          ? json.viewsCount
+          : (h.viewsCount ?? 0) + 1;
+
+      //bump the viewsCount in local state so the UI updates immediately
+      setHighlights((prev) =>
+        prev.map((x) =>
+          x.jobId === h.jobId ? { ...x, viewsCount: newViews } : x
+        )
+      );
+    } catch (err) {
+      console.warn("Failed to record view (dashboard inline)", err);
+    }
+  };
+
   //====================== RENDER UI (START) ======================
   return (
     <div className="min-h-screen bg-gray-50">
@@ -914,7 +1083,6 @@ useEffect(() => {
             <BarChart2 className="w-5 h-5 text-green-600" />
           </div>
           <div className="p-4 bg-white rounded-lg border">
-            {/*<div className="text-3xl font-bold">{stats.totalHighlightFootageCombined}</div> 11-08-25 Saturday 11:42am - For 'Total Footage' stat */}
             <div className="text-3xl font-bold">
     {         stats.totalFootageLabel} {/*uses exact hh/mm/ss label; 11-13-25 Thursday 10am - For 'Total Footage' stat */} 
             </div>
@@ -939,7 +1107,6 @@ useEffect(() => {
         {/*Highlights-only gallery(wired to FastAPI data)*/}
         <section className="mt-10">
           {/*11-08-25 Saturday 2:18pm Update */}
-          {/*<div className="flex items-center justify-between">*/}
           <div className="flex items-center justify-between relative"> {/*relative for dropdown positioning */}
             <div className="flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-gray-700" />
@@ -1077,7 +1244,7 @@ useEffect(() => {
                     <button
                       type="button"
                       onClick={() => {
-                        // Apply: commit pending to applied
+                        //Apply: commit pending to applied
                         setAppliedField(pendingField);
                         setAppliedDirection(pendingDirection);
                         closeFilter();
@@ -1124,7 +1291,7 @@ useEffect(() => {
 
             {!highlightsLoading && !highlightsError && highlights.length > 0 && (
               <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-4"> {/*for highlight video boxes */}
-                {/*{highlights.map((h) => {*/}
+              {/* <ul className="flex flex-wrap gap-4">   */}
                 {sortedHighlights.map((h) => {  {/*11-08-25 Sunday 2:18pm Update - Use sortedHighlights */}
                   const isEditing = editingId === h.jobId;                 //use jobId
                   const vis = (h.visibility || "private") as FolderVisibility;
@@ -1134,6 +1301,8 @@ useEffect(() => {
                     <li
                       key={h.jobId}
                       className="bg-white border rounded-lg p-4 flex flex-col gap-3"
+                      //className="bg-white border rounded-lg p-4 flex flex-col gap-3 w-full md:w-1/2 2xl:w-1/3"
+                      //className="bg-white border rounded-lg p-4 flex flex-col gap-3 w-full sm:w-1/2 xl:w-1/3"
                       draggable //allow drag functionality to drag item
                       onDragStart={(e) => onDragStartVideo(e, h.jobId)} //drag start handler
                     > {/*11-13-25 Thursday Update 2pm*/}
@@ -1205,23 +1374,6 @@ useEffect(() => {
                         {/* Open button: left-click expands inline player, right-click can open /video/[jobId] 
                         - Even though we preventDefault on onClick, the browser context menu still uses the href. 
                         So “Open link in new tab” / middle-click will go to /video/[jobId], but a normal left click triggers the inline toggle. */}
-                        {/* <a
-                          href={`/video/${encodeURIComponent(h.jobId)}`} //link to dedicated video page
-                          onClick={(e) => {
-                            //intercept normal left-click to toggle inline player instead of navigation
-                            e.preventDefault();
-                            setExpandedJobId((prev) => (prev === h.jobId ? null : h.jobId));
-                          }}
-                          //still styled like a primary action button
-                          className={cn(
-                            "inline-flex items-center gap-2 px-3 py-2 rounded-md text-white",
-                            h.signedUrl ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"
-                          )}
-                        >
-                          <Play className="w-4 h-4" />
-                          Play
-                        </a> */}
-                        
                         <a
                           href={`/video/${encodeURIComponent(h.jobId)}`}
                           onClick={(e) => {
@@ -1233,45 +1385,43 @@ useEffect(() => {
                               !e.altKey
                             ) {
                               e.preventDefault();
-                              setExpandedJobId((prev) => (prev === h.jobId ? null : h.jobId));
+                          
+                              //12-06-25 Saturday 6:45pm - In Dashboard, allow multiple inline players open at once when you press 'Play' button on multiple highlight videos
+                              setOpenInlineJobIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(h.jobId)) {
+                                  next.delete(h.jobId); //clicking again closes this one
+                                } else {
+                                  next.add(h.jobId);    //open this one, keep others open
+                                }
+                                return next;
+                              });
                             }
-                          }}
+                          }}                          
                           className="inline-flex items-center rounded-md bg-purple-50 px-2 py-1 text-[11px] font-medium text-purple-700 hover:bg-purple-100"
                         >
                           <Play className="w-4 h-4" />
                           Play
                         </a>
 
-                        {/* <a
-                          href={h.signedUrl || "#"} // prefer signedUrl from FastAPI
-                          target="_blank"
-                          rel="noreferrer"
-                          className={cn(
-                            "inline-flex items-center gap-2 px-3 py-2 rounded-md text-white",
-                            h.signedUrl ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"
-                          )}
-                        >
-                          <Play className="w-4 h-4" />
-                          Open
-                        </a> */}
-
                         <button
                           onClick={() => onDelete(h.jobId)}
-                          className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 text-red-700 hover:bg-red-100"
-                        >
-                          <Trash2 className="w-4 h-4" />
+                          //className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 text-red-700 hover:bg-red-100"
+                          className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-100"                        >
+                          <Trash2 className="w-3 h-3" />
                           Delete
                         </button>
 
-                        {/* Move to Folder button (dropdown menu) — 11-13-25 Thursday Update 2pm */}
+                        {/*Move to Folder button (dropdown menu) — 11-13-25 Thursday Update 2pm */}
                         <div className="relative">
                           <button
                             onClick={() =>
                               setMoveMenuFor(prev => (prev === h.jobId ? null : h.jobId))
                             }
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200"
+                            //className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200"
+                            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
                           >
-                            <FolderIcon className="w-4 h-4" />
+                            <FolderIcon className="w-3 h-3" />
                             Move
                             <ChevronDown className="w-3 h-3" />
                           </button>
@@ -1337,17 +1487,18 @@ useEffect(() => {
                           )}
                         </div>
 
-                        {/*=== ASSIGN TO RUN button (dropdown menu) - 11-18-25 Tuesday Update 10am === */}
+                        {/*===ASSIGN TO RUN button (dropdown menu) - 11-18-25 Tuesday Update 10am === */}
                         <div className="relative">
                           <button
                             onClick={() =>
                               setRunMenuFor(prev => (prev === h.jobId ? null : h.jobId))
                             }
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-50 text-gray-800 hover:bg-gray-100"
+                            //className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-gray-50 text-gray-800 hover:bg-gray-100"
+                            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
                           >
-                            <DribbleIcon className="w-4 h-4" />
+                            <DribbleIcon className="w-3 h-3" />
                             Assign Run
-                            <ChevronDown className="w-4 h-4" />
+                            <ChevronDown className="w-3 h-3" />
                           </button>
 
                           {runMenuFor === h.jobId && (
@@ -1422,8 +1573,36 @@ useEffect(() => {
                         </div>
                       </div>
 
+                      {/*12-06-25 Saturday 5pm - added for Engagement stats row in DashboardClient.tsx */}
+                      {/*Video Stats/Engagement stats row */}
+                      <div className="mt-2 text-xs text-gray-600">
+                        <div className="flex w-full items-center justify-between">
+                          <span className="font-medium">Video Stats</span>
+
+                          <div className="flex items-center gap-3">
+                            {/* Like button */}
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 hover:text-gray-900"
+                              onClick={() => handleLikeClick(h.jobId)}
+                            >
+                              Likes <span role="img" aria-label="fire">🔥</span>{" "}
+                              {h.likesCount ?? 0}
+                            </button>
+
+                            {/* Comment count (from /video-comments) */}
+                            <span>Comments 💬 {commentCounts[h.jobId] ?? 0}</span>
+
+                            {/* View count (from /video-engagement/view) */}
+                            <span>Views 👀 {h.viewsCount ?? 0}</span>
+
+                          </div>
+                        </div>
+                      </div>
+
                       {/*12-01-25 10am Update - inline video player when this card is expanded on Dashboard page */}
-                      {expandedJobId === h.jobId && h.signedUrl && (
+                      {/*12-06-25 Saturday 6:45pm - Inline video player can be open for multiple jobIds therefore multiple inline video players*/}
+                      {openInlineJobIds.has(h.jobId) && h.signedUrl && (
                         <div className="mt-3">
                           <div className="w-full bg-black rounded-lg overflow-hidden">
                             <video
@@ -1433,6 +1612,11 @@ useEffect(() => {
                               controls
                               //optional: start playing immediately when expanded
                               //autoPlay
+                              //we’ll add onTimeUpdate for view counts - "1 view" : view counter will tick up once per card when the viewer crosses the 30s / half-length of the video threshold 
+                              onTimeUpdate={(ev) => handleInlineTimeUpdate(h, ev)}
+                              //Any pause or seeking resets the continuous-watch timer
+                              onPause={(ev) => handleInlineInterrupt(h, ev)}
+                              onSeeking={(ev) => handleInlineInterrupt(h, ev)}
                             />
                           </div>
                         </div>
@@ -1605,7 +1789,7 @@ useEffect(() => {
                                 await apiPatchFolder(f.folderId, { name: draftFolderName.trim() });
                                 setEditingFolderId(null);
                                 setDraftFolderName("");
-                                await loadFolders(); // refresh names
+                                await loadFolders(); //refresh names
                               }}
                               aria-label="Save folder name"
                             >

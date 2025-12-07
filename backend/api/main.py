@@ -1,4 +1,4 @@
-#backend/api/main.py AKA fastapi/api/main.py - 11-13-25 Thursday Version 11am 
+#fastapi/api/main.py BUT RENAMED TO backend/api/main.py AKA fastapi/api/main.py - 12-07-25 Sunday Update 1pm
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Body, Header, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 #typing + datetime helpers for pagination tokens
 from typing import Dict, Any                                           
 #from google.cloud.firestore import Query  #Don't need this import directly because I = already use firestore.Query.DESCENDING
+from google.cloud.firestore_v1 import Increment
 
 #12-01-25 Monday 11am Update - Adding Pydantic model
 #payload for creating a video comment
@@ -25,6 +26,16 @@ class VideoCommentCreate(BaseModel):
     highlightId: str
     authorEmail: str
     text: str
+
+#12-06-25 Saturday 7:30pm Update - Pydantic model for engagement events
+class EngagementEvent(BaseModel):
+    """
+    Simple payload for engagement events (likes/views) on a highlight video.
+    For now we only care about which highlight/job is being engaged with.
+    You can extend this later with viewerEmail, watchedSeconds, etc.
+    """
+    highlightId: str
+
 
 #load_dotenv()
 #load env file
@@ -323,6 +334,8 @@ async def upload_video(
                 "visibility": "private",                
                 "videoGcsUri": raw_gcs_uri,
                 "createdAt": firestore.SERVER_TIMESTAMP,
+                "likesCount": 0, #engagement defaults - "likesCount": 0 
+                "viewsCount": 0, #engagement defaults - "viewsCount": 0
             },
             merge=True,
         )
@@ -475,7 +488,7 @@ def list_highlights(
                     pass  #pattern       
         #11-13-25 Thursday 10am - For 'Total Footage' stat
         
-        # fields + title & visibility (with sensible fallbacks)
+        #fields + title & visibility (with sensible fallbacks)
         item = {
             "jobId": data.get("jobId") or d.id,
             "originalFileName": data.get("originalFileName"),
@@ -489,7 +502,9 @@ def list_highlights(
             "userId": data.get("userId"),
             "status": data.get("status"),
             "durationSeconds": duration_sec, #11-08-25 Saturday 11:42am Update - For 'Total Footage' stat
-            "description": data.get("description"),  #12-01-25 Monday 11am Update - surface description            #12-01-25 Monday 11am Update 
+            "description": data.get("description"),  #12-01-25 Monday 11am Update - surface description            
+            "likesCount": int(data.get("likesCount") or 0), #12-06-25 Saturday 7pm Update 
+            "viewsCount": int(data.get("viewsCount") or 0), #12-06-25 Saturday 7pm Update 
         }
         if signed and data.get("outputGcsUri"):
             try:
@@ -594,10 +609,58 @@ def delete_highlight(job_id: str):
     return {"ok": True, "deleted": True}
 #Sunday 11-02-25 Update 7:55pm - PATCH & DELETE for highlights
 
+#12-06-25 Saturday 7:30pm Update - Video Engagement Stats API
+@app.post("/video-engagement/view")
+def record_view(event: EngagementEvent):
+    """
+    Increment viewsCount for a highlight (job doc).
+    """
+    doc_ref = _job_doc(event.highlightId)
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+
+    # Atomic increment in Firestore
+    doc_ref.update({
+        "viewsCount": Increment(1),
+        "lastViewedAt": firestore.SERVER_TIMESTAMP,
+    })
+
+    updated = doc_ref.get().to_dict() or {}
+    return {
+        "ok": True,
+        "viewsCount": int(updated.get("viewsCount") or 0),
+    }
+
+@app.post("/video-engagement/like")
+def record_like(event: EngagementEvent):
+    """
+    Increment likesCount for a highlight.
+
+    NOTE: This is a simple model where every click adds 1.
+    In a future pass you can change this to “toggle” a like per user.
+    """
+    doc_ref = _job_doc(event.highlightId)
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+
+    doc_ref.update({
+        "likesCount": Increment(1),
+        "lastLikedAt": firestore.SERVER_TIMESTAMP,
+    })
+
+    updated = doc_ref.get().to_dict() or {}
+    return {
+        "ok": True,
+        "likesCount": int(updated.get("likesCount") or 0),
+    }
+#12-06-25 Saturday 7:30pm Update - Video Engagement Stats API
+
+
 #12-01-25 Monday 11am Update - Video Comments API
 def _comments_collection():
     return firestore_client.collection(COMMENTS_COLLECTION)
-
 
 @app.get("/video-comments")
 def list_video_comments(
