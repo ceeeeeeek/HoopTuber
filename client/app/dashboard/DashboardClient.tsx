@@ -35,7 +35,8 @@ type HighlightItem = {
   visibility?: FolderVisibility;   
   description?: string;
   likesCount?: number; //engagement counters from backend
-  viewsCount?: number; //engagement counters from backend                                  
+  viewsCount?: number; //engagement counters from backend       
+  likedLocally?: boolean;                           
 };
 
 //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
@@ -61,8 +62,47 @@ export type RunSummary = {
   maxMembers?: number;
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+
+//12-07-25 Sunday 4pm Update - Prevent double-counting views on highlight videos with localStorage
+//Shared front-end hlpers (views + likes in localStorage) between DashboardClient + [jobId]/page.tsx
+//Gives per-highlight view (if we've already counted a view for this highlight on this browser) + like (if user liked this highlight on this browser) state
+//+
+//Gives Per-highlight like toggle that persists across tabs and reloads (per browser)
+const VIEW_STORAGE_PREFIX = "hooptuber:viewed:";
+const LIKE_STORAGE_PREFIX = "hooptuber:liked:";
+
+function viewStorageKey(jobId: string) {
+  return `${VIEW_STORAGE_PREFIX}${jobId}`;
+}
+
+function likeStorageKey(jobId: string) {
+  return `${LIKE_STORAGE_PREFIX}${jobId}`;
+}
+
+function hasStoredView(jobId: string): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(viewStorageKey(jobId)) === "1";
+}
+
+function markStoredView(jobId: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(viewStorageKey(jobId), "1");
+}
+
+function isLikedLocally(jobId: string): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(likeStorageKey(jobId)) === "1";
+}
+
+function setLikedLocally(jobId: string, liked: boolean) {
+  if (typeof window === "undefined") return;
+  if (liked) {
+    window.localStorage.setItem(likeStorageKey(jobId), "1");
+  } else {
+    window.localStorage.removeItem(likeStorageKey(jobId));
+  }
+}
 
 //11/30/25 Update: Abort-related “NetworkError when attempting to fetch resource” won’t be treated as real failures.
 //Your UI states (highlightsError, folderError, etc.) will only show for real failures, not cancelled requests.
@@ -466,6 +506,9 @@ export default function DashboardClient() {
         //engagement fields from backend
         likesCount: raw.likesCount ?? 0,
         viewsCount: raw.viewsCount ?? 0,
+
+        //hydrate from localStorage
+        likedLocally: isLikedLocally(raw.jobId),
 
         //keep any signed URL your backend returned
         signedUrl: raw.signedUrl,
@@ -909,34 +952,69 @@ useEffect(() => {
 
   //12-06-25 Saturday 8pm - View view progress tracking likes per highlight video card - to track like counts for engagement stats
   async function handleLikeClick(jobId: string) {
+    //Current local state (per browser)
+    const alreadyLiked = isLikedLocally(jobId);
+
+    //Determine what we want to do
+    const nextLiked = !alreadyLiked;
+    const delta = nextLiked ? 1 : -1;
+
+    //update localStorage
+    setLikedLocally(jobId, nextLiked);
+
+    //setHighlights updates UI
+    setHighlights((prev) =>
+      prev.map((card) => {
+        if (card.jobId !== jobId) return card;
+
+        const newCount = Math.max(0, (card.likesCount ?? 0) + delta);
+
+        return {
+          ...card,
+          likesCount: newCount,
+          likedLocally: nextLiked, //keep in sync
+        };
+      })
+    );
+
     try {
       const r = await fetch(`${API_BASE}/video-engagement/like`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ highlightId: jobId }),
+        body: JSON.stringify({ highlightId: jobId, delta }),
       });
   
-      if (!r.ok) return;
+      if (!r.ok) throw new Error("like failed");
   
-      const json = await r.json();
-      const newCount =
-        typeof json?.likesCount === "number"
-          ? json.likesCount
-          : undefined;
-  
-      setHighlights((prev) =>
-        prev.map((h) =>
-          h.jobId === jobId
-            ? {
-                ...h,
-                likesCount:
-                  newCount ?? ((h.likesCount ?? 0) + 1),
-              }
-            : h
-        )
-      );
+      const json = await r.json().catch(() => null);
+
+      if (typeof json?.likesCount === "number") {
+        //snap to authoritative server count
+        setHighlights((prev) =>
+          prev.map((card) =>
+            card.jobId === jobId
+              ? { ...card, likesCount: json.likesCount }
+              : card
+          )
+        );
+      }
     } catch (err) {
       console.error("record_like failed:", err);
+
+    //revert on failure
+    setLikedLocally(jobId, alreadyLiked);
+
+      setHighlights((prev) =>
+        prev.map((card) => {
+          if (card.jobId !== jobId) return card;
+
+          return {
+            ...card,
+            likesCount: Math.max(0, (card.likesCount ?? 0) - delta),
+            likedLocally: alreadyLiked,
+          };
+        })
+      );
     }
   }
   
@@ -965,6 +1043,13 @@ useEffect(() => {
     const duration = h.durationSeconds ?? video.duration;
 
     if (!duration || !Number.isFinite(duration)) return;
+
+    //If we've already counted a view for this highlight in this browser, bail out.
+    if (hasStoredView(h.jobId)) {
+      const vp = viewProgressRef.current[h.jobId];
+      if (vp) vp.hasCounted = true;
+      return;
+    }
 
     //still use min(30s, half of the video)
     const threshold = Math.min(30, duration / 2);
@@ -1011,6 +1096,7 @@ useEffect(() => {
 
     //continuous-watch requirement. Count a view once per card.
     vp.hasCounted = true;
+    markStoredView(h.jobId); //<-- cross-tab / cross-reload guard
 
     try {
       const r = await fetch(`${API_BASE}/video-engagement/view`, {
@@ -1577,24 +1663,38 @@ useEffect(() => {
                       {/*Video Stats/Engagement stats row */}
                       <div className="mt-2 text-xs text-gray-600">
                         <div className="flex w-full items-center justify-between">
-                          <span className="font-medium">Video Stats</span>
+                          <span className="font-medium">🏀Video Stats</span>
 
                           <div className="flex items-center gap-3">
-                            {/* Like button */}
-                            <button
+                            {/*❤️ Like button */}
+                            {/* <button
                               type="button"
                               className="inline-flex items-center gap-1 hover:text-gray-900"
                               onClick={() => handleLikeClick(h.jobId)}
                             >
-                              Likes <span role="img" aria-label="fire">🔥</span>{" "}
+                              Likes <span role="img" aria-label="fire">❤️</span>{" "}
                               {h.likesCount ?? 0}
+                            </button> */}
+                            <button
+                              onClick={() => handleLikeClick(h.jobId)}
+                              className={cn(
+                                //"inline-flex items-center gap-1 text-sm",
+                                "inline-flex items-center gap-1 hover:text-gray-900",
+                                h.likedLocally
+                                  ? "text-pink-600"
+                                  : "text-gray-500 hover:text-pink-500"
+                              )}
+                            >
+                              {/* your heart-in-basketball icon here */}
+                              Likes<span>{h.likesCount ?? 0}❤️</span>
                             </button>
+
 
                             {/* Comment count (from /video-comments) */}
                             <span>Comments 💬 {commentCounts[h.jobId] ?? 0}</span>
 
                             {/* View count (from /video-engagement/view) */}
-                            <span>Views 👀 {h.viewsCount ?? 0}</span>
+                            <span>Views 👁️‍🗨️ {h.viewsCount ?? 0}</span>
 
                           </div>
                         </div>

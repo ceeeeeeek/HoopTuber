@@ -35,6 +35,9 @@ class EngagementEvent(BaseModel):
     You can extend this later with viewerEmail, watchedSeconds, etc.
     """
     highlightId: str
+    #For likes we’ll send +1 (like) or -1 (unlike).
+    #For views we’ll just ignore this and always treat as +1 on the backend.
+    delta: int = 1
 
 
 #load_dotenv()
@@ -635,26 +638,40 @@ def record_view(event: EngagementEvent):
 @app.post("/video-engagement/like")
 def record_like(event: EngagementEvent):
     """
-    Increment likesCount for a highlight.
+    Toggle-friendly like endpoint.
 
-    NOTE: This is a simple model where every click adds 1.
-    In a future pass you can change this to “toggle” a like per user.
+    Frontend sends:
+      delta = +1  → user is liking
+      delta = -1  → user is unliking
+
+    We simply increment likesCount by `delta` but never let it go below 0.
     """
-    doc_ref = _job_doc(event.highlightId)
-    snap = doc_ref.get()
-    if not snap.exists:
+    job_ref = _job_doc(event.highlightId)
+
+    try:
+        # Apply the delta (can be +1 or -1)
+        job_ref.update(
+            {
+                "likesCount": firestore.Increment(event.delta),
+                "lastLikedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
+    except NotFound:
         raise HTTPException(status_code=404, detail="Highlight not found")
 
-    doc_ref.update({
-        "likesCount": Increment(1),
-        "lastLikedAt": firestore.SERVER_TIMESTAMP,
-    })
+    # Re-read to get the current likesCount, then clamp at 0 just in case.
+    job_doc = job_ref.get()
+    data = job_doc.to_dict() or {}
+    likes_count = max(0, int(data.get("likesCount") or 0))
 
-    updated = doc_ref.get().to_dict() or {}
-    return {
-        "ok": True,
-        "likesCount": int(updated.get("likesCount") or 0),
-    }
+    # If we ever went negative due to races, fix it.
+    if likes_count == 0:
+        try:
+            job_ref.update({"likesCount": 0})
+        except Exception:
+            pass
+
+    return {"ok": True, "likesCount": likes_count}
 #12-06-25 Saturday 7:30pm Update - Video Engagement Stats API
 
 

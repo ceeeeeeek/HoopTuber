@@ -21,8 +21,55 @@ import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+
+
+//12-07-25 Sunday 4pm Update - Prevent double-counting views on highlight videos with localStorage
+//Shared front-end hlpers (views + likes in localStorage) between DashboardClient + [jobId]/page.tsx
+//Gives per-highlight view (if we've already counted a view for this highlight on this browser) + like (if user liked this highlight on this browser) state
+//+
+//Gives Per-highlight like toggle that persists across tabs and reloads (per browser)
+const VIEW_STORAGE_PREFIX = "hooptuber:viewed:";
+const LIKES_STORAGE_PREFIX = "hooptuber_like_v1_";
+
+function viewStorageKey(jobId: string) {
+  return `${VIEW_STORAGE_PREFIX}${jobId}`;
+}
+
+
+function hasStoredView(jobId: string): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(viewStorageKey(jobId)) === "1";
+}
+
+function markStoredView(jobId: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(viewStorageKey(jobId), "1");
+}
+
+function likeStorageKey(jobId: string) {
+    return `${LIKES_STORAGE_PREFIX}${jobId}`;
+  }
+  
+  function isLikedLocally(jobId: string): boolean {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(likeStorageKey(jobId)) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function setLikedLocally(jobId: string, liked: boolean) {
+    if (typeof window === "undefined") return;
+    try {
+      const key = likeStorageKey(jobId);
+      if (liked) window.localStorage.setItem(key, "1");
+      else window.localStorage.removeItem(key);
+    } catch {
+      //ignore storage errors
+    }
+}
 
 type Visibility = "public" | "unlisted" | "private";
 
@@ -38,6 +85,8 @@ interface JobDoc {
   status?: string;
   error?: string | null;
   description?: string; //description comes from Firestore
+  likesCount?: number;
+  viewsCount?: number;
 }
 
 interface DownloadResponse {
@@ -96,6 +145,10 @@ export default function VideoPage() {
     const [comments, setComments] = useState<Comment[]>([]);
     const [newComment, setNewComment] = useState("");
     const [postingComment, setPostingComment] = useState(false);
+
+    const [likesCount, setLikesCount] = useState<number | null>(null);
+    const [likedLocally, setLikedLocallyState] = useState(false);
+
     
     //12-07-25 Sunday 12:30pm - View tracking: count a view when user watches at least threshold of the video (half the video) or 30s, whichever is smaller 
     //Track view progress so each page load counts max 1 view
@@ -141,13 +194,16 @@ export default function VideoPage() {
     
             setJob(jobData);
     
-            //seed title + visibility
-            setTitle(
-            jobData.title ||
-                jobData.originalFileName ||
-                "Untitled highlight"
-            );
-            setVisibility(jobData.visibility || "private");
+            setTitle(jobData.title ?? jobData.originalFileName ?? "");
+            setVisibility(jobData.visibility ?? "private");
+
+            setLikesCount(
+                typeof jobData.likesCount === "number" ? jobData.likesCount : null,
+              );
+              if (jobId) {
+                setLikedLocallyState(isLikedLocally(jobId));
+              }
+              
     
             //seed description from Firestore
             setDescription(jobData.description ?? "");
@@ -415,7 +471,13 @@ export default function VideoPage() {
         ev: React.SyntheticEvent<HTMLVideoElement>
     ) {
         if (!jobId || !job) return;
-    
+
+        //If this browser has already counted a view for this highlight, do nothing.
+        if (hasStoredView(jobId as string)) {
+            viewProgressRef.current.hasCounted = true;
+            return;
+        }
+            
         const video = ev.currentTarget;
     
         //Prefer the stored highlightDurationSeconds; fall back to video.duration
@@ -428,7 +490,6 @@ export default function VideoPage() {
     
         //threshold = 30s OR half the video, whichever is smaller
         const threshold = Math.min(30, duration / 2);
-    
         const vp = viewProgressRef.current;
     
         //Keep thresholdSeconds in sync for debugging / future UI
@@ -443,8 +504,8 @@ export default function VideoPage() {
     
         //First tick: seed lastTime and wait for the next update
         if (vp.lastTime == null) {
-        vp.lastTime = current;
-        return;
+            vp.lastTime = current;
+            return;
         }
     
         const delta = current - vp.lastTime;
@@ -452,9 +513,9 @@ export default function VideoPage() {
         //If time jumped backwards or too far forward (seek/skip),
         //treat as an interruption and reset the continuous timer.
         if (delta <= 0 || delta > 1.5) {
-        vp.continuousSeconds = 0;
-        vp.lastTime = current;
-        return;
+            vp.continuousSeconds = 0;
+            vp.lastTime = current;
+            return;
         }
     
         //Normal playback – accumulate uninterrupted watch time
@@ -465,6 +526,7 @@ export default function VideoPage() {
     
         //Reached the continuous-watch threshold – count 1 view and fire backend
         vp.hasCounted = true;
+        markStoredView(jobId as string);
     
         (async () => {
         try {
@@ -484,7 +546,6 @@ export default function VideoPage() {
         })();
     }
   
-    
       //12-07-25 Sunday 12:30pm - View tracking: count a view when user watches at least threshold of the video (half the video) or 30s, whichever is smaller 
       const handleStandaloneInterrupt = (ev: React.SyntheticEvent<HTMLVideoElement>) => {
         const video = ev.currentTarget;
@@ -495,6 +556,48 @@ export default function VideoPage() {
         vp.continuousSeconds = 0;
         vp.lastTime = video.currentTime;
       };
+
+      async function handleStandaloneLike() {
+        if (!jobId) return;
+      
+        const alreadyLiked = isLikedLocally(jobId);
+        const nextLiked = !alreadyLiked;
+        const delta = nextLiked ? 1 : -1;
+      
+        //optimistic localStorage + UI
+        setLikedLocally(jobId, nextLiked);
+        setLikedLocallyState(nextLiked);
+        setLikesCount(prev => {
+          const base = prev ?? 0;
+          return Math.max(0, base + delta);
+        });
+      
+        try {
+          const r = await fetch(`${API_BASE}/video-engagement/like`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ highlightId: jobId, delta }),
+          });
+      
+          if (!r.ok) throw new Error("like failed");
+      
+          const json = await r.json().catch(() => null);
+          if (typeof json?.likesCount === "number") {
+            setLikesCount(json.likesCount);
+          }
+        } catch (err) {
+          console.error("record_like standalone failed:", err);
+      
+          //revert if backend fails
+          setLikedLocally(jobId, alreadyLiked);
+          setLikedLocallyState(alreadyLiked);
+          setLikesCount(prev => {
+            const base = prev ?? 0;
+            return Math.max(0, base - delta);
+          });
+        }
+      }
+      
       
   //--- Render ---
   if (!jobId) {
@@ -553,224 +656,240 @@ export default function VideoPage() {
   const displayTitle =
     title || job.title || job.originalFileName || "Untitled highlight";
 
-  return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Simple top bar */}
-      <header className="w-full bg-white border-b">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Link
-              href="/dashboard"
-              className="text-sm text-blue-600 hover:underline"
-            >
-              ← Back to Dashboard
-            </Link>
-          </div>
-
-          {userEmail && (
-            <div className="text-xs text-gray-600">
-              Logged in as <span className="font-medium">{userEmail}</span>
-            </div>
-          )}
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6">
-        {/* Left column: video player */}
-        <section className="flex-1">
-          <div className="bg-black rounded-xl overflow-hidden shadow">
-            {signedUrl ? (
-              <video
-                className="w-full aspect-video rounded-lg bg-black"
-                src={signedUrl}
-                controls
-                //if you want autoplay: uncomment
-                //autoPlay
-                onTimeUpdate={handleStandaloneTimeUpdate}
-                onPause={handleStandaloneInterrupt}
-                onSeeking={handleStandaloneInterrupt}
-              />
-            ) : (
-              <div className="w-full aspect-video flex items-center justify-center text-gray-200">
-                No video URL available.
+    return (
+        <div className="min-h-screen bg-gray-100">
+          {/*Top bar (kept from your original) */}
+          <header className="w-full bg-white border-b">
+            <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/dashboard"
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  ← Back to Dashboard
+                </Link>
               </div>
-            )}
-          </div>
-
-          {/*Shot stats, basic meta etc could go here later */}
-        </section>
-
-        {/*Right column: title, meta, description, comments */}
-        <section className="w-full lg:w-80 flex flex-col gap-6">
-          {/* Meta / title / visibility */}
-          <div className="bg-white rounded-xl shadow p-4">
-            <form onSubmit={handleSaveMeta} className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-500">
-                  Title
-                </label>
-                <input
-                  type="text"
-                  value={displayTitle}
-                  onChange={(e) => setTitle(e.target.value)}
-                  disabled={!isOwner}
-                  className="mt-1 w-full border rounded px-2 py-1 text-sm disabled:bg-gray-100"
-                />
-              </div>
-
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs font-medium text-gray-500">
-                    Visibility
-                  </div>
-                  <select
-                    value={visibility}
-                    onChange={(e) =>
-                      setVisibility(e.target.value as Visibility)
-                    }
-                    disabled={!isOwner}
-                    className="mt-1 border rounded px-2 py-1 text-sm disabled:bg-gray-100"
-                  >
-                    <option value="public">Public</option>
-                    <option value="unlisted">Unlisted</option>
-                    <option value="private">Private</option>
-                  </select>
+      
+              {userEmail && (
+                <div className="text-xs text-gray-600">
+                  Logged in as <span className="font-medium">{userEmail}</span>
                 </div>
-
-                <div className="text-xs text-right text-gray-500">
-                  <div>
-                    Uploaded: {formatDate(job.createdAt) || "Unknown"}
+              )}
+            </div>
+          </header>
+      
+          {/*YouTube-style main column layout */}
+          <main className="max-w-6xl mx-auto px-4 py-6 space-y-4">
+            {/*1. Video player */}
+            <section>
+              <div className="bg-black rounded-xl overflow-hidden shadow">
+                {signedUrl ? (
+                  <video
+                    className="w-full aspect-video bg-black"
+                    src={signedUrl}
+                    controls
+                    onTimeUpdate={handleStandaloneTimeUpdate}
+                    onPause={handleStandaloneInterrupt}
+                    onSeeking={handleStandaloneInterrupt}
+                  />
+                ) : (
+                  <div className="w-full aspect-video flex items-center justify-center text-gray-200">
+                    No video URL available.
                   </div>
-                  {job.highlightDurationSeconds != null && (
+                )}
+              </div>
+            </section>
+      
+            {/*2. Title + Like button + basic meta (all in one card) */}
+            <section className="bg-white rounded-xl shadow p-4 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                {/* Title + visibility editing (owner can edit) */}
+                <form
+                  onSubmit={handleSaveMeta}
+                  className="flex-1 space-y-2"
+                >
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">
+                      Title
+                    </label>
+                    <input
+                      type="text"
+                      value={displayTitle}
+                      onChange={(e) => setTitle(e.target.value)}
+                      disabled={!isOwner}
+                      className="mt-1 w-full border rounded px-2 py-1 text-sm disabled:bg-gray-100"
+                    />
+                  </div>
+      
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      Length:{" "}
-                      {formatDuration(job.highlightDurationSeconds)}
+                      <div className="text-xs font-medium text-gray-500">
+                        Visibility
+                      </div>
+                      <select
+                        value={visibility}
+                        onChange={(e) =>
+                          setVisibility(e.target.value as Visibility)
+                        }
+                        disabled={!isOwner}
+                        className="mt-1 border rounded px-2 py-1 text-sm disabled:bg-gray-100"
+                      >
+                        <option value="public">Public</option>
+                        <option value="unlisted">Unlisted</option>
+                        <option value="private">Private</option>
+                      </select>
                     </div>
+      
+                    <div className="text-xs text-gray-500 text-right">
+                      <div>Uploaded: {formatDate(job.createdAt) || "Unknown"}</div>
+                      {job.highlightDurationSeconds != null && (
+                        <div>
+                          Length: {formatDuration(job.highlightDurationSeconds)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+      
+                  {isOwner && (
+                    <button
+                      type="submit"
+                      disabled={savingMeta}
+                      className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-70"
+                    >
+                      {savingMeta ? "Saving…" : "Save title & visibility"}
+                    </button>
+                  )}
+                </form>
+      
+                {/*Like button to the right of the title (YouTube-style) */}
+                <button
+                  type="button"
+                  onClick={handleStandaloneLike}
+                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition
+                    ${
+                      likedLocally
+                        ? "bg-purple-600 text-white border-purple-600"
+                        : "bg-white text-gray-800 border-gray-200 hover:bg-gray-50"
+                    }`}
+                >
+                  <span aria-hidden="true" className="text-base">
+                    {likedLocally ? "❤️" : "🤍"}
+                  </span>
+                  <span>{likedLocally ? "Liked" : "Like"}</span>
+                  <span className="text-xs text-gray-500">
+                    {likesCount ?? 0}
+                  </span>
+                </button>
+              </div>
+            </section>
+      
+            {/* 3.Description section (below title/like) */}
+            <section className="bg-white rounded-xl shadow p-4">
+              <form onSubmit={handleSaveDescription} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-gray-900">
+                    Description
+                  </h2>
+                  {!isOwner && (
+                    <span className="text-[11px] text-gray-500">
+                      Owner can edit description
+                    </span>
                   )}
                 </div>
-              </div>
-
-              {isOwner && (
-                <button
-                  type="submit"
-                  disabled={savingMeta}
-                  className="mt-2 inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-70"
-                >
-                  {savingMeta ? "Saving…" : "Save title & visibility"}
-                </button>
-              )}
-            </form>
-          </div>
-
-          {/*Description */}
-          <div className="bg-white rounded-xl shadow p-4">
-            <form onSubmit={handleSaveDescription} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-gray-900">
-                  Description
-                </h2>
-                {!isOwner && (
-                  <span className="text-[11px] text-gray-500">
-                    Owner can edit description
-                  </span>
+      
+                <textarea
+                  rows={4}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  disabled={!isOwner}
+                  className="w-full border rounded px-2 py-1 text-sm resize-none disabled:bg-gray-100"
+                  placeholder="Add a description for this run or highlight…"
+                />
+      
+                {isOwner && (
+                  <button
+                    type="submit"
+                    disabled={savingDescription}
+                    className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-gray-900 text-white text-sm hover:bg-gray-800 disabled:opacity-70"
+                  >
+                    {savingDescription ? "Saving…" : "Save description"}
+                  </button>
                 )}
-              </div>
-              <textarea
-                rows={4}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                disabled={!isOwner}
-                className="w-full border rounded px-2 py-1 text-sm resize-none disabled:bg-gray-100"
-                placeholder="Add a description for this run or highlight…"
-              />
-              {isOwner && (
-                <button
-                  type="submit"
-                  disabled={savingDescription}
-                  className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-gray-900 text-white text-sm hover:bg-gray-800 disabled:opacity-70"
-                >
-                  {savingDescription ? "Saving…" : "Save description"}
-                </button>
-              )}
-            </form>
-          </div>
-
-          {/*Comments */}
-          <div className="bg-white rounded-xl shadow p-4 flex flex-col gap-3">
-            <h2 className="text-sm font-semibold text-gray-900">
-              Comments
-            </h2>
-
-            {commentsAllowed ? (
+              </form>
+            </section>
+      
+            {/*4.Comments section (full-width, under description) */}
+            <section className="bg-white rounded-xl shadow p-4 flex flex-col gap-3">
+              <h2 className="text-sm font-semibold text-gray-900">Comments</h2>
+      
+              {commentsAllowed ? (
                 <>
-                {/* Add comment form */}
-                <form onSubmit={handleAddComment} className="space-y-2">
+                  {/*Add comment form */}
+                  <form onSubmit={handleAddComment} className="space-y-2">
                     <textarea
-                    rows={3}
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    className="w-full border rounded px-2 py-1 text-sm resize-none"
-                    placeholder={
+                      rows={3}
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      className="w-full border rounded px-2 py-1 text-sm resize-none"
+                      placeholder={
                         userEmail
-                        ? "Add a comment…"
-                        : "Log in to add a comment…"
-                    }
-                    disabled={!userEmail || postingComment}
+                          ? "Add a comment…"
+                          : "Log in to add a comment…"
+                      }
+                      disabled={!userEmail || postingComment}
                     />
                     <div className="flex justify-end">
-                    <button
+                      <button
                         type="submit"
                         disabled={
-                        !userEmail || !newComment.trim() || postingComment
+                          !userEmail || !newComment.trim() || postingComment
                         }
                         className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-60"
-                    >
+                      >
                         {postingComment ? "Posting…" : "Comment"}
-                    </button>
+                      </button>
                     </div>
-                </form>
-
-                {/* Comment list */}
-                {comments.length === 0 ? (
+                  </form>
+      
+                  {/*Comment list */}
+                  {comments.length === 0 ? (
                     <p className="text-xs text-gray-500">
-                    No comments yet. Be the first to comment.
+                      No comments yet. Be the first to comment.
                     </p>
-                ) : (
+                  ) : (
                     <ul className="space-y-2 max-h-64 overflow-auto">
-                    {comments.map((c) => (
+                      {comments.map((c) => (
                         <li
-                        key={c.id}
-                        className="border rounded px-2 py-1 text-xs"
+                          key={c.id}
+                          className="border rounded px-2 py-1 text-xs"
                         >
-                        <div className="flex justify-between mb-1">
+                          <div className="flex justify-between mb-1">
                             <span className="font-medium">
-                            {c.authorEmail}
+                              {c.authorEmail}
                             </span>
                             <span className="text-gray-500">
-                            {formatDate(c.createdAt)}
+                              {formatDate(c.createdAt)}
                             </span>
-                        </div>
-                        <p className="text-gray-800 whitespace-pre-wrap">
+                          </div>
+                          <p className="text-gray-800 whitespace-pre-wrap">
                             {c.text}
-                        </p>
+                          </p>
                         </li>
-                    ))}
+                      ))}
                     </ul>
-                )}
+                  )}
                 </>
-            ) : (
-              <p className="text-xs text-gray-500">
-                Comments are only available on public videos. This
-                highlight is{" "}
-                <span className="font-semibold">
-                  {job.visibility || "private"}
-                </span>
-                .
-              </p>
-            )}
-          </div>
-        </section>
-      </main>
-    </div>
-  );
+              ) : (
+                <p className="text-xs text-gray-500">
+                  Comments are only available on public videos. This highlight is{" "}
+                  <span className="font-semibold">
+                    {job.visibility || "private"}
+                  </span>
+                  .
+                </p>
+              )}
+            </section>
+          </main>
+        </div>
+    );      
 }
