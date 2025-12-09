@@ -101,13 +101,18 @@ def _job_doc(job_id: str):
 #helper for folder documents
 def _folder_doc(folder_id: str):
     return firestore_client.collection(FOLDER_COLLECTION).document(folder_id)
-#11-13-25 Thursday 2pm - For future folder support
 
 #11-21-25 Friday 4pm - For my runs page
 #helper for run documents (My Runs page)
 def _run_doc(run_id: str):
     return firestore_client.collection(RUNS_COLLECTION).document(run_id)
-#11-21-25 Friday 4pm - For my runs page
+
+#12-09-25 Thursday 11am - To get viewer email for 'like' button status syncing between like button on dashboard page and like button on standalone video player page.
+def _get_viewer_email(request: Request) -> Optional[str]:
+    # adjust header name if you’re using a different one
+    email = request.headers.get("x-owner-email") or ""
+    email = email.strip().lower()
+    return email or None
 
 #name the ingest object (temporary “raw” file in GCS)
 def _make_keys(original_name: str, job_id: str) -> tuple[str, str, str]:
@@ -362,11 +367,20 @@ async def upload_video(
 #GET
 #poll job status
 @app.get("/jobs/{job_id}")
-def job_status(job_id: str):
+def job_status(job_id: str, request: Request):
     snap = _job_doc(job_id).get()
     if not snap.exists:
         raise HTTPException(status_code=404, detail="job not found")
-    return snap.to_dict()
+
+    data = snap.to_dict() or {}
+    viewer_email = _get_viewer_email(request)
+
+    liked_by_current = False
+    if viewer_email and isinstance(data.get("likedByEmails"), list):
+        liked_by_current = viewer_email in data["likedByEmails"]
+
+    data["likedByCurrentUser"] = liked_by_current
+    return data
 
 #GET
 #fetch signed URL for finished highlight
@@ -403,12 +417,15 @@ def list_highlights(
     limit: int = 20,                       
     pageToken: Optional[str] = None,         #(document id to start after)
     signed: bool = True,                    #(sign outputGcsUri for direct playback)
+    request: Request = None,
 ):
     """
     NEW:
     Returns finished highlight jobs filtered by ownerEmail (preferred) or userId.
     Ordered by finishedAt desc. pageToken is the last document id from previous page.
     """
+    viewer_email = _get_viewer_email(request)
+
     if not ownerEmail and not userId:
         raise HTTPException(status_code=400, detail="ownerEmail or userId is required")
 
@@ -442,33 +459,6 @@ def list_highlights(
         #11-08-25 Saturday 11:42am - For 'Total Footage' stat
         #derive a duration for the Total Footage stat
         duration_sec = _guess_duration_seconds(data)  
-        #11-08-25 Saturday 11:42am - For 'Total Footage' stat
-
-        #11-13-25 Thursday 10am - For 'Total Footage' stat - Makes old and new jobs pick up a duration the first time they’re listed (via analysis JSON or ffprobe if available, or via any field you later add), 
-        #and your dashboard’s Total Footage will always be the sum of all clips currently shown
-        #cache duration back into Firestore if missing so future loads have it
-        # if duration_sec > 0 and not any(k in data for k in (
-        #     "highlightDurationSeconds", "highlightVideoLength", "durationSeconds"
-        # )):
-        #     try:
-        #         _job_doc(data.get("jobId") or d.id).set(
-        #             {"highlightVideoLength": duration_sec}, merge=True
-        #         )
-        #     except Exception:
-        #         pass  # don't fail the list call if caching fails
-
-        #write back any missing duration fields so future reads don't recompute
-        # if duration_sec > 0:
-        #     to_set = {}
-        #     if "highlightDurationSeconds" not in data:    
-        #         to_set["highlightDurationSeconds"] = duration_sec
-        #     if "highlightVideoLength" not in data:        
-        #         to_set["highlightVideoLength"] = duration_sec
-        #     if to_set:
-        #         try:
-        #             _job_doc(data.get("jobId") or d.id).set(to_set, merge=True)
-        #         except Exception:
-        #             pass  #pattern: don't fail listing on cache errors
 
         #If we still don't have a duration, try computing directly from outputGcsUri
         if duration_sec <= 0:
@@ -490,12 +480,16 @@ def list_highlights(
                 except Exception:
                     pass  #pattern       
         #11-13-25 Thursday 10am - For 'Total Footage' stat
+
+        liked_by_current = False
+        if viewer_email and isinstance(data.get("likedByEmails"), list):
+            liked_by_current = viewer_email in data["likedByEmails"]
         
         #fields + title & visibility (with sensible fallbacks)
         item = {
             "jobId": data.get("jobId") or d.id,
             "originalFileName": data.get("originalFileName"),
-            "title": data.get("title") or data.get("originalFileName"),          
+            "title": data.get("title"),          
             "visibility": data.get("visibility") or "private",                    
             "finishedAt": str(data.get("finishedAt")),
             "createdAt": str(data.get("createdAt")),                   
@@ -506,8 +500,9 @@ def list_highlights(
             "status": data.get("status"),
             "durationSeconds": duration_sec, #11-08-25 Saturday 11:42am Update - For 'Total Footage' stat
             "description": data.get("description"),  #12-01-25 Monday 11am Update - surface description            
-            "likesCount": int(data.get("likesCount") or 0), #12-06-25 Saturday 7pm Update 
-            "viewsCount": int(data.get("viewsCount") or 0), #12-06-25 Saturday 7pm Update 
+            "likesCount": int(data.get("likesCount", 0)), #12-06-25 Saturday 7pm Update 
+            "likedByCurrentUser": liked_by_current, #12-09-25 Saturday 11am Update 
+            "viewsCount": int(data.get("viewsCount", 0)), #12-06-25 Saturday 7pm Update 
         }
         if signed and data.get("outputGcsUri"):
             try:
@@ -636,42 +631,47 @@ def record_view(event: EngagementEvent):
     }
 
 @app.post("/video-engagement/like")
-def record_like(event: EngagementEvent):
-    """
-    Toggle-friendly like endpoint.
+async def record_like(request: Request):
+    payload = await request.json()
+    highlight_id = payload.get("highlightId")
+    delta = int(payload.get("delta", 0))
 
-    Frontend sends:
-      delta = +1  → user is liking
-      delta = -1  → user is unliking
+    if not highlight_id:
+        raise HTTPException(status_code=400, detail="highlightId is required")
 
-    We simply increment likesCount by `delta` but never let it go below 0.
-    """
-    job_ref = _job_doc(event.highlightId)
+    viewer_email = _get_viewer_email(request)
 
-    try:
-        # Apply the delta (can be +1 or -1)
-        job_ref.update(
-            {
-                "likesCount": firestore.Increment(event.delta),
-                "lastLikedAt": firestore.SERVER_TIMESTAMP,
-            }
-        )
-    except NotFound:
-        raise HTTPException(status_code=404, detail="Highlight not found")
+    job_ref = _job_doc(highlight_id)
 
-    # Re-read to get the current likesCount, then clamp at 0 just in case.
-    job_doc = job_ref.get()
-    data = job_doc.to_dict() or {}
-    likes_count = max(0, int(data.get("likesCount") or 0))
+    updates: dict = {
+        "lastLikedAt": firestore.SERVER_TIMESTAMP,
+    }
 
-    # If we ever went negative due to races, fix it.
-    if likes_count == 0:
-        try:
-            job_ref.update({"likesCount": 0})
-        except Exception:
-            pass
+    if delta > 0:
+        updates["likesCount"] = firestore.Increment(1)
+        if viewer_email:
+            updates["likedByEmails"] = firestore.ArrayUnion([viewer_email])
+    elif delta < 0:
+        updates["likesCount"] = firestore.Increment(-1)
+        if viewer_email:
+            updates["likedByEmails"] = firestore.ArrayRemove([viewer_email])
+    else:
+        #no-op
+        return {"ok": True}
 
-    return {"ok": True, "likesCount": likes_count}
+    job_ref.update(updates)
+
+    snap = job_ref.get()
+    data = snap.to_dict() or {}
+    liked_by_current = False
+    if viewer_email and isinstance(data.get("likedByEmails"), list):
+        liked_by_current = viewer_email in data["likedByEmails"]
+
+    return {
+        "ok": True,
+        "likesCount": int(data.get("likesCount", 0)),
+        "likedByCurrentUser": liked_by_current,
+    }
 #12-06-25 Saturday 7:30pm Update - Video Engagement Stats API
 
 

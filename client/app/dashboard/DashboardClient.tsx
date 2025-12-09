@@ -70,14 +70,15 @@ const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 //+
 //Gives Per-highlight like toggle that persists across tabs and reloads (per browser)
 const VIEW_STORAGE_PREFIX = "hooptuber:viewed:";
-const LIKE_STORAGE_PREFIX = "hooptuber:liked:";
+const LIKES_STORAGE_PREFIX = "hooptuber_like_v1:"; //old version in DashboardClient.tsx was const LIKES_STORAGE_PREFIX = "hooptuber:liked:";
+//const LIKES_STORAGE_PREFIX = "hooptuber_like_v1:"; on standalone video player page matches const LIKES_STORAGE_PREFIX on dashboard page (DashboardClient.tsx) 
 
 function viewStorageKey(jobId: string) {
   return `${VIEW_STORAGE_PREFIX}${jobId}`;
 }
 
 function likeStorageKey(jobId: string) {
-  return `${LIKE_STORAGE_PREFIX}${jobId}`;
+  return `${LIKES_STORAGE_PREFIX}${jobId}`;
 }
 
 function hasStoredView(jobId: string): boolean {
@@ -90,9 +91,14 @@ function markStoredView(jobId: string) {
   window.localStorage.setItem(viewStorageKey(jobId), "1");
 }
 
-function isLikedLocally(jobId: string): boolean {
+// function isLikedLocally(jobId: string): boolean {
+//   if (typeof window === "undefined") return false;
+//   return window.localStorage.getItem(likeStorageKey(jobId)) === "1";
+// }
+
+function isLikedLocally(jobId: string) {
   if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(likeStorageKey(jobId)) === "1";
+  return window.localStorage.getItem(LIKES_STORAGE_PREFIX + jobId) === "1";
 }
 
 function setLikedLocally(jobId: string, liked: boolean) {
@@ -488,31 +494,38 @@ export default function DashboardClient() {
       //Normalise all highlight items and make sure likes/views are numbers
       const rawItems = Array.isArray(json?.items) ? json.items : [];
 
-      const mapped: HighlightItem[] = rawItems.map((raw: any) => ({
-        jobId: raw.jobId,
-        originalFileName: raw.originalFileName,
-        title: raw.title ?? raw.originalFileName ?? "Untitled",
-        visibility: raw.visibility ?? "private",
-        finishedAt: raw.finishedAt,
-        createdAt: raw.createdAt,
-        outputGcsUri: raw.outputGcsUri,
-        analysisGcsUri: raw.analysisGcsUri,
-        ownerEmail: raw.ownerEmail,
-        userId: raw.userId,
-        status: raw.status,
-        durationSeconds: raw.durationSeconds,
-        description: raw.description,
+      const mapped: HighlightItem[] = rawItems.map((raw: any) => {
+        //trust the backend’s “am I liked by this user?” flag
+        const likedFromServer = !!raw.likedByCurrentUser;
+      
+        return {
+          jobId: raw.jobId,
+          originalFileName: raw.originalFileName,
+          title: raw.title ?? raw.originalFileName ?? "Untitled",
+          visibility: raw.visibility ?? "private",
+          finishedAt: raw.finishedAt,
+          createdAt: raw.createdAt,
+          outputGcsUri: raw.outputGcsUri,
+          analysisGcsUri: raw.analysisGcsUri,
+          ownerEmail: raw.ownerEmail,
+          userId: raw.userId,
+          status: raw.status,
+          durationSeconds: raw.durationSeconds,
+          description: raw.description,
+      
+          //engagement fields - likes and views pulled from backend
+          likesCount: raw.likesCount ?? 0,
+          viewsCount: raw.viewsCount ?? 0,
+      
+          //“liked” tint comes from *either* server or hydrate from localStorage
+          likedLocally: likedFromServer || isLikedLocally(raw.jobId),
+      
+          //keep any signed URL your backend returned
+          signedUrl: raw.signedUrl,
+        };
+      });
 
-        //engagement fields from backend
-        likesCount: raw.likesCount ?? 0,
-        viewsCount: raw.viewsCount ?? 0,
 
-        //hydrate from localStorage
-        likedLocally: isLikedLocally(raw.jobId),
-
-        //keep any signed URL your backend returned
-        signedUrl: raw.signedUrl,
-      }));
 
       setHighlights(mapped);
       //fetch per-highlight comment counts from /video-comments

@@ -25,12 +25,13 @@ const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
 
 //12-07-25 Sunday 4pm Update - Prevent double-counting views on highlight videos with localStorage
-//Shared front-end hlpers (views + likes in localStorage) between DashboardClient + [jobId]/page.tsx
+//Shared front-end helpers (views + likes in localStorage) between DashboardClient + [jobId]/page.tsx
 //Gives per-highlight view (if we've already counted a view for this highlight on this browser) + like (if user liked this highlight on this browser) state
 //+
 //Gives Per-highlight like toggle that persists across tabs and reloads (per browser)
 const VIEW_STORAGE_PREFIX = "hooptuber:viewed:";
-const LIKES_STORAGE_PREFIX = "hooptuber_like_v1_";
+const LIKES_STORAGE_PREFIX = "hooptuber_like_v1:";
+//const LIKES_STORAGE_PREFIX = "hooptuber_like_v1:"; on standalone video player page matches const LIKES_STORAGE_PREFIX on dashboard page (DashboardClient.tsx) 
 
 function viewStorageKey(jobId: string) {
   return `${VIEW_STORAGE_PREFIX}${jobId}`;
@@ -51,13 +52,18 @@ function likeStorageKey(jobId: string) {
     return `${LIKES_STORAGE_PREFIX}${jobId}`;
   }
   
-  function isLikedLocally(jobId: string): boolean {
+  // function isLikedLocally(jobId: string): boolean {
+  //   if (typeof window === "undefined") return false;
+  //   try {
+  //     return window.localStorage.getItem(likeStorageKey(jobId)) === "1";
+  //   } catch {
+  //     return false;
+  //   }
+  // }
+
+  function isLikedLocally(jobId: string) {
     if (typeof window === "undefined") return false;
-    try {
-      return window.localStorage.getItem(likeStorageKey(jobId)) === "1";
-    } catch {
-      return false;
-    }
+    return window.localStorage.getItem(LIKES_STORAGE_PREFIX + jobId) === "1";
   }
 
   function setLikedLocally(jobId: string, liked: boolean) {
@@ -85,8 +91,9 @@ interface JobDoc {
   status?: string;
   error?: string | null;
   description?: string; //description comes from Firestore
-  likesCount?: number;
-  viewsCount?: number;
+  likesCount?: number | null;
+  viewsCount?: number | null;
+  likedByCurrentUser?: boolean | null;
 }
 
 interface DownloadResponse {
@@ -197,14 +204,23 @@ export default function VideoPage() {
             setTitle(jobData.title ?? jobData.originalFileName ?? "");
             setVisibility(jobData.visibility ?? "private");
 
+            //likes count from server
             setLikesCount(
-                typeof jobData.likesCount === "number" ? jobData.likesCount : null,
-              );
-              if (jobId) {
-                setLikedLocallyState(isLikedLocally(jobId));
-              }
-              
-    
+              typeof jobData.likesCount === "number" ? jobData.likesCount : null,
+            );
+
+            //hydrate "liked" state from server backend + localStorage
+            const likedFromServer = !!jobData.likedByCurrentUser;
+            const likedFromLocal = isLikedLocally(jobId);
+            const initialLiked = likedFromServer || likedFromLocal;
+            //const likedFromStorage = jobId ? isLikedLocally(jobId) : false;
+            //const initialLiked = likedFromServer || likedFromStorage;
+
+            if (jobId) {
+              setLikedLocallyState(initialLiked);
+              setLikedLocally(jobId, initialLiked);
+            }
+            
             //seed description from Firestore
             setDescription(jobData.description ?? "");
     

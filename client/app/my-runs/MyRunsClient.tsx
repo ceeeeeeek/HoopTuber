@@ -3,7 +3,22 @@
 "use client"; 
 
 import React, { useState, useEffect, useCallback, useMemo } from "react"; 
-import { Play, Upload, Globe2, Plus, Users, Eye, Lock, Trash2, Pencil, ChevronDown, Link as LinkIcon } from "lucide-react";            
+import {
+  Play,
+  Upload,
+  Globe2,
+  Plus,
+  Users,
+  Eye,
+  Lock,
+  Trash2,
+  Pencil,
+  ChevronDown,
+  Link as LinkIcon,
+  ChevronLeft,
+  ChevronRight,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";                  
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -18,9 +33,9 @@ export function DribbleIcon({ className }: { className?: string }) {
       className={cn("inline-block", className)}
       aria-hidden="true"
     >
-      {/* ball */}                                    
+      {/*ball */}                                    
       <circle cx="17" cy="5" r="3" fill="currentColor" />
-      {/* body */}
+      {/*body */}
       <path
         d="M10 8L8 13l2 3"
         fill="none"
@@ -29,7 +44,7 @@ export function DribbleIcon({ className }: { className?: string }) {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {/* front leg */}
+      {/*front leg */}
       <path
         d="M10 16l-1.5 4"
         fill="none"
@@ -37,7 +52,7 @@ export function DribbleIcon({ className }: { className?: string }) {
         strokeWidth="1.6"
         strokeLinecap="round"
       />
-      {/* back leg */}
+      {/*back leg */}
       <path
         d="M10 15l2.5 4"
         fill="none"
@@ -45,7 +60,7 @@ export function DribbleIcon({ className }: { className?: string }) {
         strokeWidth="1.6"
         strokeLinecap="round"
       />
-      {/* arm toward ball */}
+      {/*arm toward ball */}
       <path
         d="M10 9.5L14 6.5"
         fill="none"
@@ -53,7 +68,7 @@ export function DribbleIcon({ className }: { className?: string }) {
         strokeWidth="1.6"
         strokeLinecap="round"
       />
-      {/* head */}
+      {/*head */}
       <circle cx="10" cy="6.5" r="1.1" fill="currentColor" />
     </svg>
   );
@@ -77,7 +92,7 @@ function isAbortError(err: unknown): boolean {
 type RunVisibility = "public" | "private" | "unlisted";
 
 //11-22-25 Saturday 12am - For my runs page
-// --- My Runs API types (separate from highlightFolders) ---
+//--- My Runs API types (separate from highlightFolders) ---
 type RunsSummary = {
     runId: string;
     name: string;
@@ -95,6 +110,7 @@ type RunsSummary = {
     jobId: string;
     title?: string;
     originalFileName?: string;
+    signedUrl?: string; //12-09-25 Tuesday 1pm - We also get a signed URL from /highlights; use it for thumbnails on the my-runs page
   };
   
 
@@ -185,11 +201,11 @@ async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
     }
   
     const data = await r.json();
-    // backend should return {inviteUrl: "https://..." }
+    //backend should return {inviteUrl: "https://..." }
     if (typeof data.inviteUrl === "string") {
       return data.inviteUrl;
     }
-    // fallback: if only token returned, construct a reasonable URL
+    //fallback: if only token returned, construct a reasonable URL
     if (typeof data.token === "string") {
       return `${window.location.origin}/join/${data.token}`;
     }
@@ -216,6 +232,16 @@ export default function MyRunsClient() {
 
     //12-01-25 Monday 4pm - Highlight summary map state
     const [highlightMap, setHighlightMap] = useState<Record<string, HighlightSummary>>({});
+
+    //12-09-25 Tuesday 1pm - which runs have their thumbnails expanded?
+    const [expandedRuns, setExpandedRuns] = useState<Record<string, boolean>>({});
+
+    //12-09-25 Tuesday 1pm - lightbox for enlarged thumbnail view
+    const [lightbox, setLightbox] = useState<{
+      runId: string;
+      highlightIds: string[];
+      index: number;
+    } | null>(null);
 
     //For creating a run
     const [creating, setCreating] = useState<boolean>(false);
@@ -250,7 +276,7 @@ export default function MyRunsClient() {
         //if (!userEmail) return;
         //wait until auth is ready and we have an email
         if (!backendReady) {
-            // optional debug log
+            //optional debug log
             console.log("MyRuns loadRuns skipped (backend not ready yet)", {
                 status,
                 userEmail,
@@ -347,7 +373,7 @@ export default function MyRunsClient() {
             return;
           }
           console.error("MyRuns load highlights error", err);
-          // We can silently fall back to showing raw IDs if this fails
+          //We can silently fall back to showing raw IDs if this fails
         }
       };
     
@@ -366,7 +392,7 @@ export default function MyRunsClient() {
         try {
           setCreating(true);
           const run = await apiCreateRun(userEmail, name.trim(), "private");
-          // Prepend to the list
+          //Prepend to the list
           setRuns((prev) => [run, ...prev]);
         } catch (e: any) {
           alert(e?.message || "Failed to create run.");
@@ -449,6 +475,15 @@ export default function MyRunsClient() {
         }
       };
 
+      //12-09-25 Tuesday 1pm - Thumbnails in my-runs page
+      const toggleRunThumbnails = (runId: string) => {
+        setExpandedRuns((prev) => ({
+          ...prev,
+          [runId]: !prev[runId],
+        }));
+      };
+      
+
       //Guard the whole main UI - If you want to avoid showing the “Failed to load runs” message while auth is still loading, you can gate the render.
       if (status === "loading") {
         return (
@@ -459,8 +494,8 @@ export default function MyRunsClient() {
       }
       
       if (!backendReady) {
-        // Not authenticated: you could redirect, or show a message.
-        // For now just show nothing / a simple message.
+        //Not authenticated: you could redirect, or show a message.
+        //For now just show nothing / a simple message.
         return (
           <div className="min-h-screen flex items-center justify-center">
             <p className="text-gray-500 text-sm">Please sign in to view your runs.</p>
@@ -474,7 +509,7 @@ export default function MyRunsClient() {
 //============================ RENDER UI (START)============================
 return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header (same as Dashboard page) –UI */}
+      {/*Header (same as Dashboard page) –UI */}
       <header className="border-b bg-white">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
@@ -501,7 +536,7 @@ return (
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-10">
-        {/* Page title – expanded actions */}
+        {/*Page title – expanded actions */}
         <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
@@ -513,7 +548,7 @@ return (
             </p>
           </div>
 
-          {/* Join + Create actions – replaces single button layout */}
+          {/*Join + Create actions – replaces single button layout */}
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -540,7 +575,7 @@ return (
           </div>
         </header>
 
-        {/* === My Runs gallery === richer content */}
+        {/*=== My Runs gallery === richer content */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -548,7 +583,7 @@ return (
               <h2 className="text-lg font-semibold">My Runs</h2>
             </div>
 
-            {/* Secondary Join for small screens – text updated */}
+            {/*Secondary Join for small screens – text updated */}
             <button
               type="button"
               className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs md:text-sm text-gray-800 hover:bg-gray-50"
@@ -563,7 +598,7 @@ return (
             </button>
           </div>
 
-          {/* loading / error / empty - text updated */}
+          {/*loading / error / empty - text updated */}
           {loading && (
             <div className="rounded-lg border bg-white p-6 text-sm text-gray-600">
               Loading your runs…
@@ -608,7 +643,7 @@ return (
                     key={run.runId}
                     className="rounded-lg border bg-white p-4 flex flex-col justify-between gap-3"
                   >
-                    {/* Top row: name + owner + visibility + delete – richer header */}
+                    {/*Top row: name + owner + visibility + delete – richer header */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-2">
                         <DribbleIcon className="w-4 h-4 text-purple-600 mt-1" />
@@ -633,7 +668,7 @@ return (
                       </div>
 
                       <div className="flex flex-col items-end gap-2">
-                        {/* visibility dropdown*/}
+                        {/*visibility dropdown*/}
                         <div className="relative">
                           <button
                             type="button"
@@ -684,7 +719,7 @@ return (
                           )}
                         </div>
 
-                        {/* rename + delete*/}
+                        {/*rename + delete*/}
                         <div className="flex items-center gap-2">
                           {owned && (
                             <button
@@ -710,14 +745,14 @@ return (
                       </div>
                     </div>
 
-                    {/* body copy – updated text */}
+                    {/*body copy – updated text */}
                     <p className="text-xs text-gray-500">
                       In a later step, this card will show the latest
                       highlight videos for this run plus a comment stream
                       for your squad.
                     </p>
 
-                    {/* meta rows: members + highlights + invite */}
+                    {/*meta rows: members + highlights + invite */}
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-600">
                       <div className="inline-flex items-center gap-1">
                         <Users className="w-3 h-3" />
@@ -752,7 +787,7 @@ return (
                       </button>
                     </div>
 
-                    {/* Members list */}
+                    {/*Members list */}
                     {(run.members?.length || 0) > 0 && (
                       <div className="mt-3 border-t pt-2">
                         <p className="text-[11px] font-semibold text-gray-500 mb-1">
@@ -770,30 +805,36 @@ return (
                         </div>
                       </div>
                     )}
-                    {/* Highlight IDs list – (simple debug-style)
+
+                    {/*12-09-25 Tuesday 1pm - Add thumbnails to my-runs page */}
                     {(run.highlightIds?.length || 0) > 0 && (
                       <div className="mt-3 border-t pt-2">
-                        <p className="text-[11px] font-semibold text-gray-500 mb-1">
-                          Highlight IDs
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {run.highlightIds?.map((hId) => (
-                            <span
-                              key={hId}
-                              className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-mono text-orange-700"
-                            >
-                              {hId}
+                        {/*header row: label + chevron toggle */}
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-[11px] font-semibold text-gray-500">
+                            Highlights
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => toggleRunThumbnails(run.runId)}
+                            className="inline-flex items-center rounded-full px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-50"
+                          >
+                            <span className="mr-1">
+                              {(expandedRuns[run.runId] ?? false)
+                                ? "Hide thumbnails"
+                                : "Show thumbnails"}
                             </span>
-                          ))}
+                            <ChevronDown
+                              className={cn(
+                                "w-3 h-3 transition-transform",
+                                (expandedRuns[run.runId] ?? false) && "rotate-180"
+                              )}
+                            />
+                          </button>
                         </div>
-                      </div>
-                    )} */}
-                    {(run.highlightIds?.length || 0) > 0 && (
-                      <div className="mt-3 border-t pt-2">
-                        <p className="text-[11px] font-semibold text-gray-500 mb-1">
-                          Highlights
-                        </p>
-                        <div className="flex flex-wrap gap-1">
+
+                        {/*always show labels as chips */}
+                        <div className="flex flex-wrap gap-1 mb-2">
                           {run.highlightIds?.map((hId) => {
                             const meta = highlightMap[hId];
                             const label = meta?.title || meta?.originalFileName || hId;
@@ -808,8 +849,56 @@ return (
                             );
                           })}
                         </div>
+
+                        {/*when expanded, show a horizontal strip of thumbnails (0s frame) */}
+                        {(expandedRuns[run.runId] ?? false) && (
+                          <div className="mt-2 overflow-x-auto">
+                            <div className="flex gap-3 pb-2">
+                              {run.highlightIds?.map((hId, idx) => {
+                                const meta = highlightMap[hId];
+                                const label = meta?.title || meta?.originalFileName || hId;
+                                const thumbUrl = meta?.signedUrl;
+
+                                if (!thumbUrl) return null;
+
+                                return (
+                                  <div
+                                    key={hId}
+                                    className="flex-shrink-0 w-40"
+                                  >
+                                    {/*title above thumbnail */}
+                                    <div className="text-[11px] font-mono text-gray-600 mb-1 truncate">
+                                      {label}
+                                    </div>
+
+                                    {/*thumbnail as tiny video frame (no controls) */}
+                                    <button
+                                      type="button"
+                                      className="block focus:outline-none"
+                                      onClick={() =>
+                                        setLightbox({
+                                          runId: run.runId,
+                                          highlightIds: run.highlightIds ?? [],
+                                          index: idx,
+                                        })
+                                      }
+                                    >
+                                      <video
+                                        src={thumbUrl}
+                                        className="w-40 h-24 rounded-md border border-gray-200 object-cover"
+                                        preload="metadata"
+                                        muted
+                                        playsInline
+                                      />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    )} {/*12-09-25 Tuesday 1pm - Add thumbnails to my-runs page */}
                   </article>
                 );
               })}
@@ -817,7 +906,82 @@ return (
           )}
         </section>
 
-        {/* Simple rename "modal" – overlay */}
+        {/*12-09-25 Tuesday 1pm - Lightbox for thumbnails */}
+        {lightbox &&
+          (() => {
+            const { runId, highlightIds, index } = lightbox;
+            const ids = highlightIds || [];
+            if (!ids.length) return null;
+
+            const currentId = ids[index] ?? ids[0];
+            const meta = currentId ? highlightMap[currentId] : undefined;
+            const label =
+              meta?.title || meta?.originalFileName || currentId;
+            const url = meta?.signedUrl;
+
+            if (!url) return null;
+
+            const go = (dir: "prev" | "next") => {
+              setLightbox((prev) => {
+                if (!prev) return prev;
+                const list = prev.highlightIds || [];
+                if (!list.length) return prev;
+                let nextIndex = prev.index + (dir === "next" ? 1 : -1);
+                if (nextIndex < 0) nextIndex = list.length - 1;
+                if (nextIndex >= list.length) nextIndex = 0;
+                return { ...prev, index: nextIndex };
+              });
+            };
+
+            return (
+              <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70">
+                <div className="relative w-full max-w-4xl mx-4 bg-black rounded-lg overflow-hidden">
+                  {/*close button */}
+                  <button
+                    type="button"
+                    className="absolute top-3 right-3 z-10 rounded-full bg-black/60 p-1 text-white hover:bg-black"
+                    onClick={() => setLightbox(null)}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+
+                  {/*label */}
+                  <div className="px-4 pt-3 pb-2 text-sm text-gray-100">
+                    {label}
+                  </div>
+
+                  {/*video at full size */}
+                  <div className="relative flex items-center justify-center bg-black">
+                    <button
+                      type="button"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-2 text-white hover:bg-black"
+                      onClick={() => go("prev")}
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+
+                    <video
+                      src={url}
+                      className="max-h-[70vh] w-full object-contain"
+                      controls
+                      autoPlay
+                    />
+
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-2 text-white hover:bg-black"
+                      onClick={() => go("next")}
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+
+        {/*Simple rename "modal" – overlay */}
         {editingRunId && (
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
             <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-lg">
@@ -848,7 +1012,7 @@ return (
               </div>
             </div>
           </div>
-        )}
+        )} 
       </main>
     </div>
   );
