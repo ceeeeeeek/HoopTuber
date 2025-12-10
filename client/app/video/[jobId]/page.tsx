@@ -1,28 +1,30 @@
-//client/app/video/[jobId]/page.tsx - 12-07-25 Sunday Update 1pm - This dyanmic route file page.tsx handles the video job page rendering based on jobId.
+//client/app/video/[jobId]/page.tsx - 12-09-25 Tuesday Update 9pm - This dyanmic route file page.tsx handles the video job page rendering based on jobId.
 //That gives you URLs like: /video/4ed3e82d-8ab4-4954-9497-fe614bbf7ffa
 //…and matches the href={/video/${encodeURIComponent(h.jobId)}} you already use in the dashboard.
 //+
-//This new dynamic route will:
-//Read jobId from the URL using useParams().
-//Fetch the highlight record (including signedUrl, title, description, visibility, ownerEmail, etc.) from your FastAPI backend via GET /highlights/{jobId}?signed=true.
 //Render a large YouTube-style player (16:9 video, native controls: play/pause, fullscreen, quality menu if the browser/source supports it).
 //Show title, owner, date, and visibility under the player.
-//Show an editable description for the owner (PATCHes /highlights/{jobId} with description).
+//Show an editable description for the owner 
 //Show a comments section: Lists existing comments for that video (from GET /comments?highlightId=... – you’ll add these endpoints to FastAPI / Firestore).
 //Lets allowed users post a new comment via POST /comments.
 //Only allows comments if:
 //The video is public, or
-//The signed-in user is the owner (you can tighten this later if you want).
+//The signed-in user is the owner 
 
 "use client";
 
-import React, { useEffect, useState, FormEvent } from "react";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+  FormEvent
+} from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
-
 
 //12-07-25 Sunday 4pm Update - Prevent double-counting views on highlight videos with localStorage
 //Shared front-end helpers (views + likes in localStorage) between DashboardClient + [jobId]/page.tsx
@@ -36,7 +38,6 @@ const LIKES_STORAGE_PREFIX = "hooptuber_like_v1:";
 function viewStorageKey(jobId: string) {
   return `${VIEW_STORAGE_PREFIX}${jobId}`;
 }
-
 
 function hasStoredView(jobId: string): boolean {
   if (typeof window === "undefined") return false;
@@ -52,15 +53,6 @@ function likeStorageKey(jobId: string) {
     return `${LIKES_STORAGE_PREFIX}${jobId}`;
   }
   
-  // function isLikedLocally(jobId: string): boolean {
-  //   if (typeof window === "undefined") return false;
-  //   try {
-  //     return window.localStorage.getItem(likeStorageKey(jobId)) === "1";
-  //   } catch {
-  //     return false;
-  //   }
-  // }
-
   function isLikedLocally(jobId: string) {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(LIKES_STORAGE_PREFIX + jobId) === "1";
@@ -134,6 +126,16 @@ export default function VideoPage() {
     const { data: session, status: sessionStatus } = useSession();
     const userEmail = (session?.user as any)?.email as string | undefined;
 
+    //12-09-25 Tuesday 4pm - View standalone video player page without being logged in
+    //Are we logged in? - isAuthed flag and requireAuth() that matches TryFree login flow
+    const isAuthed = !!userEmail;
+
+    //For anonymous users, send them to the login page (same target
+    //you use for TryFreeUploadButton) when they try to engage.
+    const requireAuth = useCallback(() => {
+      router.push("/login?next=/upload");
+    }, [router]);    
+
     const [job, setJob] = useState<JobDoc | null>(null);
     const [signedUrl, setSignedUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
@@ -156,10 +158,14 @@ export default function VideoPage() {
     const [likesCount, setLikesCount] = useState<number | null>(null);
     const [likedLocally, setLikedLocallyState] = useState(false);
 
-    
+    //12-09-25 Tuesday - Share button in standalone video player page dialog state
+    const [shareOpen, setShareOpen] = useState(false);
+    const [shareCopied, setShareCopied] = useState(false);
+    const [shareUrl, setShareUrl] = useState("");
+
     //12-07-25 Sunday 12:30pm - View tracking: count a view when user watches at least threshold of the video (half the video) or 30s, whichever is smaller 
     //Track view progress so each page load counts max 1 view
-    const viewProgressRef = React.useRef<{
+    const viewProgressRef = useRef<{
         hasCounted: boolean;
         thresholdSeconds: number;
         continuousSeconds: number;
@@ -171,6 +177,12 @@ export default function VideoPage() {
         lastTime: null,
       });
       
+    //12-09-25 Tuesday - Share button in standalone video player page dialog state. Capture the current URL for the share dialog
+    useEffect(() => {
+      if (typeof window !== "undefined") {
+        setShareUrl(window.location.href);
+      }
+    }, []);
 
     //--- Fetch job details + signed URL from your real backend ---
     useEffect(() => {
@@ -213,8 +225,6 @@ export default function VideoPage() {
             const likedFromServer = !!jobData.likedByCurrentUser;
             const likedFromLocal = isLikedLocally(jobId);
             const initialLiked = likedFromServer || likedFromLocal;
-            //const likedFromStorage = jobId ? isLikedLocally(jobId) : false;
-            //const initialLiked = likedFromServer || likedFromStorage;
 
             if (jobId) {
               setLikedLocallyState(initialLiked);
@@ -613,7 +623,34 @@ export default function VideoPage() {
           });
         }
       }
-      
+    
+    //12-09-25 Tuesday 4pm - Added share button to standalone video player page
+    //Share button – copy the current /video/[jobId] URL to clipboard
+    function handleShareClick() {
+      if (typeof window === "undefined") return;
+      // refresh URL just in case (e.g. if env changed)
+      setShareUrl(window.location.href);
+      setShareCopied(false);
+      setShareOpen(true);
+    }
+
+    //12-09-25 Tuesday 4pm - copy handler
+    async function handleCopyShareLink() {
+      if (!shareUrl) return;
+
+      try {
+        if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(shareUrl);
+          setShareCopied(true);
+        } else {
+          // Fallback prompt
+          window.prompt("Copy this link:", shareUrl);
+        }
+      } catch {
+        window.prompt("Copy this link:", shareUrl);
+      }
+    }
+
       
   //--- Render ---
   if (!jobId) {
@@ -663,19 +700,20 @@ export default function VideoPage() {
           onClick={() => router.push("/dashboard")}
           className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
         >
-          Back to Dashboard
+          Go to Sign-In
         </button>
       </div>
     );
   }
 
-  const displayTitle =
-    title || job.title || job.originalFileName || "Untitled highlight";
+    const displayTitle =
+      title || job.title || job.originalFileName || "Untitled highlight";
+
 
     return (
         <div className="min-h-screen bg-gray-100">
           {/*Top bar (kept from your original) */}
-          <header className="w-full bg-white border-b">
+          {/* <header className="w-full bg-white border-b">
             <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <Link
@@ -692,8 +730,41 @@ export default function VideoPage() {
                 </div>
               )}
             </div>
+          </header> */}
+          {/* Top bar */}
+          <header className="w-full bg-white border-b">
+            <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+              {/* Left: HoopTuber logo -> Dashboard */}
+              <Link
+                href="/" //HoopTuber logo links back to Home Page
+                className="flex items-center gap-2"
+              >
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-orange-500 text-xs font-bold text-white">
+                  ▶
+                </span>
+                <span className="text-sm font-semibold text-gray-900">
+                  HoopTuber
+                </span>
+              </Link>
+
+              {/*Right: either "logged in as" or Sign In button */}
+              {isAuthed ? (
+                <div className="text-xs text-gray-600">
+                  Logged in as{" "}
+                  <span className="font-medium">{userEmail}</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={requireAuth}
+                  className="px-4 py-1.5 rounded-full bg-gray-900 text-white text-sm font-medium hover:bg-black"
+                >
+                  Sign In
+                </button>
+              )}
+            </div>
           </header>
-      
+
           {/*YouTube-style main column layout */}
           <main className="max-w-6xl mx-auto px-4 py-6 space-y-4">
             {/*1. Video player */}
@@ -716,57 +787,55 @@ export default function VideoPage() {
               </div>
             </section>
       
-            {/*2. Title + Like button + basic meta (all in one card) */}
+            {/*2.Title + Like button + basic meta (all in one card) */}
             <section className="bg-white rounded-xl shadow p-4 space-y-2">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                {/* Title + visibility editing (owner can edit) */}
-                <form
-                  onSubmit={handleSaveMeta}
-                  className="flex-1 space-y-2"
-                >
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500">
-                      Title
-                    </label>
-                    <input
-                      type="text"
-                      value={displayTitle}
-                      onChange={(e) => setTitle(e.target.value)}
-                      disabled={!isOwner}
-                      className="mt-1 w-full border rounded px-2 py-1 text-sm disabled:bg-gray-100"
-                    />
-                  </div>
-      
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                {/*Left: title + meta */}
+                {isOwner ? (
+                  //OWNER VIEW – can edit title & visibility
+                  <form onSubmit={handleSaveMeta} className="flex-1 space-y-2">
                     <div>
-                      <div className="text-xs font-medium text-gray-500">
-                        Visibility
-                      </div>
-                      <select
-                        value={visibility}
-                        onChange={(e) =>
-                          setVisibility(e.target.value as Visibility)
-                        }
-                        disabled={!isOwner}
-                        className="mt-1 border rounded px-2 py-1 text-sm disabled:bg-gray-100"
-                      >
-                        <option value="public">Public</option>
-                        <option value="unlisted">Unlisted</option>
-                        <option value="private">Private</option>
-                      </select>
+                      <label className="block text-xs font-medium text-gray-500">
+                        Title
+                      </label>
+                      <input
+                        type="text"
+                        value={displayTitle}
+                        onChange={(e) => setTitle(e.target.value)}
+                        className="mt-1 w-full border rounded px-2 py-1 text-sm"
+                      />
                     </div>
-      
-                    <div className="text-xs text-gray-500 text-right">
-                      <div>Uploaded: {formatDate(job.createdAt) || "Unknown"}</div>
-                      {job.highlightDurationSeconds != null && (
-                        <div>
-                          Length: {formatDuration(job.highlightDurationSeconds)}
+
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-medium text-gray-500">
+                          Visibility
                         </div>
-                      )}
+                        <select
+                          value={visibility}
+                          onChange={(e) =>
+                            setVisibility(e.target.value as Visibility)
+                          }
+                          className="mt-1 border rounded px-2 py-1 text-sm"
+                        >
+                          <option value="public">Public</option>
+                          <option value="unlisted">Unlisted</option>
+                          <option value="private">Private</option>
+                        </select>
+                      </div>
+
+                      <div className="text-xs text-gray-500 text-right">
+                        <div>
+                          Uploaded: {formatDate(job.createdAt) || "Unknown"}
+                        </div>
+                        {job.highlightDurationSeconds != null && (
+                          <div>
+                            Length: {formatDuration(job.highlightDurationSeconds)}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-      
-                  {isOwner && (
+
                     <button
                       type="submit"
                       disabled={savingMeta}
@@ -774,55 +843,91 @@ export default function VideoPage() {
                     >
                       {savingMeta ? "Saving…" : "Save title & visibility"}
                     </button>
-                  )}
-                </form>
-      
-                {/*Like button to the right of the title (YouTube-style) */}
-                <button
-                  type="button"
-                  onClick={handleStandaloneLike}
-                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition
-                    ${
-                      likedLocally
+                  </form>
+                ) : (
+                  //NON-OWNER VIEW – plain text title, no inputs or visibility dropdown
+                  <div className="flex-1 space-y-2">
+                    <div>
+                      <div className="text-xs font-medium text-gray-500">
+                        Title
+                      </div>
+                      <p className="mt-1 text-sm font-semibold text-gray-900">
+                        {displayTitle}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs text-gray-500">
+                        {/*we could optionally show visibility text here if you want */}
+                      </div>
+                      <div className="text-xs text-gray-500 text-right">
+                        <div>
+                          Uploaded: {formatDate(job.createdAt) || "Unknown"}
+                        </div>
+                        {job.highlightDurationSeconds != null && (
+                          <div>
+                            Length: {formatDuration(job.highlightDurationSeconds)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/*Right side: Like + Share buttons (YouTube-style) */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={isAuthed ? handleStandaloneLike : requireAuth}
+                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition
+                      ${likedLocally
                         ? "bg-purple-600 text-white border-purple-600"
                         : "bg-white text-gray-800 border-gray-200 hover:bg-gray-50"
-                    }`}
-                >
-                  <span aria-hidden="true" className="text-base">
-                    {likedLocally ? "❤️" : "🤍"}
-                  </span>
-                  <span>{likedLocally ? "Liked" : "Like"}</span>
-                  <span className="text-xs text-gray-500">
-                    {likesCount ?? 0}
-                  </span>
-                </button>
+                      }`}
+                  >
+                    <span aria-hidden="true" className="text-base">
+                      {likedLocally ? "❤️" : "🤍"}
+                    </span>
+                    <span>{likedLocally ? "Liked" : "Like"}</span>
+                    <span className="text-xs text-gray-500">
+                      {likesCount ?? 0}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleShareClick}
+                    className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium bg-white text-gray-800 border-gray-200 hover:bg-gray-50"
+                  >
+                    <span aria-hidden="true">🔗</span>
+                    <span>Share</span>
+                  </button>
+                </div>
               </div>
             </section>
-      
+
             {/* 3.Description section (below title/like) */}
             <section className="bg-white rounded-xl shadow p-4">
-              <form onSubmit={handleSaveDescription} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-gray-900">
-                    Description
-                  </h2>
-                  {!isOwner && (
+              {isOwner ? (
+                //OWNER VIEW – editable textarea
+                <form onSubmit={handleSaveDescription} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-gray-900">
+                      Description
+                    </h2>
                     <span className="text-[11px] text-gray-500">
-                      Owner can edit description
+                      You can edit this description
                     </span>
-                  )}
-                </div>
-      
-                <textarea
-                  rows={4}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  disabled={!isOwner}
-                  className="w-full border rounded px-2 py-1 text-sm resize-none disabled:bg-gray-100"
-                  placeholder="Add a description for this run or highlight…"
-                />
-      
-                {isOwner && (
+                  </div>
+
+                  <textarea
+                    rows={4}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full border rounded px-2 py-1 text-sm resize-none"
+                    placeholder="Add a description for this run or highlight…"
+                  />
+
                   <button
                     type="submit"
                     disabled={savingDescription}
@@ -830,13 +935,32 @@ export default function VideoPage() {
                   >
                     {savingDescription ? "Saving…" : "Save description"}
                   </button>
-                )}
-              </form>
+                </form>
+              ) : (
+                //NON-OWNER VIEW – plain text only
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-gray-900">
+                      Description
+                    </h2>
+                  </div>
+
+                  {description && description.trim().length > 0 ? (
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 border rounded px-3 py-2">
+                      {description}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 italic">
+                      No description provided.
+                    </p>
+                  )}
+                </div>
+              )}
             </section>
       
             {/*4.Comments section (full-width, under description) */}
             <section className="bg-white rounded-xl shadow p-4 flex flex-col gap-3">
-              <h2 className="text-sm font-semibold text-gray-900">Comments</h2>
+              <h2 className="text-sm font-semibold text-gray-900">Comments Section</h2>
       
               {commentsAllowed ? (
                 <>
@@ -906,6 +1030,71 @@ export default function VideoPage() {
               )}
             </section>
           </main>
+          {/* ===================== */}
+          {/* Share dialog overlay */}
+          {/* ===================== */}
+          {shareOpen && (
+            <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+              <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-5 space-y-4">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-gray-900">
+                    Share highlight
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setShareOpen(false)}
+                    className="text-gray-500 hover:text-gray-700 text-lg leading-none"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {/*Email button */}
+                <div>
+                  <a
+                    href={`mailto:?subject=${encodeURIComponent(
+                      "Check out this HoopTuber highlight"
+                    )}&body=${encodeURIComponent(shareUrl)}`}
+                    className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium bg-white text-gray-800 border-gray-200 hover:bg-gray-50"
+                  >
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-white text-xs">
+                      ✉
+                    </span>
+                    Email
+                  </a>
+                </div>
+
+                {/*Link + copy */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-gray-500">
+                    Video link
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={shareUrl}
+                      className="flex-1 border rounded px-2 py-1 text-xs bg-gray-50"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyShareLink}
+                      className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+                    >
+                      {shareCopied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+
+                  {shareCopied && (
+                    <p className="text-[11px] text-green-600">
+                      Link copied to clipboard
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-    );      
+      );     
 }
