@@ -9,12 +9,16 @@ from utils import convert_to_mp4, add_watermark
 import math
 
 # vertex version of process_video_and_summarize
-from VideoInputTest import vertex_summarize 
+from VertexFunctions import vertex_data_cleaned
 
 
 from utils import format_gemini_output # COMBINES GEMINI OUTPUT AND TUPLE ARRAY FOR FRONTEND
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[logging.StreamHandler()])
+import functools
+print = functools.partial(print, flush=True)  # Ensure all prints are flushed immediately
 PROJECT_ID         = os.environ["GCP_PROJECT_ID"]
 SUBSCRIPTION_ID    = os.environ["PUBSUB_SUB"]          # e.g. video-jobs-worker
 RAW_BUCKET         = os.environ["GCS_RAW_BUCKET"]
@@ -59,6 +63,7 @@ def make_highlight(in_path: str, out_path: str, gemini_output):
     tuple_timestamps = highlighter.converting_tester(make_timestamps)
     clip_files = highlighter.create_highlights_ffmpeg(tuple_timestamps, in_path, out_path) # create highlight clips
     if not clip_files:
+        logging.error("Highlights failed")
         raise RuntimeError("No highlight clips were created.")
     return out_path
 
@@ -89,17 +94,25 @@ def handle_job_vertex(msg: pubsub_v1.subscriber.message.Message):
         print(f"=== handle_job() started for jobId={payload.get('jobId')} ===", flush=True)
         try:
             print(f"Sending to Vertex AI: {input_gcs_uri}")
-            vertex_response = vertex_summarize(input_gcs_uri)
+            # this returns the FINAL formatted JSON with stat_times
+            vertex_response = vertex_data_cleaned(input_gcs_uri)
             print(f"DEBUG: Vertex response type: {type(vertex_response)}")
             print(f"DEBUG: Vertex response content: {vertex_response}")
         except Exception as e:
-            raise RuntimeError(f"Vertex AI processing failed: {e}")
+            logging.error(f"Vertex AI processing failed: {e}")
+            update_job(job_id, {
+                "status": "vertex_error",
+                "error": str(e),
+                "finishedAt": firestore.SERVER_TIMESTAMP
+            })
+            msg.ack()
+            return
         with tempfile.TemporaryDirectory() as td:
             local_json_path = os.path.join(td, "analysis.json")
             with open(local_json_path, "w") as f:
                 json.dump(vertex_response, f, indent=2)
 
-                analysis_gcs_uri = upload_to_gcs(local_json_path, OUT_BUCKET, json_key)
+            analysis_gcs_uri = upload_to_gcs(local_json_path, OUT_BUCKET, json_key)
             update_job(job_id, {
                 "status": "done",
                 "shotEvents": vertex_response,
@@ -283,7 +296,7 @@ def handle_job(msg: pubsub_v1.subscriber.message.Message):
 
 def dispatch_job(msg):
     payload = json.loads(msg.data.decode("utf-8"))
-    mode = payload.get("mode", "legacy")
+    mode = payload.get("mode", "old")  # default to "old" if not specified
     
     if mode == "vertex":
         return handle_job_vertex(msg)
@@ -295,6 +308,8 @@ def main():
     subscriber = pubsub_v1.SubscriberClient()
     subscription_path = subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_ID)
     streaming_pull_future = subscriber.subscribe(subscription_path, callback=dispatch_job)
+    print("TEST PRINT MF", flush=True)
+    logging.info("LOGGING TEST PRINT")
     print(f"Worker listening on {subscription_path}", flush=True)
     try:
         while True:

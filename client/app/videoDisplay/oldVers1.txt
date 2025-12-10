@@ -1,0 +1,288 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import Image from "next/image";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  Play,
+  Pause,
+  Clock,
+  Target,
+  MapPin,
+  Zap,
+  FastForward, // New icon for "Play All"
+} from "lucide-react";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
+const test_job_id = "547e5029-37fa-4343-ac55-b8bec165d234";
+
+// ... (Interfaces remain the same) ...
+interface GeminiShotEvent {
+  id: string;
+  timestamp_end: string;
+  timestamp_start: string;
+  outcome: string;
+  subject: string;
+  shot_type: string;
+  shot_location: string;
+}
+
+interface HighlightData {
+  ok: boolean;
+  jobId: string;
+  sourceVideoUrl: string;
+  rawEvents: GeminiShotEvent[];
+  ranges: [number, number][]; // [start_seconds, end_seconds]
+}
+
+export default function VideoDisplayPage() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [highlightData, setHighlightData] = useState<HighlightData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Track which highlight we are currently inside
+  const [currentHighlightIndex, setCurrentHighlightIndex] = useState<number | null>(null);
+  const [isSequencePlaying, setIsSequencePlaying] = useState(false); // New state for "Play All" mode
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // Fetch highlight data on mount
+  useEffect(() => {
+    const fetchHighlightData = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(`${API_BASE}/jobs/${test_job_id}/highlight-data`);
+        if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`);
+        const data: HighlightData = await response.json();
+        
+        // Sort ranges by start time to ensure sequential playback works correctly
+        // (Optional safety check, assuming API returns sorted)
+        // data.ranges.sort((a, b) => a[0] - b[0]); 
+        
+        setHighlightData(data);
+      } catch (err) {
+        console.error(err);
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchHighlightData();
+  }, []);
+
+  // --- THE SEQUENTIAL PLAYBACK LOGIC ---
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const handleTimeUpdate = () => {
+      if (!isSequencePlaying || currentHighlightIndex === null) return;
+
+      const [_, endTime] = highlightData.ranges[currentHighlightIndex];
+
+      // Buffer of 0.3s to prevent skipping too early, but ensure we catch the end
+      if (video.currentTime >= endTime) {
+        // We reached the end of the current clip. Is there a next one?
+        const nextIndex = currentHighlightIndex + 1;
+
+        if (nextIndex < highlightData.ranges.length) {
+          // YES: Jump to the start of the next clip
+          const [nextStartTime] = highlightData.ranges[nextIndex];
+          console.log(`Skipping to highlight #${nextIndex + 1} at ${nextStartTime}s`);
+          
+          video.currentTime = nextStartTime;
+          setCurrentHighlightIndex(nextIndex);
+          // Video keeps playing automatically
+        } else {
+          // NO: We finished the last highlight
+          console.log("All highlights finished.");
+          video.pause();
+          setIsSequencePlaying(false);
+          setIsPlaying(false);
+          setCurrentHighlightIndex(null);
+        }
+      }
+    };
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    return () => video.removeEventListener("timeupdate", handleTimeUpdate);
+  }, [currentHighlightIndex, highlightData, isSequencePlaying]);
+
+
+  // 1. Play All (Start sequence from beginning)
+  const handlePlayAll = () => {
+    const video = videoRef.current;
+    if (!video || !highlightData || highlightData.ranges.length === 0) return;
+
+    // Start at the very first highlight
+    const [firstStart] = highlightData.ranges[0];
+    video.currentTime = firstStart;
+    
+    setCurrentHighlightIndex(0);
+    setIsSequencePlaying(true); // Enable the skipping logic
+    
+    video.play().then(() => setIsPlaying(true));
+  };
+
+  // 2. Play Single Clip (Jump to specific, disable sequence)
+  const handleHighlightClick = (index: number) => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const [startTime] = highlightData.ranges[index];
+    video.currentTime = startTime;
+    
+    setCurrentHighlightIndex(index);
+    setIsSequencePlaying(true); // Treat this as starting the sequence from this point
+    // If you prefer it to STOP after this clip, set isSequencePlaying(false) here.
+
+    video.play().then(() => setIsPlaying(true));
+  };
+
+  // ... (Helpers for formatTime, colors remain the same) ...
+  const formatTime = (seconds: number): string => {
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+  
+  const getShotOutcomeColor = (outcome: string) =>
+      outcome.toLowerCase().includes("make") ? "bg-green-500" : "bg-red-500";
+  const getShotOutcomeBadge = (outcome: string) =>
+      outcome.toLowerCase().includes("make") ? "default" : "secondary";
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
+      {/* ... Header ... */}
+      
+      <div className="container mx-auto px-4 py-12">
+        <div className="max-w-6xl mx-auto">
+          {/* ... Loading/Error States ... */}
+          
+          {!loading && !error && highlightData && (
+            <div className="space-y-6">
+              
+              {/* Video Player */}
+              <Card className="overflow-hidden">
+                <div className="bg-black relative aspect-video">
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full"
+                    src={highlightData.sourceVideoUrl}
+                    controls
+                    playsInline
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                  />
+                  
+                  {/* Overlay badge showing current highlight */}
+                  {currentHighlightIndex !== null && isSequencePlaying && (
+                    <div className="absolute top-4 right-4 animate-in fade-in duration-300">
+                      <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white px-3 py-1 shadow-lg backdrop-blur-sm">
+                        Playing Highlight {currentHighlightIndex + 1} of {highlightData.ranges.length}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+
+                <CardContent className="py-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      {/* MAIN ACTION: Play All Sequence */}
+                      <Button 
+                        onClick={handlePlayAll} 
+                        size="lg"
+                        className={`${isSequencePlaying ? 'bg-red-500 hover:bg-red-600' : 'bg-orange-500 hover:bg-orange-600'} transition-all`}
+                      >
+                        {isSequencePlaying && isPlaying ? (
+                          <>
+                            <Pause className="w-5 h-5 mr-2" /> Stop Sequence
+                          </>
+                        ) : (
+                          <>
+                            <FastForward className="w-5 h-5 mr-2" /> Play Full Highlight Reel
+                          </>
+                        )}
+                      </Button>
+                      
+                      <p className="text-sm text-gray-500">
+                         {isSequencePlaying 
+                           ? "Auto-skipping non-highlight segments..." 
+                           : "Watch highlights sequentially"}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Highlights List */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Zap className="w-5 h-5 mr-2 text-orange-500" />
+                    Highlight Segments
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {highlightData.rawEvents.map((event, index) => {
+                      const [startSec, endSec] = highlightData.ranges[index];
+                      // Highlight the active clip in the list
+                      const isActive = currentHighlightIndex === index;
+
+                      return (
+                        <div
+                          key={event.id || index}
+                          onClick={() => handleHighlightClick(index)}
+                          className={`p-4 rounded-lg border-2 transition-all cursor-pointer flex items-center justify-between group
+                            ${isActive 
+                              ? "border-orange-500 bg-orange-50 ring-1 ring-orange-200" 
+                              : "border-gray-200 bg-white hover:border-orange-200 hover:bg-gray-50"
+                            }`}
+                        >
+                           <div className="flex items-center gap-4">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm
+                                ${isActive ? "bg-orange-500 text-white" : "bg-gray-200 text-gray-600 group-hover:bg-orange-200"}`}>
+                                {index + 1}
+                              </div>
+                              
+                              <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge className={getShotOutcomeColor(event.outcome)}>
+                                    {event.outcome}
+                                  </Badge>
+                                  <span className="font-medium text-gray-900">{event.shot_type}</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-sm text-gray-500">
+                                  <span className="flex items-center"><MapPin className="w-3 h-3 mr-1"/> {event.shot_location}</span>
+                                  <span className="flex items-center"><Clock className="w-3 h-3 mr-1"/> {formatTime(startSec)} - {formatTime(endSec)}</span>
+                                </div>
+                              </div>
+                           </div>
+
+                           <Button 
+                             size="icon" 
+                             variant="ghost" 
+                             className={isActive ? "text-orange-600" : "text-gray-400 group-hover:text-orange-500"}
+                           >
+                             {isActive && isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                           </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+              
+              {/* ... Stats Section (Unchanged) ... */}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

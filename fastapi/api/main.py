@@ -2,7 +2,7 @@
 
 from fastapi import Body, FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from typing import Optional
 from datetime import timedelta, datetime
@@ -17,9 +17,16 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from urllib.parse import urlparse
+from fastapi.responses import StreamingResponse
+from google.cloud import storage
+import io
+
+from utils import _make_keys, _job_doc, _publish_job, _upload_filelike_to_gcs, _sign_get_url, _parse_gs_uri
 
 from typing import Dict, Any, List
 from google.cloud.firestore import Query
+
+from vertex_service import router as vertex_router
 
 load_dotenv()
 
@@ -52,6 +59,7 @@ def user_or_ip_key(request: Request):
 limiter = Limiter(key_func=user_or_ip_key)
 app = FastAPI()
 app.state.limiter = limiter
+app.include_router(vertex_router)
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request, exc):
@@ -59,20 +67,23 @@ async def rate_limit_handler(request, exc):
         status_code=429,
         content={"detail": "Rate limit exceeded. Try again later."}
     )
+origins = [
+    "https://www.hooptuber.com",
+    "https://hooptuber.com",
+    "https://app.hooptuber.com"
+]
 
 app.add_middleware(
     CORSMiddleware,
     #allow_origins=['http://localhost:3000'],
-    allow_origins=['http://localhost:3000',
-    "https://www.hooptuber.com",
-    "https://hooptuber.com",
-    "https://app.hooptuber.com"
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+if os.getenv("ENVIRONMENT") != "production":
+    origins.append("http://localhost:3000")
+    print(f"Allowing localhost for CORS")
 
 @app.get("/")
 def check_working():
@@ -154,80 +165,18 @@ def publish_job(request: dict = Body(...)):
 
     # Publish the job to Pub/Sub for the worker to process
     try:
-        _publish_job(job_id, gcs_uri, user_id=user_id)
+        _publish_job(job_id, gcs_uri, user_id=user_id, mode="old")
         _job_doc(job_id).set({
             "status": "queued",
-            "queuedAt": firestore.SERVER_TIMESTAMP
+            "queuedAt": firestore.SERVER_TIMESTAMP,
+            "mode": "old"
         }, merge=True)
         return {"ok": True, "message": "Job queued successfully"}
     except Exception as e:
         _job_doc(job_id).set({"status": "publish_error", "error": str(e)}, merge=True)
         raise HTTPException(status_code=502, detail=f"Publish failed: {e}")
     
-def _job_doc(job_id: str):
-    """Return a Firestore doc handle for the job."""
-    return firestore_client.collection(COLLECTION).document(job_id)
 
-def _make_keys(original_name: str, job_id: str) -> tuple[str, str, str]:
-    """
-    Create a stable GCS object name for RAW uploads and return:
-      (blob_name_in_raw_bucket, gs_uri, original_file_name)
-    """
-    # Keep user uploads grouped by job; you can also include userId if you pass it
-    safe_name = original_name or "upload.mp4"
-    #now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
-    #date_str = now_pst.strftime("%Y-%m-%d")
-    blob_name = f"uploads/{job_id}/{safe_name}"
-    gcs_uri   = f"gs://{RAW_BUCKET}/{blob_name}"
-    print(f"DEBUG: uploading to blob_name={blob_name}")
-    return blob_name, gcs_uri, safe_name
-
-def _publish_job(job_id: str, raw_gcs_uri: str, user_id: Optional[str] = None, owner_email: Optional[str] = None, mode="vertex"):
-    """Publish a message the Background Worker will process."""
-    payload = {
-        "jobId": job_id,
-        "videoGcsUri": raw_gcs_uri,
-        "outBucket": OUT_BUCKET,
-        "userId": user_id,
-        "ownerEmail": owner_email,
-    }
-    # .result() to surface publish errors immediately
-    publisher.publish(topic_path, json.dumps(payload).encode("utf-8")).result(timeout=10)
-
-
-def _upload_filelike_to_gcs(bucket: storage.Bucket, blob_name: str, file_obj, content_type: str):
-    """Blocking upload of a file-like object to GCS (invoked in a threadpool)."""
-    blob = bucket.blob(blob_name)
-    try:
-        file_obj.seek(0)
-    except Exception:
-        pass
-    blob.upload_from_file(file_obj, content_type=content_type, timeout=600)
-
-#What changed & why: 
-#These helpers encapsulate the cloud handoff: naming, Firestore doc handle, Pub/Sub publish, and streaming the file to GCS.
-#---------------------------------------------------------
-# NEW: Helper functions 
-def _job_doc(job_id: str):
-    """Return a Firestore doc handle for the job."""
-    return firestore_client.collection(COLLECTION).document(job_id)
-
-def _parse_gs_uri(gs_uri: str) -> tuple[str, str]:
-    """Split 'gs://bucket/path/to/key' -> (bucket, key)."""
-    assert gs_uri.startswith("gs://"), "Not a gs:// URI"
-    rest = gs_uri[len("gs://"):]
-    bucket, _, key = rest.partition("/")
-    return bucket, key
-
-def _sign_get_url(gs_uri: str, minutes: int = 15) -> str:
-    """Generate a short-lived signed URL for downloading from GCS."""
-    bucket_name, blob_name = _parse_gs_uri(gs_uri)
-    blob = storage_client.bucket(bucket_name).blob(blob_name)
-    return blob.generate_signed_url(
-        version="v4",
-        expiration=timedelta(minutes=minutes),
-        method="GET",
-    )
 
 
 @app.post("/upload")
@@ -330,6 +279,8 @@ def job_download(job_id: str):
                 response["shot_events"] = shot_events
             except Exception as e:
                 print(f"Warning: failed to parse analysis JSON: {e}")
+        raw_url = _sign_get_url(data["videoGcsUri"], minutes=30)
+        response["sourceVideoUrl"] = raw_url
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"signing failed: {e}")
@@ -553,6 +504,95 @@ def publish_render_job(body: dict = Body(...)):
         "message": "Render job queued",
         "jobId": job_id
     }
+
+
+
+@app.get("/stream/{job_id}")
+def stream_video(job_id: str):
+    """
+    Redirects the browser to a valid GCS Signed URL for the ORIGINAL source video.
+    This allows the frontend <video> tag to stream and seek (jump to timestamps)
+    efficiently by talking directly to Google Cloud Storage.
+    """
+    # 1. Fetch Job Metadata
+    doc = _job_doc(job_id).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    data = doc.to_dict()
+    
+    # 2. Get the Source Video URI
+    # We use 'videoGcsUri' (the original upload) because the timestamp 
+    # logic (#t=xx) corresponds to the original game clock.
+    gcs_uri = data.get("videoGcsUri")
+    
+    if not gcs_uri:
+        raise HTTPException(status_code=404, detail="Source video not found for this job")
+
+    try:
+        # 3. Generate Signed URL (Valid for 60 minutes)
+        # This gives the browser permission to read the private file from GCS
+        signed_url = _sign_get_url(gcs_uri, minutes=60)
+        
+        # 4. Redirect the browser to GCS
+        return RedirectResponse(url=signed_url, status_code=307)
+        
+    except Exception as e:
+        print(f"Error signing URL for stream: {e}")
+        raise HTTPException(status_code=500, detail="Could not generate stream URL")
+
+@app.get("/jobs/{job_id}/highlight-data")
+def highlight_data(job_id: str):
+    snap = _job_doc(job_id).get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="job not found")
+
+    data = snap.to_dict()
+
+    if data.get("status") != "done":
+        raise HTTPException(status_code=409, detail="analysis not ready")
+    if data.get("shotEvents"):
+        raw_events = data["shotEvents"]
+    elif data.get("analysisGcsUri"):
+        bucket_name, blob_name = _parse_gs_uri(data["analysisGcsUri"])
+        blob = storage_client.bucket(bucket_name).blob(blob_name)
+        raw_json = blob.download_as_bytes().decode("utf-8")
+        raw_events = json.loads(raw_json)
+    else:
+        raise HTTPException(status_code=404, detail="No analysis found")
+
+    # 2. Convert timestamps to seconds
+    def ts_to_seconds(ts):
+        parts = ts.split(":")
+        if len(parts) == 3:
+            h, m, s = map(int, parts)
+            return h*3600 + m*60 + s
+        elif len(parts) == 2:
+            m, s = map(int, parts)
+            return m*60 + s
+        elif len(parts) == 1:
+            return int(parts[0])
+        else:
+            raise ValueError(f"invalid timestamp {ts}")
+
+    ranges = []
+    for event in raw_events:
+        start = ts_to_seconds(event.get("timestamp_start"))
+        end = ts_to_seconds(event.get("timestamp_end"))
+        ranges.append([start, end])
+
+    # 3. Generate a signed URL for the original video
+    video_url = _sign_get_url(data["videoGcsUri"], minutes=60)
+
+    return {
+        "ok": True,
+        "jobId": job_id,
+        "sourceVideoUrl": video_url,
+        "rawEvents": raw_events,
+        "ranges": ranges,
+    }
+
+
 
 @app.get("/healthz")
 def healthz():

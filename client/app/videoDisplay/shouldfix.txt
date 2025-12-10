@@ -1,0 +1,348 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import Image from "next/image";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  Pause,
+  Zap,
+  FastForward, // New icon for "Play All"
+} from "lucide-react";
+import ClipDropdownPanel from "@/app/app-components/ClipDropdownPanel";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
+const test_job_id = "547e5029-37fa-4343-ac55-b8bec165d234";
+
+// ... (Interfaces remain the same) ...
+interface GeminiShotEvent {
+  id: string;
+  timestamp_end: string;
+  timestamp_start: string;
+  outcome: string;
+  subject: string;
+  shot_type: string;
+  shot_location: string;
+}
+
+interface HighlightData {
+  ok: boolean;
+  jobId: string;
+  sourceVideoUrl: string;
+  rawEvents: GeminiShotEvent[];
+  ranges: [number, number][]; // [start_seconds, end_seconds]
+}
+
+export default function VideoDisplayPage() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [highlightData, setHighlightData] = useState<HighlightData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
+
+  // Track which highlight we are currently inside
+  const [currentHighlightIndex, setCurrentHighlightIndex] = useState<number | null>(null);
+  const [isSequencePlaying, setIsSequencePlaying] = useState(false); // New state for "Play All" mode
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // State for edited events - stores user modifications
+  const [editedEvents, setEditedEvents] = useState<Map<number, Partial<GeminiShotEvent>>>(new Map());
+  const [editedRanges, setEditedRanges] = useState<Map<number, [number, number]>>(new Map());
+
+  // Fetch highlight data on mount
+  useEffect(() => {
+    const fetchHighlightData = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(`${API_BASE}/jobs/${test_job_id}/highlight-data`);
+        if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`);
+        const data: HighlightData = await response.json();
+        
+        // Sort ranges by start time to ensure sequential playback works correctly
+        // (Optional safety check, assuming API returns sorted)
+        // data.ranges.sort((a, b) => a[0] - b[0]); 
+        
+        setHighlightData(data);
+      } catch (err) {
+        console.error(err);
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchHighlightData();
+  }, []);
+
+  // Helper to get the current (possibly edited) range for a highlight
+  const getRange = (index: number): [number, number] => {
+    if (editedRanges.has(index)) {
+      return editedRanges.get(index)!;
+    }
+    return highlightData?.ranges[index] || [0, 0];
+  };
+
+  // Helper to get the current (possibly edited) event for a highlight
+  const getEvent = (index: number): GeminiShotEvent => {
+    const originalEvent = highlightData?.rawEvents[index];
+    if (!originalEvent) return {} as GeminiShotEvent;
+
+    if (editedEvents.has(index)) {
+      return { ...originalEvent, ...editedEvents.get(index) };
+    }
+    return originalEvent;
+  };
+
+  // Callback to handle updates from ClipDropdownPanel
+  const handleEventUpdate = (
+    index: number,
+    updatedEvent: Partial<GeminiShotEvent>,
+    updatedRange: [number, number]
+  ) => {
+    // Update edited events
+    setEditedEvents((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(index, { ...newMap.get(index), ...updatedEvent });
+      return newMap;
+    });
+
+    // Update edited ranges
+    setEditedRanges((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(index, updatedRange);
+      return newMap;
+    });
+  };
+
+  // --- THE SEQUENTIAL PLAYBACK LOGIC ---
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const handleTimeUpdate = () => {
+      if (!isSequencePlaying || currentHighlightIndex === null) return;
+
+      const [_, endTime] = getRange(currentHighlightIndex);
+
+      // Buffer of 0.3s to prevent skipping too early, but ensure we catch the end
+      if (video.currentTime >= endTime) {
+        // We reached the end of the current clip. Is there a next one?
+        const nextIndex = currentHighlightIndex + 1;
+
+        if (nextIndex < highlightData.ranges.length) {
+          // YES: Jump to the start of the next clip
+          const [nextStartTime] = getRange(nextIndex);
+          console.log(`Skipping to highlight #${nextIndex + 1} at ${nextStartTime}s`);
+
+          video.currentTime = nextStartTime;
+          setCurrentHighlightIndex(nextIndex);
+          // Video keeps playing automatically
+        } else {
+          // NO: We finished the last highlight
+          console.log("All highlights finished.");
+          video.pause();
+          setIsSequencePlaying(false);
+          setIsPlaying(false);
+          setCurrentHighlightIndex(null);
+        }
+      }
+    };
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    return () => video.removeEventListener("timeupdate", handleTimeUpdate);
+  }, [currentHighlightIndex, highlightData, isSequencePlaying, editedRanges]);
+
+
+  // 1. Play All (Start sequence from beginning)
+  const handlePlayAll = () => {
+    const video = videoRef.current;
+    if (!video || !highlightData || highlightData.ranges.length === 0) return;
+
+    // Start at the very first highlight (use edited range if available)
+    const [firstStart] = getRange(0);
+    video.currentTime = firstStart;
+
+    setCurrentHighlightIndex(0);
+    setIsSequencePlaying(true); // Enable the skipping logic
+
+    video.play().then(() => setIsPlaying(true));
+  };
+
+  // 2. Play Single Clip (Jump to specific, disable sequence)
+  const handleHighlightClick = (index: number) => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const [startTime] = getRange(index);
+    video.currentTime = startTime;
+
+    setCurrentHighlightIndex(index);
+    setIsSequencePlaying(true); // Treat this as starting the sequence from this point
+    // If you prefer it to STOP after this clip, set isSequencePlaying(false) here.
+
+    video.play().then(() => setIsPlaying(true));
+  };
+
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
+      {/* ... Header ... */}
+      
+      <div className="container mx-auto px-4 py-12">
+        <div className="max-w-6xl mx-auto">
+          {/* ... Loading/Error States ... */}
+          
+          {!loading && !error && highlightData && (
+            <div className="space-y-6">
+              
+              {/* Video Player */}
+              <Card className="overflow-hidden">
+                <div className="bg-black relative aspect-video">
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full"
+                    controls
+                    playsInline
+                    crossOrigin="anonymous"
+                    preload="metadata"
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                    onLoadStart={() => {
+                      console.log("Video loading from:", highlightData.sourceVideoUrl);
+                      setVideoError(null);
+                    }}
+                    onLoadedMetadata={() => {
+                      console.log("Video metadata loaded successfully");
+                    }}
+                    onError={(e) => {
+                      console.error("Video error:", e);
+                      const videoElement = e.currentTarget;
+                      if (videoElement.error) {
+                        const errorMessages: Record<number, string> = {
+                          1: "MEDIA_ERR_ABORTED - Video loading was aborted",
+                          2: "MEDIA_ERR_NETWORK - Network error while loading video",
+                          3: "MEDIA_ERR_DECODE - Video decoding failed",
+                          4: "MEDIA_ERR_SRC_NOT_SUPPORTED - Video format not supported or source not accessible"
+                        };
+                        const errorMsg = errorMessages[videoElement.error.code] || "Unknown video error";
+                        console.error("Video error code:", videoElement.error.code);
+                        console.error("Video error message:", videoElement.error.message);
+                        console.error("Video URL:", highlightData.sourceVideoUrl);
+                        setVideoError(errorMsg);
+                      }
+                    }}
+                  >
+                    <source src={highlightData.sourceVideoUrl} type="video/mp4" />
+                    <source src={highlightData.sourceVideoUrl} type="video/webm" />
+                    Your browser does not support the video tag.
+                  </video>
+
+                  {/* Video Error Overlay */}
+                  {videoError && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6">
+                      <div className="bg-red-50 border-2 border-red-500 rounded-lg p-4 max-w-md">
+                        <h3 className="text-red-800 font-semibold mb-2">Video Loading Error</h3>
+                        <p className="text-red-700 text-sm mb-3">{videoError}</p>
+                        <p className="text-xs text-red-600 mb-2 break-all">
+                          URL: {highlightData.sourceVideoUrl}
+                        </p>
+                        <Button
+                          onClick={() => {
+                            setVideoError(null);
+                            if (videoRef.current) {
+                              videoRef.current.load();
+                            }
+                          }}
+                          className="w-full bg-red-600 hover:bg-red-700"
+                        >
+                          Retry Loading
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Overlay badge showing current highlight */}
+                  {currentHighlightIndex !== null && isSequencePlaying && (
+                    <div className="absolute top-4 right-4 animate-in fade-in duration-300">
+                      <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white px-3 py-1 shadow-lg backdrop-blur-sm">
+                        Playing Highlight {currentHighlightIndex + 1} of {highlightData.ranges.length}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+
+                <CardContent className="py-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      {/* MAIN ACTION: Play All Sequence */}
+                      <Button 
+                        onClick={handlePlayAll} 
+                        size="lg"
+                        className={`${isSequencePlaying ? 'bg-red-500 hover:bg-red-600' : 'bg-orange-500 hover:bg-orange-600'} transition-all`}
+                      >
+                        {isSequencePlaying && isPlaying ? (
+                          <>
+                            <Pause className="w-5 h-5 mr-2" /> Stop Sequence
+                          </>
+                        ) : (
+                          <>
+                            <FastForward className="w-5 h-5 mr-2" /> Play Full Highlight Reel
+                          </>
+                        )}
+                      </Button>
+                      
+                      <p className="text-sm text-gray-500">
+                         {isSequencePlaying 
+                           ? "Auto-skipping non-highlight segments..." 
+                           : "Watch highlights sequentially"}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Highlights List with Editable Panels */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Zap className="w-5 h-5 mr-2 text-orange-500" />
+                    Highlight Segments
+                  </CardTitle>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Click any highlight to play, or expand to edit details and timestamps
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {highlightData.rawEvents.map((event, index) => {
+                      const currentEvent = getEvent(index);
+                      const currentRange = getRange(index);
+                      const isActive = currentHighlightIndex === index;
+
+                      return (
+                        <ClipDropdownPanel
+                          key={event.id || index}
+                          index={index}
+                          event={currentEvent}
+                          range={currentRange}
+                          isActive={isActive}
+                          isPlaying={isPlaying}
+                          onPlayClick={handleHighlightClick}
+                          onEventUpdate={handleEventUpdate}
+                        />
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+              
+              {/* ... Stats Section (Unchanged) ... */}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

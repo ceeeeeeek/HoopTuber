@@ -587,7 +587,7 @@ export default function UploadPage() {
                               index={idx}
                               startTime={shot.timestamp_start}
                               endTime={shot.timestamp_end}
-                              videoUrl={`${API_BASE}/stream/${uploadResult.processingId || uploadResult.processingId}#t=${shot.timestamp_start}`}
+                              videoUrl={`${API_BASE}/stream/${uploadResult.processingId || uploadResult.processingId}#t=${shot.timestamp_start},${shot.timestamp_end}`}
                               outcome={shot.outcome}
                               shotType={shot.shot_type}
                               shotLocation={shot.shot_location}
