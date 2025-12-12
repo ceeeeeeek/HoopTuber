@@ -199,28 +199,39 @@ def prompt_shot_outcomes_only():
     Do not include any explanations, text, or formatting such as code fences—output only the pure JSON."""
     return prompt
 
-def prompt_shot_outcomes_only2():
-    prompt = """
+def prompt_shot_outcomes_only2(video_duration_sec):
+    video_duration_min = video_duration_sec / 60
+
+    desired_output = """[
+    {"TimeStamp": 47, "Outcome": "Make"},
+    {"TimeStamp": 185, "Outcome": "Miss"}
+    ]"""
+    if_duration = ""
+    if video_duration_sec > 0:
+        if_duration = f"""
+            CRITICAL VIDEO ANALYSIS INSTRUCTIONS:
+            - THIS VIDEO IS {video_duration_sec} seconds long.
+            - DO NOT generate timestamps beyond {video_duration_sec} seconds
+            - ONLY output timestamps that exist within the video
+            - If you reach the end of the video, STOP analyzing
+            """
+    prompt = f"""
+    
     Act as a world-class basketball analyst with a precise understanding of basketball shot mechanics.
     Analyze the video to identify every distinct shot attempt.
-    
+    {if_duration}
     RETURN OUTPUT AS A JSON ARRAY ONLY. NO MARKDOWN. NO CODE FENCES.
-
     For each shot, extract:
-    1. "TimeStamp": The precise time of the shot.
-       CRITICAL FORMATTING RULE: You MUST use HH:MM:SS format.
-       - Correct: "00:01:45" (for 1 minute 45 seconds)
-       - Correct: "00:00:05" (for 5 seconds)
-       - INCORRECT: "1:45", "01:45", "5s"
-       - ALWAYS include the hour "00" if the video is under an hour.
+    1. "TimeStamp": The precise time of the shot in integer seconds.
+       CRITICAL FORMATTING RULE: You MUST use seconds format.
+       - Correct: "105" (for 1 minute 45 seconds)
+       - Correct: "5" (for 5 seconds)
+       - INCORRECT: "1:45", "01:45", "5s, 00:00:20"
 
     2. "Outcome": "Make", "Miss".
 
     ### EXAMPLE DESIRED OUTPUT:
-    [
-        {"TimeStamp": "00:03:12", "Outcome": "Make"},
-        {"TimeStamp": "00:14:05", "Outcome": "Miss"}
-    ]
+        {desired_output}
     
     Analyze the video now and return the JSON array:
     """

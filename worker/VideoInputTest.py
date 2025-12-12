@@ -160,6 +160,13 @@ def convert_timestamp_to_seconds(timestamp):
     - MM:SS (e.g., "05:30")
     - SS (e.g., "30")
     """
+    if isinstance(timestamp, (int, float)):
+        return int(timestamp)
+    if isinstance(timestamp, str) and ":" not in timestamp:
+        return int(timestamp)
+    if ":" not in str(timestamp):
+        return int(timestamp)
+    
     try:
         parts = timestamp.split(':')
 

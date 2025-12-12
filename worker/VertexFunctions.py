@@ -20,18 +20,20 @@ from VideoInputTest import strip_code_fences, timestamp_maker, CreateHighlightVi
 
 # MAIN VERTEX FUNCTION: READS FROM GCS URI, RETURNS GEMINI OUTPUT AS DICT
 
-def vertex_summarize(gcs_uri):
+def vertex_summarize(gcs_uri, videoDurationSec=0):
     vertex_client = genai.Client(
         vertexai=True,
         project="hooptuber-dev-1234",
-        location="us-central1"
+        location="us-central1",
+        http_options=types.HttpOptions(timeout=600000)
     )
+    print(f"VERTEX SUMMARIZATION: VIDEO LENGTH BEING INPUTTED: {videoDurationSec}")
     try:
         max_retries = 2
         for attempt in range(max_retries):
             logging.info(f"DEBUG: Vertex summarize, attempt {attempt+1}")
             model = "gemini-2.5-flash"
-            prompt = prompt_shot_outcomes_only2()
+            prompt = prompt_shot_outcomes_only2(videoDurationSec)
             response = vertex_client.models.generate_content(
                 model=model,
                 contents=[
@@ -72,9 +74,9 @@ def vertex_summarize(gcs_uri):
 MAIN VERTEX FUNCTION: READS FROM GCS URI, RETURNS CLEANED DATA FOR HIGHLIGHT CREATION
 
 """
-def vertex_data_cleaned(gcs_uri):
+def vertex_data_cleaned(gcs_uri, videoDurationSec=0):
     # 1. Run Vertex
-    vertex_output = vertex_summarize(gcs_uri)
+    vertex_output = vertex_summarize(gcs_uri, videoDurationSec)
     # 2. If Vertex returned error
     if isinstance(vertex_output, dict) and not vertex_output.get("ok", True):
         return vertex_output  # pass error up unchanged

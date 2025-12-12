@@ -19,6 +19,9 @@ logging.basicConfig(level=logging.INFO,
                     handlers=[logging.StreamHandler()])
 import functools
 print = functools.partial(print, flush=True)  # Ensure all prints are flushed immediately
+
+print(f"WORKER PUBSUB TOPIC: {os.environ["PUBSUB_TOPIC"]}")
+print(f"WORKER: PUBSUB SUB: {os.environ.get("PUBSUB_SUB", False)}")
 PROJECT_ID         = os.environ["GCP_PROJECT_ID"]
 SUBSCRIPTION_ID    = os.environ["PUBSUB_SUB"]          # e.g. video-jobs-worker
 RAW_BUCKET         = os.environ["GCS_RAW_BUCKET"]
@@ -89,13 +92,18 @@ def handle_job_vertex(msg: pubsub_v1.subscriber.message.Message):
         input_gcs_uri = payload["videoGcsUri"]     # gs://...
         out_key       = f"{job_id}/highlight.mp4"
         json_key      = f"{job_id}/analysis.json"
-        print(f"DEBUG (VERTEX: Paylod: {payload}, Processing {job_id} for {user_id}, gcs_uri={input_gcs_uri}")
+        print(f"DEBUG (VERTEX): Payload: {payload}, Processing {job_id} for {user_id}, gcs_uri={input_gcs_uri}")
         update_job(job_id, {"status": "processing", "startedAt": firestore.SERVER_TIMESTAMP})
         print(f"=== handle_job() started for jobId={payload.get('jobId')} ===", flush=True)
+
+        job_doc = firestore_client.collection(COLLECTION).document(job_id).get()
+        job_data = job_doc.to_dict() if job_doc.exists else {}
+        video_dur_sec = job_data.get("videoDurationSec") if len(job_data) != 0 else 0
+
         try:
             print(f"Sending to Vertex AI: {input_gcs_uri}")
             # this returns the FINAL formatted JSON with stat_times
-            vertex_response = vertex_data_cleaned(input_gcs_uri)
+            vertex_response = vertex_data_cleaned(input_gcs_uri, video_dur_sec)
             print(f"DEBUG: Vertex response type: {type(vertex_response)}")
             print(f"DEBUG: Vertex response content: {vertex_response}")
         except Exception as e:

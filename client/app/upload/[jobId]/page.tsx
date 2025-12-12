@@ -1,30 +1,22 @@
+// videoDisplay/page.tsx
+
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { useRouter, useParams } from "next/navigation";
-import { useSession } from "next-auth/react";
-import Image from "next/image";
-
+import { useParams } from "next/navigation";
 import {
-  CheckCircle,
+  Pause,
   Zap,
-  ArrowLeft,
-  BarChart3,
-  Brain,
-  Target,
-  Download,
-  Loader2,
+  FastForward, // New icon for "Play All"
 } from "lucide-react";
-import Link from "next/link";
-import ProfileDropdown from "../../app-components/ProfileDropdown";
-import HighlightReviewPanel from "../../app-components/HighlightReviewPanel";
+import ClipDropdownPanel from "@/app/app-components/ClipDropdownPanel";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 
+// ... (Interfaces remain the same) ...
 interface GeminiShotEvent {
   id: string;
   timestamp_end: string;
@@ -35,311 +27,315 @@ interface GeminiShotEvent {
   shot_location: string;
 }
 
-interface JobData {
+interface HighlightData {
+  ok: boolean;
   jobId: string;
-  status: string;
-  progress: number;
-  videoUrl?: string;
-  fileName?: string;
-  fileSize?: number;
-  shotEvents?: GeminiShotEvent[];
-  gameStats?: {
-    totalShots: number;
-    madeShots: number;
-    shootingPercentage: number;
-    shotTypes: Record<string, number>;
-    locations: Record<string, number>;
-  };
+  sourceVideoUrl: string;
+  rawEvents: GeminiShotEvent[];
+  ranges: [number, number][]; // [start_seconds, end_seconds]
 }
 
-export default function ViewUploadPage() {
-  const router = useRouter();
+export default function VideoDisplayPage() {
   const params = useParams();
   const jobId = params.jobId as string;
-  const { data: session } = useSession();
 
-  const [loading, setLoading] = useState(true);
-  const [jobData, setJobData] = useState<JobData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [ended, setEnded] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [highlightData, setHighlightData] = useState<HighlightData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Fetch job data from API
+  // Track which highlight we are currently inside
+  const [currentHighlightIndex, setCurrentHighlightIndex] = useState<number | null>(null);
+  const [isSequencePlaying, setIsSequencePlaying] = useState(false); // New state for "Play All" mode
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // State for edited events - stores user modifications
+  const [editedEvents, setEditedEvents] = useState<Map<number, Partial<GeminiShotEvent>>>(new Map());
+  const [editedRanges, setEditedRanges] = useState<Map<number, [number, number]>>(new Map());
+
+  // Fetch highlight data on mount
   useEffect(() => {
-    const fetchJobData = async () => {
-      if (!jobId) {
-        setError("No job ID provided");
-        setLoading(false);
-        return;
-      }
+    if (!jobId) return;
 
+    const fetchHighlightData = async () => {
       try {
-        const res = await fetch(`${API_BASE}/job_status/${jobId}`, {
-          headers: {
-            "x-owner-email": session?.user?.email || "",
-          },
-        });
+        setLoading(true);
+        const response = await fetch(`${API_BASE}/jobs/${jobId}/highlight-data`);
 
-        if (!res.ok) {
-          throw new Error("Failed to fetch job data");
+        if (!response.ok) {
+          // Check if this is an analysis failure error
+          if (response.status === 500) {
+            const errorData = await response.json();
+            if (errorData.detail && errorData.detail.includes("Analysis failed")) {
+              throw new Error("No highlights generated for this video");
+            }
+          }
+          throw new Error(`Failed to fetch: ${response.statusText}`);
         }
 
-        const data = await res.json();
-        setJobData(data);
-        setLoading(false);
+        const data: HighlightData = await response.json();
+        console.log("Fetched highlight data:", data.sourceVideoUrl);
+        // Sort ranges by start time to ensure sequential playback works correctly
+        // (Optional safety check, assuming API returns sorted)
+        // data.ranges.sort((a, b) => a[0] - b[0]);
+
+        setHighlightData(data);
       } catch (err) {
-        console.error("Error fetching job data:", err);
+        console.error(err);
         setError((err as Error).message);
+      } finally {
         setLoading(false);
       }
     };
+    fetchHighlightData();
+  }, [jobId]);
 
-    fetchJobData();
-
-    // Poll for updates if job is still processing
-    const interval = setInterval(() => {
-      if (jobData?.status === "processing" || jobData?.status === "uploading") {
-        fetchJobData();
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [jobId, session?.user?.email, jobData?.status]);
-
-  const handleDownload = () => {
-    if (!jobData?.videoUrl) return;
-    const link = document.createElement("a");
-    link.href = jobData.videoUrl;
-    link.download = "hooptuber_highlight.mp4";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Helper to get the current (possibly edited) range for a highlight
+  const getRange = (index: number): [number, number] => {
+    if (editedRanges.has(index)) {
+      return editedRanges.get(index)!;
+    }
+    return highlightData?.ranges[index] || [0, 0];
   };
+
+  // Helper to get the current (possibly edited) event for a highlight
+  const getEvent = (index: number): GeminiShotEvent => {
+    const originalEvent = highlightData?.rawEvents[index];
+    if (!originalEvent) return {} as GeminiShotEvent;
+
+    if (editedEvents.has(index)) {
+      return { ...originalEvent, ...editedEvents.get(index) };
+    }
+    return originalEvent;
+  };
+
+  // Callback to handle updates from ClipDropdownPanel
+  const handleEventUpdate = (
+    index: number,
+    updatedEvent: Partial<GeminiShotEvent>,
+    updatedRange: [number, number]
+  ) => {
+    // Update edited events
+    setEditedEvents((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(index, { ...newMap.get(index), ...updatedEvent });
+      return newMap;
+    });
+
+    // Update edited ranges
+    setEditedRanges((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(index, updatedRange);
+      return newMap;
+    });
+  };
+
+  // --- THE SEQUENTIAL PLAYBACK LOGIC ---
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const handleTimeUpdate = () => {
+      if (!isSequencePlaying || currentHighlightIndex === null) return;
+
+      const [_, endTime] = getRange(currentHighlightIndex);
+
+      // Buffer of 0.3s to prevent skipping too early, but ensure we catch the end
+      if (video.currentTime >= endTime) {
+        // We reached the end of the current clip. Is there a next one?
+        const nextIndex = currentHighlightIndex + 1;
+
+        if (nextIndex < highlightData.ranges.length) {
+          // YES: Jump to the start of the next clip
+          const [nextStartTime] = getRange(nextIndex);
+          console.log(`Skipping to highlight #${nextIndex + 1} at ${nextStartTime}s`);
+
+          video.currentTime = nextStartTime;
+          setCurrentHighlightIndex(nextIndex);
+          // Video keeps playing automatically
+        } else {
+          // NO: We finished the last highlight
+          console.log("All highlights finished.");
+          video.pause();
+          setIsSequencePlaying(false);
+          setIsPlaying(false);
+          setCurrentHighlightIndex(null);
+        }
+      }
+    };
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    return () => video.removeEventListener("timeupdate", handleTimeUpdate);
+  }, [currentHighlightIndex, highlightData, isSequencePlaying, editedRanges]);
+
+
+  // 1. Play All (Start sequence from beginning)
+  const handlePlayAll = () => {
+    const video = videoRef.current;
+    if (!video || !highlightData || highlightData.ranges.length === 0) return;
+
+    // Start at the very first highlight (use edited range if available)
+    const [firstStart] = getRange(0);
+    video.currentTime = firstStart;
+
+    setCurrentHighlightIndex(0);
+    setIsSequencePlaying(true); // Enable the skipping logic
+
+    video.play().then(() => setIsPlaying(true));
+  };
+
+  // 2. Play Single Clip (Jump to specific, disable sequence)
+  const handleHighlightClick = (index: number) => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const [startTime] = getRange(index);
+    video.currentTime = startTime;
+
+    setCurrentHighlightIndex(index);
+    setIsSequencePlaying(true); // Treat this as starting the sequence from this point
+    // If you prefer it to STOP after this clip, set isSequencePlaying(false) here.
+
+    video.play().then(() => setIsPlaying(true));
+  };
+
+  // 3. Preview Single Clip with Edited Range (plays only that one segment)
+  const handlePreviewClick = (index: number) => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    // Always use the current edited range for preview
+    const [startTime] = getRange(index);
+    video.currentTime = startTime;
+
+    setCurrentHighlightIndex(index);
+    setIsSequencePlaying(true); // Enable auto-stop at end of this clip
+
+    video.play().then(() => setIsPlaying(true));
+
+    console.log(`Previewing highlight #${index + 1} with range: ${getRange(index)}`);
+  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
-      {/* Header */}
-      <header className="border-b bg-white/80 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/upload" className="flex items-center space-x-2">
-            <ArrowLeft className="w-5 h-5" />
-            <Image
-              src="/hooptubericon2.png"
-              alt="HoopTuber Logo"
-              className="w-8 h-8 object-contain"
-              width={32}
-              height={32}
-              priority
-            />
-            <span className="text-xl font-bold text-gray-900">HoopTuber</span>
-          </Link>
-          <div className="flex items-center space-x-4">
-            <Badge variant="secondary">Basketball AI</Badge>
-            <ProfileDropdown />
-          </div>
-        </div>
-      </header>
+      {/* ... Header ... */}
 
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-6xl mx-auto">
           {/* Loading State */}
           {loading && (
             <Card>
-              <CardContent className="py-12">
-                <div className="flex flex-col items-center justify-center space-y-4">
-                  <Loader2 className="w-12 h-12 animate-spin text-orange-500" />
-                  <p className="text-gray-600">Loading video analysis...</p>
-                </div>
+              <CardContent className="py-12 text-center">
+                <p className="text-gray-600">Loading highlight data...</p>
               </CardContent>
             </Card>
           )}
 
           {/* Error State */}
-          {error && (
+          {!loading && error && (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-red-600">Error</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-gray-600 mb-4">{error}</p>
-                <Button onClick={() => router.push("/upload")}>
-                  Back to Upload
-                </Button>
+              <CardContent className="py-12 text-center">
+                <p className="text-red-600 font-semibold text-lg mb-2">Error</p>
+                <p className="text-gray-700">{error}</p>
               </CardContent>
             </Card>
           )}
 
-          {/* Processing State */}
-          {!loading && !error && jobData && (jobData.status === "processing" || jobData.status === "uploading") && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Brain className="w-5 h-5 mr-2 text-orange-500" />
-                  Processing Video
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Progress value={jobData.progress} className="w-full" />
-                    <div className="flex justify-between items-center">
-                      <p className="text-sm text-gray-600 font-medium">
-                        Analyzing basketball footage...
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {jobData.progress}%
-                      </p>
-                    </div>
-                  </div>
-                  <p className="text-center text-gray-500 text-sm">
-                    {jobData.fileName}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Complete State */}
-          {!loading && !error && jobData && jobData.status === "complete" && (
+          {!loading && !error && highlightData && (
             <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <CheckCircle className="w-5 h-5 mr-2 text-green-500" />
-                    Basketball Analysis Complete!
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center space-y-4">
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                      <CheckCircle className="w-8 h-8 text-green-500" />
+              
+              {/* Video Player */}
+              <Card className="overflow-hidden">
+                <div className="bg-black relative aspect-video">
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full"
+                    src={highlightData.sourceVideoUrl}
+                    controls
+                    muted={true}
+                    playsInline
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                  />
+                  
+                  {/* Overlay badge showing current highlight */}
+                  {currentHighlightIndex !== null && isSequencePlaying && (
+                    <div className="absolute top-4 right-4 animate-in fade-in duration-300">
+                      <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white px-3 py-1 shadow-lg backdrop-blur-sm">
+                        Playing Highlight {currentHighlightIndex + 1} of {highlightData.ranges.length}
+                      </Badge>
                     </div>
+                  )}
+                </div>
 
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-semibold mb-2">AI Analysis Complete!</h3>
-                      {jobData.fileName && jobData.fileSize && (
-                        <p className="text-gray-600 mb-4">
-                          {jobData.fileName} ({(jobData.fileSize / 1024 / 1024).toFixed(2)} MB)
-                        </p>
-                      )}
-                      <div className="relative w-full max-w-md mx-auto">
-                        {jobData.videoUrl && (
-                          <video
-                            ref={videoRef}
-                            className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
-                            src={jobData.videoUrl}
-                            muted
-                            playsInline
-                            controls
-                            onEnded={() => setEnded(true)}
-                          />
+                <CardContent className="py-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      {/* MAIN ACTION: Play All Sequence */}
+                      <Button 
+                        onClick={handlePlayAll} 
+                        size="lg"
+                        className={`${isSequencePlaying ? 'bg-red-500 hover:bg-red-600' : 'bg-orange-500 hover:bg-orange-600'} transition-all`}
+                      >
+                        {isSequencePlaying && isPlaying ? (
+                          <>
+                            <Pause className="w-5 h-5 mr-2" /> Stop Sequence
+                          </>
+                        ) : (
+                          <>
+                            <FastForward className="w-5 h-5 mr-2" /> Play Full Highlight Reel
+                          </>
                         )}
-
-                        {jobData.shotEvents && jobData.shotEvents.length > 0 && (
-                          <div className="mt-8 space-y-4">
-                            <h3 className="text-lg font-semibold mb-4 flex items-center">
-                              <Zap className="w-4 h-4 mr-2 text-orange-500" />
-                              Review & Edit Highlights
-                            </h3>
-                            <div className="w-full max-w-6xl mx-auto space-y-6">
-                              {jobData.shotEvents.map((shot, idx) => (
-                                <HighlightReviewPanel
-                                  key={idx}
-                                  index={idx}
-                                  startTime={shot.timestamp_start}
-                                  endTime={shot.timestamp_end}
-                                  videoUrl={`${API_BASE}/stream/${jobId}#t=${shot.timestamp_start}`}
-                                  outcome={shot.outcome}
-                                  shotType={shot.shot_type}
-                                  shotLocation={shot.shot_location}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {jobData.videoUrl && (
-                          <Button
-                            onClick={handleDownload}
-                            className="bg-orange-500 hover:bg-orange-600 mt-4"
-                          >
-                            <Download className="w-4 h-4 mr-2" />
-                            Download Highlight
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-
-                    {jobData.gameStats && (
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-                        <div className="p-4 bg-orange-50 rounded-lg">
-                          <div className="text-2xl font-bold text-orange-600">{jobData.gameStats.totalShots}</div>
-                          <div className="text-sm text-gray-600">Shots Detected</div>
-                        </div>
-                        <div className="p-4 bg-green-50 rounded-lg">
-                          <div className="text-2xl font-bold text-green-600">{jobData.gameStats.shootingPercentage}%</div>
-                          <div className="text-sm text-gray-600">Shooting %</div>
-                        </div>
-                        <div className="p-4 bg-blue-50 rounded-lg">
-                          <div className="text-2xl font-bold text-blue-600">{jobData.gameStats.madeShots}</div>
-                          <div className="text-sm text-gray-600">Makes</div>
-                        </div>
-                        <div className="p-4 bg-purple-50 rounded-lg">
-                          <div className="text-2xl font-bold text-purple-600">
-                            {Object.keys(jobData.gameStats.shotTypes).length}
-                          </div>
-                          <div className="text-sm text-gray-600">Shot Types</div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex flex-col sm:flex-row gap-3 mt-6">
-                      <Button className="flex-1" asChild>
-                        <Link href="/dashboard">
-                          <BarChart3 className="w-4 h-4 mr-2" />
-                          View Dashboard
-                        </Link>
                       </Button>
-                      <Button variant="outline" className="flex-1" asChild>
-                        <Link href="/upload">
-                          Analyze Another Video
-                        </Link>
-                      </Button>
+                      
+                      <p className="text-sm text-gray-500">
+                         {isSequencePlaying 
+                           ? "Auto-skipping non-highlight segments..." 
+                           : "Watch highlights sequentially"}
+                      </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              {jobData.shotEvents && jobData.shotEvents.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <Target className="w-5 h-5 mr-2" />
-                      Shot-by-Shot Analysis
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {jobData.shotEvents.map((shot, idx) => (
-                        <div key={idx} className="p-4 bg-gray-50 rounded-lg">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="font-semibold">Shot #{idx + 1}</span>
-                            <Badge variant={shot.outcome.toLowerCase().includes("make") ? "default" : "secondary"}>
-                              {shot.outcome}
-                            </Badge>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
-                            <div>Type: {shot.shot_type}</div>
-                            <div>Location: {shot.shot_location}</div>
-                            <div>Start: {shot.timestamp_start}</div>
-                            <div>End: {shot.timestamp_end}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+              {/* Highlights List with Editable Panels */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Zap className="w-5 h-5 mr-2 text-orange-500" />
+                    Highlight Segments
+                  </CardTitle>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Click any highlight to play, or expand to edit details and timestamps
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {highlightData.rawEvents.map((event, index) => {
+                      const currentEvent = getEvent(index);
+                      const currentRange = getRange(index);
+                      const isActive = currentHighlightIndex === index;
+
+                      return (
+                        <ClipDropdownPanel
+                          key={event.id || index}
+                          index={index}
+                          event={currentEvent}
+                          range={currentRange}
+                          isActive={isActive}
+                          isPlaying={isPlaying}
+                          onPlayClick={handleHighlightClick}
+                          onPreviewClick={handlePreviewClick}
+                          onEventUpdate={handleEventUpdate}
+                        />
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+              
+              {/* ... Stats Section (Unchanged) ... */}
             </div>
           )}
         </div>

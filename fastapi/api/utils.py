@@ -61,7 +61,7 @@ def _make_keys(original_name: str, job_id: str) -> tuple[str, str, str]:
     print(f"DEBUG: uploading to blob_name={blob_name}")
     return blob_name, gcs_uri, safe_name
 
-def _publish_job(job_id: str, raw_gcs_uri: str, user_id: Optional[str] = None, owner_email: Optional[str] = None, mode="old"):
+def _publish_job(job_id: str, raw_gcs_uri: str, user_id: Optional[str] = None, owner_email: Optional[str] = None, mode="vertex"):
     """Publish a message the Background Worker will process."""
     payload = {
         "jobId": job_id,
@@ -109,3 +109,18 @@ def _sign_get_url(gs_uri: str, minutes: int = 15) -> str:
         expiration=timedelta(minutes=minutes),
         method="GET",
     )
+
+def ts_to_seconds(ts):
+        if isinstance(ts, (int, float)):
+            return int(ts)
+        parts = ts.split(":")
+        if len(parts) == 3:
+            h, m, s = map(int, parts)
+            return h*3600 + m*60 + s
+        elif len(parts) == 2:
+            m, s = map(int, parts)
+            return m*60 + s
+        elif len(parts) == 1:
+            return int(parts[0])
+        else:
+            raise ValueError(f"invalid timestamp {ts}")

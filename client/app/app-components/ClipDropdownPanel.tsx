@@ -81,9 +81,12 @@ export default function ClipDropdownPanel({
   const [endTimeInput, setEndTimeInput] = useState(formatTime(range[1]));
 
   // Helper to get badge color
-  const getShotOutcomeColor = (outcome: string) =>
-    outcome.toLowerCase().includes("make") ? "bg-green-500" : "bg-red-500";
-
+  const getShotOutcomeColor = (outcome?: string) => {
+  if (!outcome) return "bg-gray-500";
+  return outcome.toLowerCase().includes("make")
+    ? "bg-green-500"
+    : "bg-red-500";
+  };
   // Handler to emit updates to parent
   const handleUpdate = () => {
     const updatedStartSeconds = parseTimeInput(startTimeInput);

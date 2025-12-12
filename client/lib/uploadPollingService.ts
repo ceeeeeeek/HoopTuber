@@ -128,13 +128,56 @@ export class UploadPollingService {
         return;
       }
 
-      const res = await fetch(`${API_BASE}/jobs/${jobId}`);
+      const res = await fetch(`${API_BASE}/vertex/jobs/${jobId}/result`);
+
+      if (res.status === 409) {
+      // Still processing - update progress
+      const currentProgress = Math.min(55 + (attempts * 0.5), 95);
+      
+      let statusMessage = 'Processing video...';
+      if (currentProgress < 65) {
+        statusMessage = 'Analyzing video with Vertex AI...';
+      } else if (currentProgress < 80) {
+        statusMessage = 'Detecting basketball shots...';
+      } else {
+        statusMessage = 'Generating highlights...';
+      }
+
+      uploadQueue.updateJob(uploadId, {
+        status: 'processing',
+        progress: currentProgress,
+        statusMessage,
+      });
+      
+      console.log(`[UploadPollingService] Job ${jobId} still processing (${currentProgress}%)`);
+      return;
+    }
+    
+    if (res.status === 500) {
+      // Analysis failed
+      const errorData = await res.json().catch(() => ({ detail: 'Analysis failed' }));
+      const errorMsg = errorData.detail || 'Video analysis failed';
+      
+      this.stopPollingJob(uploadId);
+      uploadQueue.errorJob(uploadId, errorMsg);
+      console.error(`[UploadPollingService] Job failed: ${errorMsg}`);
+      return;
+    }
+    
+    if (res.status === 404) {
+      // Job not found
+      this.stopPollingJob(uploadId);
+      uploadQueue.errorJob(uploadId, 'Job not found');
+      console.error(`[UploadPollingService] Job not found: ${jobId}`);
+      return;
+    }
+
       if (!res.ok) {
         throw new Error(`Status ${res.status}`);
       }
 
       const data: JobRecord = await res.json();
-
+      console.log('[uploadPollingService] job ${jobId}');
       // Handle error states
       if (data.status === 'error' || data.status === 'publish_error') {
         this.stopPollingJob(uploadId);
@@ -154,7 +197,7 @@ export class UploadPollingService {
         });
 
         // Fetch final download + analysis
-        const dlRes = await fetch(`${API_BASE}/jobs/${jobId}/download`);
+        const dlRes = await fetch(`${API_BASE}/vertex/jobs/${jobId}/result`);
         if (dlRes.ok) {
           const result = await dlRes.json();
 

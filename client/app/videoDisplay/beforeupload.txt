@@ -1,3 +1,5 @@
+// videoDisplay/page.tsx
+
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -15,7 +17,7 @@ import {
 import ClipDropdownPanel from "@/app/app-components/ClipDropdownPanel";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
-const test_job_id = "547e5029-37fa-4343-ac55-b8bec165d234";
+const test_job_id = "0835925f-6e2e-4978-97cd-7a2cb8eeba4c";
 
 // ... (Interfaces remain the same) ...
 interface GeminiShotEvent {
@@ -59,7 +61,7 @@ export default function VideoDisplayPage() {
         const response = await fetch(`${API_BASE}/jobs/${test_job_id}/highlight-data`);
         if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`);
         const data: HighlightData = await response.json();
-        
+        console.log("Fetched highlight data:", data.sourceVideoUrl);
         // Sort ranges by start time to ensure sequential playback works correctly
         // (Optional safety check, assuming API returns sorted)
         // data.ranges.sort((a, b) => a[0] - b[0]); 
@@ -184,6 +186,23 @@ export default function VideoDisplayPage() {
     video.play().then(() => setIsPlaying(true));
   };
 
+  // 3. Preview Single Clip with Edited Range (plays only that one segment)
+  const handlePreviewClick = (index: number) => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    // Always use the current edited range for preview
+    const [startTime] = getRange(index);
+    video.currentTime = startTime;
+
+    setCurrentHighlightIndex(index);
+    setIsSequencePlaying(true); // Enable auto-stop at end of this clip
+
+    video.play().then(() => setIsPlaying(true));
+
+    console.log(`Previewing highlight #${index + 1} with range: ${getRange(index)}`);
+  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
@@ -204,6 +223,7 @@ export default function VideoDisplayPage() {
                     className="w-full h-full"
                     src={highlightData.sourceVideoUrl}
                     controls
+                    muted={true}
                     playsInline
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
@@ -276,6 +296,7 @@ export default function VideoDisplayPage() {
                           isActive={isActive}
                           isPlaying={isPlaying}
                           onPlayClick={handleHighlightClick}
+                          onPreviewClick={handlePreviewClick}
                           onEventUpdate={handleEventUpdate}
                         />
                       );

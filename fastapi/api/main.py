@@ -21,7 +21,12 @@ from fastapi.responses import StreamingResponse
 from google.cloud import storage
 import io
 
-from utils import _make_keys, _job_doc, _publish_job, _upload_filelike_to_gcs, _sign_get_url, _parse_gs_uri
+from utils import (_make_keys,
+                   _job_doc,_publish_job,
+                   _upload_filelike_to_gcs,
+                   _sign_get_url,
+                   _parse_gs_uri,
+                   ts_to_seconds)
 
 from typing import Dict, Any, List
 from google.cloud.firestore import Query
@@ -30,10 +35,12 @@ from vertex_service import router as vertex_router
 
 load_dotenv()
 
-print("DEBUGGING:")
+print("DEBUGGING (FASTAPI):")
 print(f"GCP_PROJECT_ID: {os.environ.get('GCP_PROJECT_ID')}")
 print(f"GOOGLE_APP_CREDS: {os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')}")
 print(f"Credentials file exists: {os.path.exists(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', ''))}")
+print(f"Fastapi is listening to PUB SUB TOPIC: {os.environ.get("PUBSUB_TOPIC", False)}")
+
 
 PROJECT_ID   = os.environ["GCP_PROJECT_ID"]
 RAW_BUCKET   = os.environ["GCS_RAW_BUCKET"]
@@ -185,6 +192,7 @@ async def upload_video(
     request: Request,
     video: UploadFile = File(...),
     userId: Optional[str] = None,
+    videoDurationSec: Optional[int] = None,
 ):
     """
     1) Streams the uploaded file directly to GCS (RAW)
@@ -221,7 +229,7 @@ async def upload_video(
             "visibility": "private",
             "videoGcsUri": raw_gcs_uri,
             "createdAt": firestore.SERVER_TIMESTAMP,
-            "videoDurationSec": 0,
+            "videoDurationSec": videoDurationSec or 0
         }, merge=True)
 
         # 4) Publish to Pub/Sub so the Background Worker starts processing
@@ -440,73 +448,6 @@ async def unsubscribe(email):
     except HTTPException as e:
         return {"error": f"Error @unsubscribe: {str(e)}"}
     
-@app.post("/publish_render_job")
-def publish_render_job(body: dict = Body(...)):
-    """
-    Publishes a rendering job where the user has submitted edited clip ranges.
-    Payload Example:
-    {
-      "jobId": "123",
-      "videoGcsUri": "gs://bucket/uploads/123/original.mp4",
-      "finalClips": [
-         {"start": 10.2, "end": 15.4},
-         {"start": 22.0, "end": 28.3}
-      ]
-    }
-    """
-    job_id = body.get("jobId")
-    gcs_uri = body.get("videoGcsUri")
-    final_clips = body.get("finalClips")
-    user_id = body.get("userId")
-    owner_email = body.get("ownerEmail")
-
-    # Validate incoming payload
-    if not job_id or not gcs_uri or not final_clips:
-        raise HTTPException(
-            status_code=400,
-            detail="Missing jobId, videoGcsUri, or finalClips"
-        )
-
-    # Build the Pub/Sub payload
-    payload = {
-        "jobId": job_id,
-        "videoGcsUri": gcs_uri,
-        "finalClips": final_clips,
-        "mode": "render",         # ★ Trigger worker.render pipeline
-        "userId": user_id,
-        "ownerEmail": owner_email
-    }
-
-    # Publish render job to Pub/Sub
-    try:
-        publisher.publish(
-            topic_path,
-            json.dumps(payload).encode("utf-8")
-        ).result(timeout=10)
-    except Exception as e:
-        # Save error for UI visibility
-        _job_doc(job_id).update({
-            "status": "render_publish_error",
-            "error": str(e),
-            "updatedAt": firestore.SERVER_TIMESTAMP
-        })
-        raise HTTPException(status_code=502, detail=f"Render publish failed: {e}")
-
-    # Update Firestore job status immediately
-    _job_doc(job_id).update({
-        "status": "render_queued",
-        "finalClips": final_clips,
-        "renderQueuedAt": firestore.SERVER_TIMESTAMP
-    })
-
-    return {
-        "ok": True,
-        "message": "Render job queued",
-        "jobId": job_id
-    }
-
-
-
 @app.get("/stream/{job_id}")
 def stream_video(job_id: str):
     """
@@ -521,9 +462,6 @@ def stream_video(job_id: str):
     
     data = doc.to_dict()
     
-    # 2. Get the Source Video URI
-    # We use 'videoGcsUri' (the original upload) because the timestamp 
-    # logic (#t=xx) corresponds to the original game clock.
     gcs_uri = data.get("videoGcsUri")
     
     if not gcs_uri:
@@ -562,19 +500,9 @@ def highlight_data(job_id: str):
         raise HTTPException(status_code=404, detail="No analysis found")
 
     # 2. Convert timestamps to seconds
-    def ts_to_seconds(ts):
-        parts = ts.split(":")
-        if len(parts) == 3:
-            h, m, s = map(int, parts)
-            return h*3600 + m*60 + s
-        elif len(parts) == 2:
-            m, s = map(int, parts)
-            return m*60 + s
-        elif len(parts) == 1:
-            return int(parts[0])
-        else:
-            raise ValueError(f"invalid timestamp {ts}")
-
+    if isinstance(raw_events, dict) and raw_events.get("ok") == False:
+        error_msg = raw_events.get("error", "Unknown error")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {error_msg}")
     ranges = []
     for event in raw_events:
         start = ts_to_seconds(event.get("timestamp_start"))

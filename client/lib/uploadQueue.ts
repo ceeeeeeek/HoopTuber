@@ -5,7 +5,7 @@ export interface UploadJob {
   jobId?: string; // FastAPI job ID once available
   fileName: string;
   fileSize: number;
-  status: 'preparing' | 'uploading' | 'processing' | 'complete' | 'error';
+  status: 'preparing' | 'uploading' | 'processing' | 'complete' | 'done' | 'error';
   progress: number;
   statusMessage: string;
   error?: string;
