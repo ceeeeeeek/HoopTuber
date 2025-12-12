@@ -23,56 +23,12 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import ProfileDropdown from "../app-components/ProfileDropdown";
-
-//Dribbling icon
-//(copied from your previous MyRunsClient)          
-export function DribbleIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={cn("inline-block", className)}
-      aria-hidden="true"
-    >
-      {/*ball */}                                    
-      <circle cx="17" cy="5" r="3" fill="currentColor" />
-      {/*body */}
-      <path
-        d="M10 8L8 13l2 3"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/*front leg */}
-      <path
-        d="M10 16l-1.5 4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-      {/*back leg */}
-      <path
-        d="M10 15l2.5 4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-      {/*arm toward ball */}
-      <path
-        d="M10 9.5L14 6.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-      {/*head */}
-      <circle cx="10" cy="6.5" r="1.1" fill="currentColor" />
-    </svg>
-  );
-}
+import CreateRunModal from "./CreateRunModal"; //12-11-25 Thursday 7:30pm - Better polished Create a Run button modal for my-runs page
+import InviteLinkModal from "./InviteLinkModal"; //12-11-25 Thursday 7:30pm - Better polished Invite Link button modal for my-runs page
+import VisibilityWarningModal from "./VisibilityWarningModal";
+import { useRouter } from "next/navigation";
+import { DribbleIcon } from "@/components/icons/DribbleIcon";
+import { DribbleIcon2 } from "@/components/icons/DribbleIcon2";
 
 //reuse your FastAPI base like DashboardClient
 const API_BASE =
@@ -114,7 +70,7 @@ type RunsSummary = {
   };
   
 
-//11-22-25 Satuday 12am - For my runs page
+//11-22-25 Saturday 12am - For my runs page
 //===================== RUNS API HELPERS (START) =====================
 async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
     const url = `${API_BASE}/runs?memberEmail=${encodeURIComponent(memberEmail)}`;
@@ -212,14 +168,15 @@ async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
     throw new Error("Invite URL not found in response");
   }
 //===================== RUNS API HELPERS (END) =====================
-//11-22-25 Satuday 12am - For my runs page
+//11-22-25 Saturday 12am - For my runs page
 
-//11-22-25 Satuday 12am - For my runs page
+//11-22-25 Saturday 12am - For my runs page
 //===================== COMPONENT (START) ============================
 //Props come from server wrapper in app/my-runs/page.tsx         
 //export default function MyRunsClient({ userEmail }: { userEmail: string }) {
 export default function MyRunsClient() {
     const { data: session, status } = useSession();
+    const router = useRouter();
     const userEmail = session?.user?.email || "";
 
     //Flag so we only hit the backend once we know:
@@ -258,7 +215,26 @@ export default function MyRunsClient() {
     //For invite link feedback
     const [inviteBusyFor, setInviteBusyFor] = useState<string | null>(null);
     const [inviteCopiedFor, setInviteCopiedFor] = useState<string | null>(null);
+
+    //12-11-25 Thursday 8pm - For visibility change warning modal
+    // For "make public" warning modal
+    const [visibilityWarningOpen, setVisibilityWarningOpen] = useState(false);
+    const [pendingVisibility, setPendingVisibility] = useState<{
+      run: RunsSummary | null;
+      visibility: RunVisibility | null;
+    }>({
+      run: null,
+      visibility: null,
+    });
+
+  
+    //12-11-25 Thursday 7:30pm - Better polished Invite Link button Modal for my-runs page
+    const [inviteOpen, setInviteOpen] = useState(false);
+    const [inviteUrl, setInviteUrl] = useState("");
     
+    //12-11-25 Thursday 7:30pm - Better polished Create a Run button Modal for my-runs page
+    const [createModalOpen, setCreateModalOpen] = useState(false);
+
     //helper to check ownership
     const isOwner = useCallback(
         (run: RunsSummary) => run.ownerEmail === userEmail,
@@ -384,15 +360,14 @@ export default function MyRunsClient() {
       };
     }, [backendReady, userEmail]);    
 
-    //11-23-25 Sunday 11am - For my runs page
-    const handleCreateRun = async () => {
+      //12-11-25 Tuesday 7:30pm - For my runs page — accepts name directly (used by modal)
+      const handleCreateRun = async (name: string) => {
         if (!userEmail) return;
-        const name = prompt("Name your run:");
-        if (!name || !name.trim()) return;
+        if (!name.trim()) return;
+
         try {
           setCreating(true);
           const run = await apiCreateRun(userEmail, name.trim(), "private");
-          //Prepend to the list
           setRuns((prev) => [run, ...prev]);
         } catch (e: any) {
           alert(e?.message || "Failed to create run.");
@@ -426,11 +401,11 @@ export default function MyRunsClient() {
         }
       };
     
-      const changeVisibility = async (run: RunsSummary, visibility: RunVisibility) => {
-        if (run.visibility === visibility) {
-          setVisibilityMenuFor(null);
-          return;
-        }
+      //updateVisibility()- no UI - helper that really talks to the backend
+      const updateVisibility = async (
+        run: RunsSummary,
+        visibility: RunVisibility
+      ) => {
         try {
           const updated = await apiUpdateRun(run.runId, { visibility });
           setRuns((prev) =>
@@ -442,6 +417,30 @@ export default function MyRunsClient() {
           setVisibilityMenuFor(null);
         }
       };
+
+      // Main handler used by your visibility menu
+      const changeVisibility = async (
+        run: RunsSummary,
+        visibility: RunVisibility
+      ) => {
+        if (run.visibility === visibility) {
+          setVisibilityMenuFor(null);
+          return;
+        }
+
+        // If switching to public, open the nice modal instead of window.confirm()
+        if (visibility === "public") {
+          setPendingVisibility({ run, visibility });
+          setVisibilityWarningOpen(true);
+          // close the little dropdown immediately
+          setVisibilityMenuFor(null);
+          return;
+        }
+
+        // Any non-public change can go straight through
+        await updateVisibility(run, visibility);
+      };
+
     
       const handleDeleteRun = async (run: RunsSummary) => {
         if (!isOwner(run)) {
@@ -458,20 +457,6 @@ export default function MyRunsClient() {
           setRuns((prev) => prev.filter((r) => r.runId !== run.runId));
         } catch (e: any) {
           alert(e?.message || "Failed to delete run.");
-        }
-      };
-    
-      const handleInviteLink = async (run: RunsSummary) => {
-        try {
-          setInviteBusyFor(run.runId);
-          const inviteUrl = await apiInviteRun(run.runId);
-          await navigator.clipboard.writeText(inviteUrl);
-          setInviteCopiedFor(run.runId);
-          setTimeout(() => setInviteCopiedFor(null), 2000);
-        } catch (e: any) {
-          alert(e?.message || "Failed to create/copy invite link.");
-        } finally {
-          setInviteBusyFor(null);
         }
       };
 
@@ -548,29 +533,25 @@ return (
             </p>
           </div>
 
-          {/*Join + Create actions – replaces single button layout */}
+          {/*Join a Run + Create a Run actions – replaces single button layout */}
           <div className="flex items-center gap-3">
             <button
               type="button"
-              className="inline-flex items-center gap-2 rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-purple-700"
-              onClick={() =>
-                alert(
-                  "Join a Run page will show all public runs and let you join them. We’ll wire it up next."
-                )
-              }
+              className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+              onClick={() => router.push("/join-a-run")}
             >
-              <Globe2 className="w-4 h-4" />
+              <DribbleIcon2 className="w-5 h-5" />
               Join a Run
             </button>
 
             <button
               type="button"
               className="inline-flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 disabled:opacity-60"
-              onClick={handleCreateRun}
+              onClick={() => setCreateModalOpen(true)}
               disabled={creating || !userEmail}
             >
-              <Plus className="w-4 h-4" />
-              {creating ? "Creating…" : "Create Run"}
+              <Plus className="w-5 h-5" />
+              {creating ? "Creating…" : "Create a Run"}
             </button>
           </div>
         </header>
@@ -579,23 +560,19 @@ return (
         <section>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <DribbleIcon className="w-5 h-5 text-purple-600" />
+              <DribbleIcon className="w-7 h-7 text-purple-600" />
               <h2 className="text-lg font-semibold">My Runs</h2>
             </div>
 
             {/*Secondary Join for small screens – text updated */}
-            <button
+            {/* <button
               type="button"
               className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs md:text-sm text-gray-800 hover:bg-gray-50"
-              onClick={() =>
-                alert(
-                  "Join a Run (secondary button) – same future behavior as the primary button."
-                )
-              }
+              onClick={() => router.push("/join-a-run")}
             >
               <Globe2 className="w-4 h-4" />
               Join a Run
-            </button>
+            </button> */}
           </div>
 
           {/*loading / error / empty - text updated */}
@@ -646,7 +623,7 @@ return (
                     {/*Top row: name + owner + visibility + delete – richer header */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-2">
-                        <DribbleIcon className="w-4 h-4 text-purple-600 mt-1" />
+                        <DribbleIcon className="w-5 h-5 text-purple-600 mt-1" />
                         <div>
                           <div className="flex items-center gap-2">
                             <h3 className="font-medium text-gray-900">
@@ -764,26 +741,32 @@ return (
                       </div>
 
                       <div className="inline-flex items-center gap-1">
-                        <DribbleIcon className="w-3 h-3 text-purple-600" />
+                        <DribbleIcon className="w-4 h-4 text-purple-600" />
                         <span>
                           {videoCount === 1
                             ? "1 highlight"
                             : `${videoCount} highlights`}
                         </span>
                       </div>
-
                       <button
                         type="button"
                         className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                        onClick={() => handleInviteLink(run)}
+                        onClick={async () => {
+                          try {
+                            setInviteBusyFor(run.runId);
+                            const url = await apiInviteRun(run.runId);
+                            setInviteUrl(url);
+                            setInviteOpen(true);
+                          } catch (err:any) {
+                            alert(err?.message || "Failed to create invite link.");
+                          } finally {
+                            setInviteBusyFor(null);
+                          }
+                        }}
                         disabled={!!inviteBusyFor}
                       >
                         <LinkIcon className="w-3 h-3" />
-                        {inviteBusyFor === run.runId
-                          ? "Creating link…"
-                          : inviteCopiedFor === run.runId
-                          ? "Link copied!"
-                          : "Invite link"}
+                        Invite link
                       </button>
                     </div>
 
@@ -980,8 +963,45 @@ return (
             );
           })()}
 
+        {/*12-11-25 Tuesday 7:30pm - the Create Run Modal – overlay */}
+        <CreateRunModal
+          open={createModalOpen}
+          onClose={() => setCreateModalOpen(false)}
+          onCreate={async (name) => {
+            await handleCreateRun(name);
+            setCreateModalOpen(false);
+          }}
+        />
 
-        {/*Simple rename "modal" – overlay */}
+        {/*12-11-25 Tuesday 7:30pm - the Invite Link Modal – overlay */}
+        <InviteLinkModal
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          url={inviteUrl}
+        />
+
+        {/*12-11-25 Tuesday 8pm - the Visibility Warning Modal – when changing from Private (default) to Public */}
+        <VisibilityWarningModal
+          open={visibilityWarningOpen}
+          onCancel={() => {
+            setVisibilityWarningOpen(false);
+            setPendingVisibility({ run: null, visibility: null });
+          }}
+          onConfirm={async () => {
+            if (!pendingVisibility.run || !pendingVisibility.visibility) return;
+
+            await updateVisibility(
+              pendingVisibility.run,
+              pendingVisibility.visibility
+            );
+
+            setVisibilityWarningOpen(false);
+            setPendingVisibility({ run: null, visibility: null });
+          }}
+        />
+
+
+        {/*the rename "modal" – overlay */}
         {editingRunId && (
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
             <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-lg">
