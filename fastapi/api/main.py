@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 from google.cloud import storage, firestore
 from google.cloud import pubsub_v1
 from zoneinfo import ZoneInfo
-# slow api import for rate limiting ai calls
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -21,7 +20,7 @@ from fastapi.responses import StreamingResponse
 from google.cloud import storage
 import io
 
-from utils import (_make_keys,
+from api.utils import (_make_keys,
                    _job_doc,_publish_job,
                    _upload_filelike_to_gcs,
                    _sign_get_url,
@@ -31,7 +30,7 @@ from utils import (_make_keys,
 from typing import Dict, Any, List
 from google.cloud.firestore import Query
 
-from vertex_service import router as vertex_router
+from api.vertex_service import router as vertex_router
 
 load_dotenv()
 
