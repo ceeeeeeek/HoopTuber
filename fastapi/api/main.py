@@ -62,6 +62,8 @@ origins = [
     "https://hooptuber.com",
     "https://app.hooptuber.com",
 ]
+origins2 = ["*"]
+
 if os.getenv("ENVIRONMENT") != "production":
     origins.append("http://localhost:3000")
     print(f"Allowing localhost for CORS")
@@ -69,8 +71,8 @@ if os.getenv("ENVIRONMENT") != "production":
 app.add_middleware(
     CORSMiddleware,
     #allow_origins=['http://localhost:3000'],
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=origins2,
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["*"],
