@@ -31,7 +31,7 @@ from api.utils import (_make_keys,
 from typing import Dict, Any, List
 from google.cloud.firestore import Query
 
-from vertex_service import router as vertex_router
+from api.vertex_service import router as vertex_router
 
 load_dotenv()
 
