@@ -182,9 +182,36 @@ export class UploadPollingService {
       // SUCCESS - Job is done (200 OK)
       // The response contains the full result with highlights
       const result: VertexJobResult = await res.json();
-      
+
+      console.log(`[UploadPollingService] Job ${jobId} completed with response:`, result);
+
+      // Check for errors in the result
+      if (result.ok === false) {
+        const errorMsg = 'Video analysis failed';
+        console.error(`[UploadPollingService] Job failed with ok=false`);
+        this.stopPollingJob(uploadId);
+        uploadQueue.errorJob(uploadId, errorMsg);
+        return;
+      }
+
+      // Check for VERTEX: error: pattern in rawEvents or other error indicators
+      const shotEvents = result.rawEvents || [];
+      if (shotEvents.length > 0) {
+        // Check if first event contains error message
+        const firstEvent = shotEvents[0] as any;
+        if (firstEvent.outcome && typeof firstEvent.outcome === 'string') {
+          if (firstEvent.outcome.startsWith('VERTEX: error:') || firstEvent.outcome.toLowerCase().includes('error')) {
+            const errorMsg = firstEvent.outcome.replace('VERTEX: error:', '').trim() || 'Video analysis failed';
+            console.error(`[UploadPollingService] Job failed with error in shotEvents:`, errorMsg);
+            this.stopPollingJob(uploadId);
+            uploadQueue.errorJob(uploadId, errorMsg);
+            return;
+          }
+        }
+      }
+
       console.log(`[UploadPollingService] Job ${jobId} completed successfully`);
-      console.log(`[UploadPollingService] Found ${result.rawEvents?.length || 0} highlights`);
+      console.log(`[UploadPollingService] Found ${shotEvents.length} highlights`);
 
       // Update to finalizing stage
       uploadQueue.updateJob(uploadId, {
@@ -192,8 +219,7 @@ export class UploadPollingService {
         statusMessage: 'Loading highlights...',
       });
 
-      // Extract and calculate game stats
-      const shotEvents = result.rawEvents || [];
+      // Calculate game stats
       const gameStats = shotEvents.length > 0 ? this.calculateGameStats(shotEvents) : undefined;
 
       // Mark job as complete with all the data

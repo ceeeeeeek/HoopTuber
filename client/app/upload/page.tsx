@@ -93,16 +93,31 @@ export default function VideoDisplayPage() {
       }
     }
       const data: HighlightData = await response.json();
+
+      // Check for ok: false
+      if (data.ok === false) {
+        throw new Error('Video analysis failed');
+      }
+
       if (!data.rawEvents || !Array.isArray(data.rawEvents)) {
-      throw new Error('Invalid highlight data received');
-    }
-    
-    if (data.rawEvents.length === 0) {
-      throw new Error('No highlights found in this video');
-    }
-    
-    console.log(`✅ Loaded ${data.rawEvents.length} highlights for job ${jobId}`);
-    setHighlightData(data);
+        throw new Error('Invalid highlight data received');
+      }
+
+      if (data.rawEvents.length === 0) {
+        throw new Error('No highlights found in this video');
+      }
+
+      // Check for VERTEX: error: in the first event
+      const firstEvent = data.rawEvents[0] as any;
+      if (firstEvent.outcome && typeof firstEvent.outcome === 'string') {
+        if (firstEvent.outcome.startsWith('VERTEX: error:') || firstEvent.outcome.toLowerCase().includes('error')) {
+          const errorMsg = firstEvent.outcome.replace('VERTEX: error:', '').trim() || 'Video analysis failed';
+          throw new Error(errorMsg);
+        }
+      }
+
+      console.log(`✅ Loaded ${data.rawEvents.length} highlights for job ${jobId}`);
+      setHighlightData(data);
     
     } catch (err) {
       console.error('Error fetching highlight data:', err);

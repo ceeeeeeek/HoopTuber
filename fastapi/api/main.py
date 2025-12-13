@@ -21,7 +21,7 @@ from fastapi.responses import StreamingResponse
 from google.cloud import storage
 import io
 
-from api.utils import (_make_keys,
+from utils import (_make_keys,
                    _job_doc,_publish_job,
                    _upload_filelike_to_gcs,
                    _sign_get_url,
@@ -31,7 +31,7 @@ from api.utils import (_make_keys,
 from typing import Dict, Any, List
 from google.cloud.firestore import Query
 
-from api.vertex_service import router as vertex_router
+from vertex_service import router as vertex_router
 
 load_dotenv()
 
@@ -78,6 +78,7 @@ origins = [
     "https://www.hooptuber.com",
     "https://hooptuber.com",
     "https://app.hooptuber.com"
+    "app.hooptuber.com"
 ]
 
 app.add_middleware(

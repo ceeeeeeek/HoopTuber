@@ -219,6 +219,8 @@ def prompt_shot_outcomes_only2(video_duration_sec):
     
     Act as a world-class basketball analyst with a precise understanding of basketball shot mechanics.
     Analyze the video to identify every distinct shot attempt.
+    A shot attempt is defined as any instance where a player shoots the basketball towards the hoop with the intention of scoring.
+    Identify shots such as layups, jump shots, dunks, and three-pointers.
     {if_duration}
     RETURN OUTPUT AS A JSON ARRAY ONLY. NO MARKDOWN. NO CODE FENCES.
     For each shot, extract:
