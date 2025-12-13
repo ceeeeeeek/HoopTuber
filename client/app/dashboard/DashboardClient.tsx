@@ -70,8 +70,6 @@ export default function DashboardClient() {
   //little help accordion
   const [helpOpen, setHelpOpen] = useState(false);
   console.log("DASHBOARD LOADED")
-  console.log("Sitting on domain: " + window.location.origin);
-  console.log("Checking again for dashboard; sitting on domain: " + window.location.hostname)
   // =====Fetch from FastAPI instead of /api/highlightVideos =====
   const load = useCallback(async () => {
     if (!userEmail) return; //wait until session loads
