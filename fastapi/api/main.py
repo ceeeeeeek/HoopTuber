@@ -69,7 +69,6 @@ origins = [
     "https://www.hooptuber.com",
     "https://hooptuber.com",
     "https://app.hooptuber.com",
-    "app.hooptuber.com",
 ]
 if os.getenv("ENVIRONMENT") != "production":
     origins.append("http://localhost:3000")
@@ -80,7 +79,7 @@ app.add_middleware(
     #allow_origins=['http://localhost:3000'],
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
 @app.options("/{path:path}")
