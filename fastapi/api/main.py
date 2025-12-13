@@ -1,6 +1,6 @@
 # fastapi server as of 10/17/2025
 
-from fastapi import Body, FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import Body, FastAPI, UploadFile, File, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
@@ -64,21 +64,16 @@ def user_or_ip_key(request: Request):
 
 limiter = Limiter(key_func=user_or_ip_key)
 app = FastAPI()
-app.state.limiter = limiter
-app.include_router(vertex_router)
 
-@app.exception_handler(RateLimitExceeded)
-async def rate_limit_handler(request, exc):
-    return JSONResponse(
-        status_code=429,
-        content={"detail": "Rate limit exceeded. Try again later."}
-    )
 origins = [
     "https://www.hooptuber.com",
     "https://hooptuber.com",
-    "https://app.hooptuber.com"
-    "app.hooptuber.com"
+    "https://app.hooptuber.com",
+    "app.hooptuber.com",
 ]
+if os.getenv("ENVIRONMENT") != "production":
+    origins.append("http://localhost:3000")
+    print(f"Allowing localhost for CORS")
 
 app.add_middleware(
     CORSMiddleware,
@@ -88,9 +83,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-if os.getenv("ENVIRONMENT") != "production":
-    origins.append("http://localhost:3000")
-    print(f"Allowing localhost for CORS")
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    return Response(status_code=200)
+
+app.state.limiter = limiter
+app.include_router(vertex_router)
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request, exc):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded. Try again later."}
+    )
+
 
 @app.get("/")
 def check_working():
