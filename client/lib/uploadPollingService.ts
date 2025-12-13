@@ -171,6 +171,7 @@ export class UploadPollingService {
         this.stopPollingJob(uploadId);
         uploadQueue.errorJob(uploadId, 'Job not found');
         console.error(`[UploadPollingService] Job not found: ${jobId}`);
+        uploadQueue.removeJob(uploadId);
         return;
       }
 
