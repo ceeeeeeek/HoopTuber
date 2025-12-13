@@ -170,10 +170,10 @@ export default function VideoDisplayPage() {
 
     if (job.status === 'uploading' || job.status === 'processing') {
       setUploadState(job.status);
-    } else if (job.status === 'done') {
+    } else if (job.status === 'complete' || job.status === 'done') {
       setUploadState('complete');
       // Fetch highlight data when complete
-      if (job.jobId) {
+      if (job.jobId && !highlightData) {
         fetchHighlightDataForJob(job.jobId);
       }
     } else if (job.status === 'error') {

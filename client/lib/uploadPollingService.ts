@@ -6,12 +6,14 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-
 const POLL_INTERVAL = 3000; // 3 seconds
 const MAX_POLL_ATTEMPTS = 600; // 30 minutes max (600 * 3s = 1800s)
 
-interface JobRecord {
+// What the /vertex/jobs/{job_id}/result endpoint returns when status is "done"
+interface VertexJobResult {
+  ok: boolean;
   jobId: string;
-  status: "queued" | "processing" | "done" | "error" | "publish_error";
-  videoGcsUri?: string;
-  outputGcsUri?: string;
-  error?: string;
+  sourceVideoUrl: string;  // Signed download URL
+  rawEvents: any[];        // Shot events array
+  ranges: [number, number][]; // Computed time ranges
+  videoDurationSec: number;
 }
 
 export class UploadPollingService {
@@ -130,102 +132,15 @@ export class UploadPollingService {
 
       const res = await fetch(`${API_BASE}/vertex/jobs/${jobId}/result`);
 
+      // Handle 409 - Still processing
       if (res.status === 409) {
-      // Still processing - update progress
-      const currentProgress = Math.min(55 + (attempts * 0.5), 95);
-      
-      let statusMessage = 'Processing video...';
-      if (currentProgress < 65) {
-        statusMessage = 'Analyzing video with Vertex AI...';
-      } else if (currentProgress < 80) {
-        statusMessage = 'Detecting basketball shots...';
-      } else {
-        statusMessage = 'Generating highlights...';
-      }
-
-      uploadQueue.updateJob(uploadId, {
-        status: 'processing',
-        progress: currentProgress,
-        statusMessage,
-      });
-      
-      console.log(`[UploadPollingService] Job ${jobId} still processing (${currentProgress}%)`);
-      return;
-    }
-    
-    if (res.status === 500) {
-      // Analysis failed
-      const errorData = await res.json().catch(() => ({ detail: 'Analysis failed' }));
-      const errorMsg = errorData.detail || 'Video analysis failed';
-      
-      this.stopPollingJob(uploadId);
-      uploadQueue.errorJob(uploadId, errorMsg);
-      console.error(`[UploadPollingService] Job failed: ${errorMsg}`);
-      return;
-    }
-    
-    if (res.status === 404) {
-      // Job not found
-      this.stopPollingJob(uploadId);
-      uploadQueue.errorJob(uploadId, 'Job not found');
-      console.error(`[UploadPollingService] Job not found: ${jobId}`);
-      return;
-    }
-
-      if (!res.ok) {
-        throw new Error(`Status ${res.status}`);
-      }
-
-      const data: JobRecord = await res.json();
-      console.log('[uploadPollingService] job ${jobId}');
-      // Handle error states
-      if (data.status === 'error' || data.status === 'publish_error') {
-        this.stopPollingJob(uploadId);
-        uploadQueue.errorJob(uploadId, data.error || 'Processing failed');
-        console.error(`[UploadPollingService] Job failed: ${data.error}`);
-        return;
-      }
-
-      // Handle completion
-      if (data.status === 'done' && data.outputGcsUri) {
-        console.log(`[UploadPollingService] Job ${jobId} completed, fetching download URL`);
-
-        // Update to finalizing stage
-        uploadQueue.updateJob(uploadId, {
-          progress: 95,
-          statusMessage: 'Applying final touches...',
-        });
-
-        // Fetch final download + analysis
-        const dlRes = await fetch(`${API_BASE}/vertex/jobs/${jobId}/result`);
-        if (dlRes.ok) {
-          const result = await dlRes.json();
-
-          const shotEvents = result.shot_events || [];
-          const gameStats = shotEvents.length > 0 ? this.calculateGameStats(shotEvents) : undefined;
-
-          uploadQueue.completeJob(uploadId, {
-            downloadUrl: result.url,
-            shotEvents,
-            gameStats,
-          });
-
-          console.log(`[UploadPollingService] Job ${jobId} fully complete`);
-        } else {
-          console.error('[UploadPollingService] Failed to fetch download URL');
-          uploadQueue.errorJob(uploadId, 'Failed to fetch download URL');
-        }
-
-        this.stopPollingJob(uploadId);
-      } else {
-        // Still processing - update progress
-        const currentProgress = Math.min(50 + (attempts * 2), 90);
-
+        const currentProgress = Math.min(55 + (attempts * 0.5), 95);
+        
         let statusMessage = 'Processing video...';
         if (currentProgress < 65) {
-          statusMessage = 'Analyzing video...';
+          statusMessage = 'Analyzing video with Vertex AI...';
         } else if (currentProgress < 80) {
-          statusMessage = 'Detecting shots and movements...';
+          statusMessage = 'Detecting basketball shots...';
         } else {
           statusMessage = 'Generating highlights...';
         }
@@ -235,10 +150,68 @@ export class UploadPollingService {
           progress: currentProgress,
           statusMessage,
         });
+        
+        console.log(`[UploadPollingService] Job ${jobId} still processing (${currentProgress}%)`);
+        return;
       }
+      
+      // Handle 500 - Analysis failed
+      if (res.status === 500) {
+        const errorData = await res.json().catch(() => ({ detail: 'Analysis failed' }));
+        const errorMsg = errorData.detail || 'Video analysis failed';
+        
+        this.stopPollingJob(uploadId);
+        uploadQueue.errorJob(uploadId, errorMsg);
+        console.error(`[UploadPollingService] Job failed: ${errorMsg}`);
+        return;
+      }
+      
+      // Handle 404 - Job not found
+      if (res.status === 404) {
+        this.stopPollingJob(uploadId);
+        uploadQueue.errorJob(uploadId, 'Job not found');
+        console.error(`[UploadPollingService] Job not found: ${jobId}`);
+        return;
+      }
+
+      // Handle other errors
+      if (!res.ok) {
+        throw new Error(`Unexpected status ${res.status}`);
+      }
+
+      // SUCCESS - Job is done (200 OK)
+      // The response contains the full result with highlights
+      const result: VertexJobResult = await res.json();
+      
+      console.log(`[UploadPollingService] Job ${jobId} completed successfully`);
+      console.log(`[UploadPollingService] Found ${result.rawEvents?.length || 0} highlights`);
+
+      // Update to finalizing stage
+      uploadQueue.updateJob(uploadId, {
+        progress: 95,
+        statusMessage: 'Loading highlights...',
+      });
+
+      // Extract and calculate game stats
+      const shotEvents = result.rawEvents || [];
+      const gameStats = shotEvents.length > 0 ? this.calculateGameStats(shotEvents) : undefined;
+
+      // Mark job as complete with all the data
+      uploadQueue.completeJob(uploadId, {
+        downloadUrl: result.sourceVideoUrl,
+        shotEvents,
+        gameStats,
+      });
+
+      console.log(`[UploadPollingService] Job ${jobId} fully complete with ${shotEvents.length} shot events`);
+
+      // Stop polling - we're done!
+      this.stopPollingJob(uploadId);
+
     } catch (error) {
       console.warn(`[UploadPollingService] Polling error for ${jobId}:`, error);
       // Don't stop polling on network errors - keep trying
+      // The job might succeed on the next attempt
     }
   }
 
