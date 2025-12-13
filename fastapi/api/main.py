@@ -78,6 +78,25 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+@app.options("/{path:path}")
+async def options_handler(path: str, request: Request):
+    """Handle CORS preflight requests"""
+    origin = request.headers.get("origin")
+    
+    if origin in origins:
+        return Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Max-Age": "3600",
+            }
+        )
+    
+    return Response(status_code=204)
+
 def user_or_ip_key(request: Request):
     user_id = request.query_params.get("userID")
     if user_id:
