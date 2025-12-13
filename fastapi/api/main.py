@@ -71,15 +71,12 @@ if os.getenv("ENVIRONMENT") != "production":
 app.add_middleware(
     CORSMiddleware,
     #allow_origins=['http://localhost:3000'],
-    allow_origins=origins2,
-    allow_credentials=False,
+    allow_origins=["https://app.hooptuber.com"],
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
-@app.options("/{path:path}")
-async def options_handler(path: str):
-    return Response(status_code=200)
 
 def user_or_ip_key(request: Request):
     user_id = request.query_params.get("userID")
