@@ -14,8 +14,9 @@ import cn from "clsx";
 import ProfileDropdown from "../app-components/ProfileDropdown";         
 
 type Visibility = "public" | "unlisted" | "private";                    
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
+// https://hooptuber-fastapi-web-service-docker.onrender.com
+// https://hooptuber-fastapi-devtest.onrender.com
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-devtest.onrender.com";
 const CURR_DOMAIN = process.env.NEXTAUTH_URL || "http://localhost:3000";
 /**
  * Format duration in seconds to a human-readable string

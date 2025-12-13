@@ -27,7 +27,10 @@ import { useUploadStatus } from "@/contexts/UploadStatusContext";
 import { uploadQueue } from "@/lib/uploadQueue";
 import { pollingService } from "@/lib/uploadPollingService";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
+
+// https://hooptuber-fastapi-devtest.onrender.com
+// https://hooptuber-fastapi-web-service-docker.onrender.com
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-devtest.onrender.com";
 
 interface GeminiShotEvent {
   id: string;

@@ -55,14 +55,6 @@ firestore_client = firestore.Client(project=PROJECT_ID)
 publisher        = pubsub_v1.PublisherClient()
 topic_path       = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
 
-
-def user_or_ip_key(request: Request):
-    user_id = request.query_params.get("userID")
-    if user_id:
-        return f"user:{user_id}"
-    return get_remote_address(request)
-
-limiter = Limiter(key_func=user_or_ip_key)
 app = FastAPI()
 
 origins = [
@@ -81,10 +73,19 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 @app.options("/{path:path}")
 async def options_handler(path: str):
     return Response(status_code=200)
+
+def user_or_ip_key(request: Request):
+    user_id = request.query_params.get("userID")
+    if user_id:
+        return f"user:{user_id}"
+    return get_remote_address(request)
+
+limiter = Limiter(key_func=user_or_ip_key)
 
 app.state.limiter = limiter
 app.include_router(vertex_router)
