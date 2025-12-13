@@ -21,7 +21,7 @@ from fastapi.responses import StreamingResponse
 from google.cloud import storage
 import io
 
-from utils import (_make_keys,
+from api.utils import (_make_keys,
                    _job_doc,_publish_job,
                    _upload_filelike_to_gcs,
                    _sign_get_url,
