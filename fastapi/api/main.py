@@ -58,9 +58,9 @@ topic_path       = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
 app = FastAPI()
 
 origins = [
-    "https://www.hooptuber.com",
-    "https://hooptuber.com",
     "https://app.hooptuber.com",
+    "https://www.hooptuber.com",
+    "https://hooptuber.com"
 ]
 origins2 = ["*"]
 
@@ -77,10 +77,10 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
-
+"""
 @app.options("/{path:path}")
 async def options_handler(path: str, request: Request):
-    """Handle CORS preflight requests"""
+    # Handle CORS preflight requests
     origin = request.headers.get("origin")
     
     if origin in origins:
@@ -96,7 +96,7 @@ async def options_handler(path: str, request: Request):
         )
     
     return Response(status_code=204)
-
+"""
 def user_or_ip_key(request: Request):
     user_id = request.query_params.get("userID")
     if user_id:
