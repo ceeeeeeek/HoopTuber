@@ -56,7 +56,7 @@ publisher        = pubsub_v1.PublisherClient()
 topic_path       = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
 
 app = FastAPI()
-
+# CORS setup
 origins = [
     "https://app.hooptuber.com",
     "https://www.hooptuber.com",
