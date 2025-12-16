@@ -1,12 +1,12 @@
 # fastapi server as of 10/17/2025
 
-from fastapi import Body, FastAPI, UploadFile, File, HTTPException, Request, Response, EntityException, Union
+from fastapi import Body, FastAPI, UploadFile, File, HTTPException, Request, Response, EntityException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from typing import Optional
+from typing import Optional, Union
 from datetime import timedelta, datetime
 import os, uuid, json
 from dotenv import load_dotenv
