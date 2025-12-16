@@ -235,7 +235,7 @@ async def upload_video(
         # 1) IDs & GCS keys
         curr_datetime = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-        job_id = str(f"{curr_datetime}--{uuid.uuid4()}")
+        job_id = str(f"{curr_datetime}-{uuid.uuid4()}")
         blob_name, raw_gcs_uri, original_name = _make_keys(video.filename, job_id)
 
         # 2) Stream to RAW bucket (no large temp files on Render)
