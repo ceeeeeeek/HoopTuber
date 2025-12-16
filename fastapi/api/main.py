@@ -1,9 +1,11 @@
 # fastapi server as of 10/17/2025
 
-from fastapi import Body, FastAPI, UploadFile, File, HTTPException, Request, Response
+from fastapi import Body, FastAPI, UploadFile, File, HTTPException, Request, Response, EntityException, Union
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from typing import Optional
 from datetime import timedelta, datetime
 import os, uuid, json
@@ -77,6 +79,36 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+@app.exception_handler(Exception)
+async def exception_handler(request: Request, exception: Union[Exception, RuntimeError]):
+    headers = {
+        'Access-Control-Allow-Origin': ', '.join(origins),
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Allow-Methods': '*',
+        'Access-Control-Allow-Headers': '*',
+    }
+    if isinstance(exception, EntityException):
+        response = JSONResponse(
+            jsonable_encoder(
+                {
+                    "code": exception.code,
+                    "message": exception.message,
+                    "exception": exception.exception
+                }
+            ),
+            headers=headers
+        )
+    else:
+        response = JSONResponse(
+            jsonable_encoder(
+                {
+                    "exception": str(exception),
+                    "code": 500,
+                }
+            ),
+            headers=headers
+        )
+    return response
 """
 @app.options("/{path:path}")
 async def options_handler(path: str, request: Request):
