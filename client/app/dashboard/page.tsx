@@ -1,5 +1,8 @@
 
-//10/22/25
+// client/app/dashboard/page.tsx
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+
 import DashboardClient from "./DashboardClient2";
 
 export default function Page() {
