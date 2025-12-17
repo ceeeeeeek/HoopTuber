@@ -30,9 +30,7 @@ import { useRouter } from "next/navigation";
 import { DribbleIcon } from "@/components/icons/DribbleIcon";
 import { DribbleIcon2 } from "@/components/icons/DribbleIcon2";
 
-//reuse your FastAPI base like DashboardClient
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE|| "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-devtest.onrender.com";
 
 //11/30/25 Update: Abort-related “NetworkError when attempting to fetch resource” won’t be treated as real failures.
 //Your UI states (highlightsError, folderError, etc.) will only show for real failures, not cancelled requests.
