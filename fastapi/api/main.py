@@ -22,7 +22,9 @@ from fastapi.responses import StreamingResponse
 from google.cloud import storage
 import io
 
-from api.utils import (_make_keys,
+
+
+from utils import (_make_keys,
                    _job_doc,_publish_job,
                    _upload_filelike_to_gcs,
                    _sign_get_url,
@@ -32,7 +34,11 @@ from api.utils import (_make_keys,
 from typing import Dict, Any, List
 from google.cloud.firestore import Query
 
-from api.vertex_service import router as vertex_router
+# IMPORTING SERVICE ROUTERS
+from vertex_service import router as vertex_router
+from video_service import router as video_router
+from runs_service import router as runs_router
+
 
 load_dotenv()
 
@@ -50,6 +56,12 @@ TOPIC_NAME   = os.environ["PUBSUB_TOPIC"]
 COLLECTION   = os.getenv("FIRESTORE_COLLECTION", "jobs")
 #HIGHLIGHT_COL = os.getenv("FIRESTORE_HIGHLIGHT_COL", "Highlights")
 SERVICE_ACCOUNT = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+RUNS_COLLECTION = os.getenv("FIRESTORE_RUNS_COLLECTION", "runs") #11-22-25 Saturday 12pm - For my runs page
+FOLDER_COLLECTION = os.getenv("FIRESTORE_FOLDER_COLLECTION", "highlightFolders")
+#RUNS_COLLECTION = "runs" #11-21-25 Friday 4pm - For my runs page
+RUNS_COLLECTION = os.getenv("FIRESTORE_RUNS_COLLECTION", "runs") #11-22-25 Saturday 12pm - For my runs page
+#top-level collection for per-video comments
+COMMENTS_COLLECTION = os.getenv("FIRESTORE_COMMENTS_COLLECTION", "videoComments")
 
 # NEW: GCP clients
 storage_client   = storage.Client(project=PROJECT_ID)
@@ -73,7 +85,8 @@ if os.getenv("ENVIRONMENT") != "production":
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['https://app.hooptuber.com',
-                   'https://www.hooptuber.com'],
+                   'https://www.hooptuber.com',
+                   "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
@@ -107,8 +120,11 @@ def user_or_ip_key(request: Request):
 
 limiter = Limiter(key_func=user_or_ip_key)
 
+# including routers
 app.state.limiter = limiter
 app.include_router(vertex_router)
+app.include_router(video_router)
+app.include_router(runs_router)
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request, exc):
@@ -255,7 +271,9 @@ async def upload_video(
             "visibility": "private",
             "videoGcsUri": raw_gcs_uri,
             "createdAt": firestore.SERVER_TIMESTAMP,
-            "videoDurationSec": videoDurationSec or 0
+            "videoDurationSec": videoDurationSec or 0,
+            "likesCount": 0,
+            "viewsCount": 0,
         }, merge=True)
 
         # 4) Publish to Pub/Sub so the Background Worker starts processing
@@ -553,3 +571,27 @@ def healthz():
     """Used by Render for health checks."""
     return {"ok": True}
 
+
+#The runs that are public shows up in the 'Join a Run' page - runs set to public visibility
+@app.get("/public-runs")
+def list_public_runs():
+    """Return all PUBLIC runs."""
+    try:
+        query = (
+            firestore_client.collection(RUNS_COLLECTION)
+            .where("visibility", "==", "public")
+            .stream()
+        )
+
+        items = []
+        for doc in query:
+            d = doc.to_dict()
+            d["runId"] = doc.id
+            items.append(d)
+
+        return {"items": items}
+
+    except Exception as e:
+        print("ERROR list_public_runs:", e)
+        raise HTTPException(status_code=500, detail="Failed to load public runs")
+#11-22-25 Saturday 12am - For my runs page
