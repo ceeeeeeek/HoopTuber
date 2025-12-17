@@ -83,7 +83,7 @@ export type RunSummary = {
   maxMembers?: number;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 
 //12-07-25 Sunday 4pm Update - Prevent double-counting views on highlight videos with localStorage
 //Shared front-end hlpers (views + likes in localStorage) between DashboardClient + [jobId]/page.tsx
