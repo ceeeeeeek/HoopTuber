@@ -24,10 +24,6 @@ FOLDER_COLLECTION = os.getenv("FIRESTORE_FOLDER_COLLECTION", "highlightFolders")
 
 firestore_client = firestore.Client(project=PROJECT_ID)
 
-# ======================================================
-# Router
-# ======================================================
-
 router = APIRouter(
     prefix="/runs",
     tags=["runs"],
