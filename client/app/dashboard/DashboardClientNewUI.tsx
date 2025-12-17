@@ -80,7 +80,7 @@ export type RunSummary = {
   maxMembers?: number;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
 //Shared front-end hlpers (views + likes in localStorage)
 const VIEW_STORAGE_PREFIX = "hooptuber:viewed:";
