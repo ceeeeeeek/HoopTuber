@@ -10,7 +10,7 @@ import { DribbleIcon } from "@/components/icons/DribbleIcon";
 import { DribbleIcon2 } from "@/components/icons/DribbleIcon2";
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
 type RunVisibility = "public" | "private" | "unlisted";
 
