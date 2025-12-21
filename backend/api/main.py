@@ -1263,6 +1263,25 @@ def accept_invite(token: str, email: str):
         print("ERROR accept_invite:", e)
         raise HTTPException(status_code=500, detail="Failed to join run")
 
+#12-21-25 Sunday 7am - _get_highlight_signed_url() Helper to get signed URL for highlight video so that Join-A-Run page can show preview thumbnail of video 
+def _get_highlight_signed_url(job_id: str) -> str | None:
+    """Return a short-lived signed URL for a highlight's output video, if available."""
+    if not job_id:
+        return None
+    try:
+        snap = _job_doc(job_id).get()
+        if not snap.exists:
+            return None
+        data = snap.to_dict() or {}
+        gcs_uri = data.get("outputGcsUri")
+        if not gcs_uri:
+            return None
+        return _sign_get_url(gcs_uri, minutes=30)
+    except Exception as e:
+        print("WARN _get_highlight_signed_url:", e)
+        return None
+
+
 #The runs that are public shows up in the 'Join a Run' page - runs set to public visibility
 @app.get("/public-runs")
 def list_public_runs():
@@ -1280,6 +1299,10 @@ def list_public_runs():
             d = doc.to_dict() or {}
             d = ensure_owner_in_members(doc_ref, d)  
             d["runId"] = doc.id
+            thumb_id = (d.get("publicThumbnailHighlightId") or "").strip()
+            if thumb_id:
+                d["publicThumbnailUrl"] = _get_highlight_signed_url(thumb_id)
+
             items.append(d)
 
         return {"items": items}

@@ -39,11 +39,13 @@ type PublicRun = {
     ownerName?: string;
     visibility?: RunVisibility;
     members?: string[];
-    //highlights?: any[]; // legacy
-    highlightIds?: string[]; // preferred
+    highlightIds?: string[];
     location?: string;
     dayOfWeek?: string; //optional future field
     createdAt?: any;
+    pinnedMessage?: string;
+    publicThumbnailHighlightId?: string;
+    publicThumbnailUrl?: string;
   };
 
 /**
@@ -121,6 +123,10 @@ export default function JoinARunClient() {
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
 
+  const [thumbOpen, setThumbOpen] = useState<Record<string, boolean>>({});
+  const toggleThumb = (runId: string) =>
+    setThumbOpen((p) => ({ ...p, [runId]: !p[runId] }));
+  
 //   useEffect(() => {
 //     async function load() {
 //       try {
@@ -208,7 +214,7 @@ export default function JoinARunClient() {
       if (sortKey === "dayOfWeek") {
         return (a.dayOfWeek || "").localeCompare(b.dayOfWeek || "");
       }
-      // name
+      //name
       return (a.name || "").localeCompare(b.name || "");
     });
 
@@ -399,6 +405,64 @@ export default function JoinARunClient() {
                       </span>
                     </div>
                   </div>
+
+                {/*owner announcement visible before joining */}
+                {run.pinnedMessage?.trim() && (
+                <div className="mt-3 rounded-lg border bg-white p-3 text-sm">
+                    <div className="text-[11px] font-semibold text-gray-500">
+                    Owner announcement
+                    </div>
+                    <div className="mt-1 text-gray-700 whitespace-pre-line">
+                    {run.pinnedMessage}
+                    </div>
+                </div>
+                )}
+
+                {/*show that a public thumbnail was chosen (image preview can come later) */}
+                {/* Public thumbnail (expand/collapse) */}
+                {(run.publicThumbnailUrl || run.publicThumbnailHighlightId) && (
+                <div className="mt-3 rounded-lg border bg-white p-3 text-sm">
+                    <div className="flex items-center justify-between">
+                    <div className="text-[12px] font-semibold text-gray-800">Thumbnail</div>
+
+                    <button
+                        type="button"
+                        className="text-xs text-gray-600 hover:text-gray-900"
+                        onClick={() => toggleThumb(run.runId)}
+                    >
+                        {thumbOpen[run.runId] ? "Hide" : "Show"}
+                    </button>
+                    </div>
+
+                    {thumbOpen[run.runId] ? (
+                    run.publicThumbnailUrl ? (
+                        <div className="mt-2 overflow-hidden rounded-md border bg-black">
+                        {/* <video
+                            src={run.publicThumbnailUrl}
+                            className="h-44 w-full object-cover"
+                            controls
+                            preload="metadata"
+                            playsInline
+                        /> */}       
+                        <img
+                            src={run.publicThumbnailUrl}
+                            className="h-44 w-full object-cover"
+                            //controls
+                            //playsInline
+                        />
+                        </div>
+                    ) : (
+                        <div className="mt-2 text-xs text-gray-600">
+                        (No thumbnail URL yet) ID: {run.publicThumbnailHighlightId}
+                        </div>
+                    )
+                    ) : (
+                    <div className="mt-2 text-xs text-gray-500">
+                        Click “Show” to preview
+                    </div>
+                    )}
+                </div>
+                )}
 
                   {/*Join button + owner message */}
                   <div className="mt-5 flex flex-col gap-2">

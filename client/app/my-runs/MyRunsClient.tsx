@@ -188,6 +188,7 @@ async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
 //===================== COMPONENT (START) ============================
 //Props come from server wrapper in app/my-runs/page.tsx         
 //export default function MyRunsClient({ userEmail }: { userEmail: string }) {
+//component - MyRunsClient()
 export default function MyRunsClient() {
     const { data: session, status } = useSession();
     const router = useRouter();
@@ -256,10 +257,27 @@ export default function MyRunsClient() {
     const [settingsRun, setSettingsRun] = useState<RunsSummary | null>(null);
     const [settingsSaving, setSettingsSaving] = useState(false);
 
+    //12-21-25 Sunday 6am - Build dropdown menu options for the run settings modal in my-runs page
+    const settingsHighlightOptions =
+    (settingsRun?.highlightIds ?? []).map((hId) => {
+      const meta = highlightMap[hId];
+      return {
+        id: hId,
+        label: meta?.title || meta?.originalFileName || hId,
+        thumbUrl: meta?.signedUrl, //optional: lets the modal preview the thumbnail choice
+      };
+    });
+
+
     //12-16-25 Tuesday 9:30pm - Run Settings Modal save handler
     async function saveRunSettings(draft: RunSettingsDraft) {
       if (!settingsRun) return;
-    
+
+      const selectedThumb =
+      settingsHighlightOptions.find(
+        (o) => o.id === (draft.publicThumbnailHighlightId ?? "")
+      )?.thumbUrl || "";
+
       const patch: any = {
         maxMembers: draft.maxMembers ?? null,
         location: draft.location ?? "",
@@ -269,6 +287,7 @@ export default function MyRunsClient() {
         visibility: draft.visibility,
         featuredHighlightId: draft.featuredHighlightId ?? "",
         publicThumbnailHighlightId: draft.publicThumbnailHighlightId ?? "",
+        publicThumbnailUrl: selectedThumb,
         name: draft.name?.trim() || settingsRun.name,
       };
     
@@ -1099,6 +1118,7 @@ return (
         {/*12-16-25 Tuesday 9:30pm - the Run Settings Modal Modal - for the owner to set rules and settings of a run*/}
         <RunSettingsModal
           open={settingsOpen}
+          saving={settingsSaving}
           runName={settingsRun?.name || "Run"}
           initial={{
             visibility: (settingsRun?.visibility || "private") as any,
@@ -1117,6 +1137,7 @@ return (
           onSave={(draft) => {
             void saveRunSettings(draft); 
           }}
+          highlightOptions={settingsHighlightOptions} 
         />
 
         {/*the rename "modal" – overlay */}

@@ -5,6 +5,12 @@ import { X, MapPin, Users, Settings2, Pencil, Lock, Eye, Link as LinkIcon } from
 
 type RunVisibility = "public" | "private" | "unlisted";
 
+type HighlightOption = {
+    id: string;
+    label: string;
+    thumbUrl?: string;
+  };
+  
 export type RunSettingsDraft = {
   maxMembers?: number | null;
   location?: string;
@@ -19,16 +25,20 @@ export type RunSettingsDraft = {
 
 export default function RunSettingsModal({
   open,
+  saving,
   runName,
   initial,
   onClose,
-  onSave
+  onSave,
+  highlightOptions,
 }: {
   open: boolean;
+  saving?: boolean; 
   runName: string;
   initial: RunSettingsDraft;
   onClose: () => void;
   onSave: (draft: RunSettingsDraft) => void;
+  highlightOptions?: HighlightOption[];
 }) {
     const [name, setName] = useState("");
     const [maxMembersText, setMaxMembersText] = useState<string>("");
@@ -223,47 +233,89 @@ export default function RunSettingsModal({
           </div>
 
           {/*Future fields (still saved) */}
-          <div className="space-y-3 rounded-xl border bg-gray-50 p-4">
-            <p className="text-xs font-semibold text-gray-700">Social</p>
+            <div className="space-y-3 rounded-xl border bg-gray-50 p-4">
+                <p className="text-xs font-semibold text-gray-700">Social</p>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700">
-                Owner pinned message / announcements
-              </label>
-              <textarea
-                value={pinnedMessage}
-                onChange={(e) => setPinnedMessage(e.target.value)}
-                placeholder="e.g. Games start at 7pm. Bring a light + dark shirt."
-                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm shadow-sm"
-                rows={3}
-              />
-            </div>
+                <div>
+                    <label className="block text-xs font-medium text-gray-700">
+                        Owner pinned message / announcements
+                    </label>
+                    <textarea
+                        value={pinnedMessage}
+                        onChange={(e) => setPinnedMessage(e.target.value)}
+                        placeholder="e.g. Games start at 7pm. Bring a light + dark shirt."
+                        className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm shadow-sm"
+                        rows={3}
+                    />
+                </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label className="block text-xs font-medium text-gray-700">
-                  Featured highlight ID
-                </label>
-                <input
-                  value={featuredHighlightId}
-                  onChange={(e) => setFeaturedHighlightId(e.target.value)}
-                  placeholder="highlightId"
-                  className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm shadow-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700">
-                  Public thumbnail highlight ID
-                </label>
-                <input
-                  value={publicThumbnailHighlightId}
-                  onChange={(e) => setPublicThumbnailHighlightId(e.target.value)}
-                  placeholder="highlightId"
-                  className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm shadow-sm"
-                />
-              </div>
+                {/*Dropdown selectors instead of free-text highlight IDs */}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {/*Featured highlight (members-only later; we only store the selection now) */}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-700">
+                        Featured highlight (members only)
+                        </label>
+
+                        <select
+                        className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
+                        value={featuredHighlightId || ""}
+                        onChange={(e) => setFeaturedHighlightId(e.target.value)}
+                        >
+                        <option value="">None</option>
+                        {(highlightOptions ?? []).map((opt) => (
+                            <option key={opt.id} value={opt.id}>
+                            {opt.label}
+                            </option>
+                        ))}
+                        </select>
+
+                        <p className="mt-1 text-[11px] text-gray-500">
+                        Members will see this after joining (we’ll gate it on the run page later).
+                        </p>
+                    </div>
+
+                    {/*Public thumbnail highlight (public-facing on Join a Run) */}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-700">
+                        Public thumbnail highlight
+                        </label>
+
+                        <select
+                        className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
+                        value={publicThumbnailHighlightId || ""}
+                        onChange={(e) => setPublicThumbnailHighlightId(e.target.value)}
+                        >
+                        <option value="">None</option>
+                        {(highlightOptions ?? []).map((opt) => (
+                            <option key={opt.id} value={opt.id}>
+                            {opt.label}
+                            </option>
+                        ))}
+                        </select>
+
+                        {/*Optional: show a tiny preview if we have a signedUrl */}
+                        {(() => {
+                        const chosen = (highlightOptions ?? []).find(
+                            (x) => x.id === publicThumbnailHighlightId
+                        );
+                        if (!chosen?.thumbUrl) return null;
+                        return (
+                            <div className="mt-2">
+                            <video
+                                src={chosen.thumbUrl}
+                                className="h-20 w-full rounded-md border object-cover"
+                                preload="metadata"
+                                muted
+                                playsInline
+                            />
+                            <p className="mt-1 text-[11px] text-gray-500">Preview</p>
+                            </div>
+                        );
+                        })()}
+                    </div>
+                </div>
             </div>
-          </div>
         </div>
 
         {/*Footer */}
@@ -271,6 +323,7 @@ export default function RunSettingsModal({
           <button
             type="button"
             onClick={onClose}
+            disabled={!!saving}
             className="rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Cancel
@@ -279,6 +332,7 @@ export default function RunSettingsModal({
             type="button"
             onClick={() => {
               onSave({
+                name: name.trim(),
                 maxMembers: Number.isNaN(parsedMaxMembers) ? undefined : parsedMaxMembers,
                 location: location.trim() || "",
                 visibility,
@@ -287,12 +341,11 @@ export default function RunSettingsModal({
                 pinnedMessage: pinnedMessage.trim(),
                 featuredHighlightId: featuredHighlightId.trim(),
                 publicThumbnailHighlightId: publicThumbnailHighlightId.trim(),
-                name: name.trim(),
               });
             }}
             className="rounded-md bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700"
           >
-            Save settings
+            {saving ? "Saving..." : "Save Run Settings"}
           </button>
         </div>
       </div>
