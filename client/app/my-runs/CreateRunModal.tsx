@@ -1,3 +1,5 @@
+//12-11-25 Thursday 11pm - Create Run modal button with Hoop Icon
+
 "use client";
 
 import React, { useState } from "react";
@@ -11,7 +13,7 @@ export default function CreateRunModal({ open, onClose, onCreate }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md relative border border-orange-300">
         
-        {/* Hoop Icon */}
+        {/*Hoop Icon */}
         <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-orange-500 text-white rounded-full h-12 w-12 flex items-center justify-center shadow-md">
           🏀
         </div>

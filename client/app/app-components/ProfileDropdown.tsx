@@ -114,7 +114,7 @@ export default function ProfileDropdown() {
               onClick={() => setIsOpen(false)}
               className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
             >
-              <User className="w-4 h-4 mr-3 text-gray-500" />
+              <User className="w-4 h-4 mr-3 text-orange-500" />
               Dashboard
             </Link>
 

@@ -7,18 +7,14 @@ from datetime import timedelta
 import os, uuid, json, tempfile, subprocess #11-08-25 Saturday 11:42am - For 'Total Footage' stat; added tempfile, subprocess
 from uuid import uuid4
 from dotenv import load_dotenv
-from google.cloud import storage, firestore
-from google.cloud import pubsub_v1
+from google.cloud import storage, firestore, pubsub_v1
 from pydantic import BaseModel 
-from google.cloud import firestore
-from google.cloud import storage
-from datetime import timedelta
-from datetime import datetime
+from datetime import timedelta, datetime
 from urllib.parse import urlparse
 #typing + datetime helpers for pagination tokens
 from typing import Dict, Any                                           
 #from google.cloud.firestore import Query  #Don't need this import directly because I = already use firestore.Query.DESCENDING
-from google.cloud.firestore_v1 import Increment
+from google.cloud.firestore_v1 import Increment, ArrayUnion
 
 #12-01-25 Monday 11am Update - Adding Pydantic model
 #payload for creating a video comment
@@ -838,6 +834,71 @@ def delete_folder(folder_id: str):
 #11-22-25 Saturday 12am - For my runs page
 #My Runs = all runs where this email is in `members` (owner OR invited)
 #With def list_runs() - Owner sees their own runs + Users see runs where they are members
+#@app.get("/runs")
+#12-21-25 Sunday 4am - Ensure run owner is always in members list
+# def _ensure_owner_in_members(doc_ref, run: dict) -> dict:
+#     #guarantees the run owner is always included in members (for old + new runs)
+#     owner = (run.get("ownerEmail") or "").strip().lower()  
+#     if not owner:  
+#         return run  #(no ownerEmail -> nothing we can enforce)
+
+#     members = run.get("members")  
+#     if not isinstance(members, list):  
+#         members = []  
+
+#     # normalize to lowercase emails (optional but helps consistency)
+#     members_norm = [str(m).strip().lower() for m in members if str(m).strip()] 
+
+#     if owner not in members_norm:  
+#         members_norm.insert(0, owner)  #keep owner at front for UX consistency
+#         try:
+#             doc_ref.update({
+#                 "members": members_norm,              
+#                 "updatedAt": datetime.utcnow(),       
+#             })
+#         except Exception as e:
+#             # don't break read paths if repair fails
+#             print("WARN _ensure_owner_in_members update failed:", e) 
+
+#         run["members"] = members_norm  #(so response is correct immediately)
+#     else:
+#         #keep response normalized even if stored list had uppercase duplicates
+#         run["members"] = members_norm  
+
+#     return run 
+
+#12-21-25 Sunday 4am - Ensure run owner is always in members list
+#Remove @app.get("/runs") from above this helper function ensure_owner_in_members() - Keep the helper as a plain function
+#ensure_owner_in_members: normalizes emails to lowercase, fixes missing/invalid members, writes back if owner missing, and returns repaired data.
+def ensure_owner_in_members(doc_ref, data: dict) -> dict:
+    """
+    Ensures ownerEmail is always in members.
+    - Works for older runs (repairs on read)
+    - Also safe for new runs
+    """
+    owner = (data.get("ownerEmail") or "").strip().lower()
+    if not owner:
+        return data  #no ownerEmail stored, nothing to enforce
+
+    members = data.get("members") or []
+    if not isinstance(members, list):
+        members = []
+
+    #normalize
+    members_norm = []
+    for m in members:
+        if isinstance(m, str) and m.strip():
+            members_norm.append(m.strip().lower())
+
+    if owner not in members_norm:
+        #Write back to Firestore without race conditions
+        doc_ref.update({"members": ArrayUnion([owner])}) #ArrayUnion firestore import lets you append without overwriting concurrent writes (Firestore-safe)
+        members_norm.append(owner)
+
+    data["members"] = members_norm
+    return data
+
+#/runs list endpoint starts here on list_runs()
 @app.get("/runs")
 def list_runs(
     ownerEmail: Optional[str] = None,
@@ -865,15 +926,27 @@ def list_runs(
                 detail="Provide ownerEmail or memberEmail"
             )
 
+        # docs = q.stream()
+        # items = []
+        # for d in docs:
+        #     doc_data = d.to_dict()
+        #     if not doc_data:
+        #         continue
+        #     if "runId" not in doc_data:
+        #         doc_data["runId"] = d.id
+
+        #     doc_data = _ensure_owner_in_members(d.reference, doc_data) 
+
+        #     items.append(doc_data)
         docs = q.stream()
         items = []
-        for d in docs:
-            doc_data = d.to_dict()
-            if not doc_data:
-                continue
-            if "runId" not in doc_data:
-                doc_data["runId"] = d.id
-            items.append(doc_data)
+        for doc in docs:
+            doc_ref = firestore_client.collection(RUNS_COLLECTION).document(doc.id)  
+            d = doc.to_dict() or {}
+            d = ensure_owner_in_members(doc_ref, d)  
+            d["runId"] = doc.id
+            items.append(d)
+
 
         return {"items": items, "count": len(items)}
 
@@ -901,6 +974,7 @@ def create_run(body: dict = Body(...)):
         owner_email = (body.get("ownerEmail") or "").strip()
         visibility = (body.get("visibility") or "private").lower()
         max_members = body.get("maxMembers")
+        owner_email_lower = owner_email.strip().lower()
 
         if not name:
             raise HTTPException(status_code=400, detail="Run name is required")
@@ -922,7 +996,8 @@ def create_run(body: dict = Body(...)):
             "updatedAt": now,
             #My Runs = anything you’re a member of - owners runs + runs user is a member of.
             #Include the owner in members by default.
-            "members": [owner_email],
+            #"members": [owner_email],
+            "members": [owner_email_lower],  #12-21-25 Sunday 4am - Ensure run owner is always in members list
             #Highlights that belong to this run
             "highlightIds": [],
         }
@@ -947,8 +1022,15 @@ def update_run(run_id: str, body: dict = Body(...)):
     Update a run's name or visibility.
     
     Allowed fields:
-      - name
-      - visibility ("private" | "public" | "unlisted")
+        - name
+        - visibility ("private" | "public" | "unlisted")
+        - maxMembers
+        - location
+        - allowComments
+        - allowInviteLinks
+        - pinnedMessage
+        - featuredHighlightId
+        - publicThumbnailHighlightId
     """
 
     try:
@@ -963,6 +1045,13 @@ def update_run(run_id: str, body: dict = Body(...)):
         #Extract the fields allowed to update
         new_name = body.get("name")
         new_visibility = body.get("visibility")
+        max_members = body.get("maxMembers")  
+        location = body.get("location")      
+        allow_comments = body.get("allowComments")  
+        allow_invite_links = body.get("allowInviteLinks")  
+        pinned_message = body.get("pinnedMessage")  
+        featured_highlight_id = body.get("featuredHighlightId")  
+        public_thumbnail_highlight_id = body.get("publicThumbnailHighlightId") 
 
         update_data = {}
         if new_name is not None:
@@ -975,6 +1064,37 @@ def update_run(run_id: str, body: dict = Body(...)):
             if new_visibility not in ("private", "public", "unlisted"):
                 raise HTTPException(status_code=400, detail="Invalid visibility")
             update_data["visibility"] = new_visibility
+        
+        if max_members is not None:
+            #accept null or positive int
+            if max_members == "" or max_members is False:  
+                max_members = None  
+            if max_members is not None:  
+                try:
+                    max_members = int(max_members)  
+                except Exception:
+                    raise HTTPException(status_code=400, detail="maxMembers must be an integer")  
+                if max_members < 1:  
+                    raise HTTPException(status_code=400, detail="maxMembers must be >= 1")  
+            update_data["maxMembers"] = max_members  
+
+        if location is not None:  
+            update_data["location"] = str(location).strip()  
+
+        if allow_comments is not None:  
+            update_data["allowComments"] = bool(allow_comments)  
+
+        if allow_invite_links is not None:  
+            update_data["allowInviteLinks"] = bool(allow_invite_links)  
+
+        if pinned_message is not None:  
+            update_data["pinnedMessage"] = str(pinned_message)  
+
+        if featured_highlight_id is not None:  
+            update_data["featuredHighlightId"] = str(featured_highlight_id).strip() 
+
+        if public_thumbnail_highlight_id is not None:  
+            update_data["publicThumbnailHighlightId"] = str(public_thumbnail_highlight_id).strip()  
 
         if not update_data:
             raise HTTPException(status_code=400, detail="No valid fields provided")
@@ -983,10 +1103,16 @@ def update_run(run_id: str, body: dict = Body(...)):
 
         doc_ref.update(update_data)
 
-        #Return the updated run
-        updated = doc_ref.get().to_dict()
+        #ensure owner is always in members (repairs old runs too)
+        run_after = doc_ref.get()  
+        updated = run_after.to_dict()  
+        updated = ensure_owner_in_members(doc_ref, updated)
+        return {"success": True, "run": updated}  
 
-        return {"success": True, "run": updated}
+        #Return the updated run
+        #updated = doc_ref.get().to_dict()
+
+        #return {"success": True, "run": updated}
 
     except HTTPException:
         raise
@@ -1075,7 +1201,8 @@ def generate_invite_link(run_id: str):
         return {
             "success": True,
             "token": token,
-            "joinUrl": f"/runs/invite/{token}"
+            "joinUrl": f"/runs/invite/{token}",
+            "inviteUrl": f"/runs/invite/{token}",  #joinUrl and inviteUrl can be used interchangeably
         }
 
     except Exception as e:
@@ -1099,16 +1226,29 @@ def accept_invite(token: str, email: str):
 
         run_doc = None
         run_id = None
+
         for doc in query:
             run_doc = doc.to_dict()
             run_id = doc.id
+
+            run_ref = firestore_client.collection(RUNS_COLLECTION).document(run_id)
+            run_doc = ensure_owner_in_members(run_ref, run_doc)
 
         if not run_doc:
             raise HTTPException(status_code=404, detail="Invalid invite token")
 
         members = run_doc.get("members", [])
+
+        owner = (run_doc.get("ownerEmail") or "").strip().lower() 
+        if owner and owner not in members:  
+            members.insert(0, owner)  
+        
+        email = (email or "").strip().lower()  
         if email not in members:
             members.append(email)
+
+        #if email not in members:
+            #members.append(email)
 
         firestore_client.collection(RUNS_COLLECTION).document(run_id).update({
             "members": members,
@@ -1136,7 +1276,9 @@ def list_public_runs():
 
         items = []
         for doc in query:
-            d = doc.to_dict()
+            doc_ref = firestore_client.collection(RUNS_COLLECTION).document(doc.id) 
+            d = doc.to_dict() or {}
+            d = ensure_owner_in_members(doc_ref, d)  
             d["runId"] = doc.id
             items.append(d)
 
