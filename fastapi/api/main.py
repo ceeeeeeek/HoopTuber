@@ -31,15 +31,15 @@ from api.utils import (_make_keys,
                    _parse_gs_uri,
                    ts_to_seconds)
 
-from typing import Dict, Any, List
-from google.cloud.firestore import Query
-
 # IMPORTING SERVICE ROUTERS
 from api.vertex_service import router as vertex_router
 from api.video_service import router as video_router
-from api.runs_service import router as runs_router
 from api.folders_router import router as folders_router
 
+
+
+from typing import Dict, Any, List
+from google.cloud.firestore import Query
 
 load_dotenv()
 
@@ -60,7 +60,6 @@ SERVICE_ACCOUNT = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 RUNS_COLLECTION = os.getenv("FIRESTORE_RUNS_COLLECTION", "runs") #11-22-25 Saturday 12pm - For my runs page
 FOLDER_COLLECTION = os.getenv("FIRESTORE_FOLDER_COLLECTION", "highlightFolders")
 #RUNS_COLLECTION = "runs" #11-21-25 Friday 4pm - For my runs page
-RUNS_COLLECTION = os.getenv("FIRESTORE_RUNS_COLLECTION", "runs") #11-22-25 Saturday 12pm - For my runs page
 #top-level collection for per-video comments
 COMMENTS_COLLECTION = os.getenv("FIRESTORE_COMMENTS_COLLECTION", "videoComments")
 
@@ -71,8 +70,9 @@ publisher        = pubsub_v1.PublisherClient()
 topic_path       = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
 
 app = FastAPI(
-    docs_url=None,
-    redoc_url=None,
+    #docs_url=None,
+    #redoc_url=None,
+    #openapi_url=None,
 )
 # CORS setup
 origins = [
@@ -128,7 +128,6 @@ limiter = Limiter(key_func=user_or_ip_key)
 app.state.limiter = limiter
 app.include_router(vertex_router)
 app.include_router(video_router)
-app.include_router(runs_router)
 app.include_router(folders_router)
 
 @app.exception_handler(RateLimitExceeded)
@@ -569,7 +568,221 @@ def highlight_data(job_id: str):
         "ranges": ranges,
     }
 
+def _runs_collection():
+    return firestore_client.collection(RUNS_COLLECTION)
 
+def _comments_collection():
+    return firestore_client.collection(COMMENTS_COLLECTION)
+
+def _folders_collection():
+    return firestore_client.collection(FOLDER_COLLECTION)
+
+@app.get("/runs")
+def list_runs(
+    ownerEmail: Optional[str] = None,
+    memberEmail: Optional[str] = None,
+):
+    """
+    List runs.
+
+    - memberEmail → runs where email is in members[]
+    - ownerEmail → runs owned by user
+    """
+    if memberEmail:
+        query = _runs_collection().where(
+            "members", "array_contains", memberEmail
+        )
+    elif ownerEmail:
+        query = _runs_collection().where(
+            "ownerEmail", "==", ownerEmail
+        )
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide ownerEmail or memberEmail"
+        )
+
+    items = []
+    for doc in query.stream():
+        data = doc.to_dict() or {}
+        data.setdefault("runId", doc.id)
+        items.append(data)
+
+    return {"items": items, "count": len(items)}
+
+
+@app.post("/runs")
+def create_run(body: dict = Body(...)):
+    """
+    Create a new run.
+    """
+    name = (body.get("name") or "").strip()
+    owner_email = (body.get("ownerEmail") or "").strip()
+    visibility = (body.get("visibility") or "private").lower()
+    max_members = body.get("maxMembers")
+
+    if not name:
+        raise HTTPException(status_code=400, detail="Run name is required")
+    if not owner_email:
+        raise HTTPException(status_code=400, detail="ownerEmail is required")
+
+    if visibility not in ("public", "unlisted", "private"):
+        visibility = "private"
+
+    run_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+
+    run_doc = {
+        "runId": run_id,
+        "name": name,
+        "ownerEmail": owner_email,
+        "visibility": visibility,
+        "members": [owner_email],
+        "highlightIds": [],
+        "createdAt": now,
+        "updatedAt": now,
+    }
+
+    if max_members is not None:
+        run_doc["maxMembers"] = max_members
+
+    _runs_collection().document(run_id).set(run_doc)
+
+    return {"success": True, "run": run_doc}
+
+
+@app.patch("/runs/{run_id}")
+def update_run(run_id: str, body: dict = Body(...)):
+    """
+    Update run name or visibility.
+    """
+    doc_ref = _runs_collection().document(run_id)
+    snap = doc_ref.get()
+
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    updates = {}
+
+    if "name" in body:
+        name = body["name"].strip()
+        if name:
+            updates["name"] = name
+
+    if "visibility" in body:
+        vis = body["visibility"].lower()
+        if vis not in ("private", "public", "unlisted"):
+            raise HTTPException(status_code=400, detail="Invalid visibility")
+        updates["visibility"] = vis
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields provided")
+
+    updates["updatedAt"] = datetime.utcnow()
+    doc_ref.update(updates)
+
+    return {"success": True, "run": doc_ref.get().to_dict()}
+
+
+@app.delete("/runs/{run_id}")
+def delete_run(run_id: str):
+    """
+    Delete a run (does NOT delete videos).
+    """
+    doc_ref = _runs_collection().document(run_id)
+    snap = doc_ref.get()
+
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    doc_ref.delete()
+    return {"success": True}
+
+
+@app.post("/runs/{run_id}/assignHighlight")
+def assign_highlight(run_id: str, body: dict = Body(...)):
+    """
+    Add highlightId to run.
+    """
+    highlight_id = (body.get("highlightId") or "").strip()
+    if not highlight_id:
+        raise HTTPException(status_code=400, detail="highlightId required")
+
+    doc_ref = _runs_collection().document(run_id)
+    snap = doc_ref.get()
+
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    data = snap.to_dict() or {}
+    highlights = data.get("highlightIds", [])
+
+    if highlight_id not in highlights:
+        highlights.append(highlight_id)
+
+    doc_ref.update({
+        "highlightIds": highlights,
+        "updatedAt": datetime.utcnow(),
+    })
+
+    return {"success": True}
+
+
+# ======================================================
+# INVITE LINKS
+# ======================================================
+
+@app.post("/runs/{run_id}/invite")
+def generate_invite(run_id: str):
+    """
+    Generate invite token.
+    """
+    token = str(uuid.uuid4())
+    doc_ref = _runs_collection().document(run_id)
+
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    doc_ref.update({"inviteToken": token})
+
+    return {
+        "success": True,
+        "token": token,
+        "joinUrl": f"/runs/invite/{token}",
+    }
+
+
+@app.get("/runs/invite/{token}")
+def accept_invite(token: str, email: str):
+    """
+    Accept invite link.
+    """
+    query = (
+        _runs_collection()
+        .where("inviteToken", "==", token)
+        .limit(1)
+        .stream()
+    )
+
+    run_doc = None
+    run_id = None
+    for doc in query:
+        run_doc = doc.to_dict()
+        run_id = doc.id
+
+    if not run_doc:
+        raise HTTPException(status_code=404, detail="Invalid invite token")
+
+    members = run_doc.get("members", [])
+    if email not in members:
+        members.append(email)
+
+    _runs_collection().document(run_id).update({
+        "members": members,
+        "updatedAt": datetime.utcnow(),
+    })
+
+    return {"success": True, "runId": run_id}
 
 @app.get("/healthz")
 def healthz():

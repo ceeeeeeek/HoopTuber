@@ -6,13 +6,21 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 import {
+  ArrowLeft,
   Pause,
   Zap,
-  FastForward, // New icon for "Play All"
+  FastForward,
+  Upload,
+  FileVideo,
+  Brain,
+  CheckCircle,
 } from "lucide-react";
 import ClipDropdownPanel from "@/app/app-components/ClipDropdownPanel";
+import ProfileDropdown from "../../app-components/ProfileDropdown";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 
@@ -220,7 +228,26 @@ export default function VideoDisplayPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
       {/* ... Header ... */}
-
+      <header className="border-b bg-white/80 backdrop-blur-sm">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <Link href="/dashboard" className="flex items-center space-x-2">
+            <ArrowLeft className="w-5 h-5" />
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              className="w-8 h-8 object-contain"
+              width={32}
+              height={32}
+              priority
+            />
+            <span className="text-xl font-bold text-gray-900">HoopTuber</span>
+          </Link>
+          <div className="flex items-center space-x-4">
+            <Badge variant="secondary">AI Analysis</Badge>
+            <ProfileDropdown />
+          </div>
+        </div>
+      </header>
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-6xl mx-auto">
           {/* Loading State */}
@@ -244,97 +271,101 @@ export default function VideoDisplayPage() {
 
           {!loading && !error && highlightData && (
             <div className="space-y-6">
-              
-              {/* Video Player */}
-              <Card className="overflow-hidden">
-                <div className="bg-black relative aspect-video">
-                  <video
-                    ref={videoRef}
-                    className="w-full h-full"
-                    src={highlightData.sourceVideoUrl}
-                    controls
-                    muted={true}
-                    playsInline
-                    onPlay={() => setIsPlaying(true)}
-                    onPause={() => setIsPlaying(false)}
-                  />
-                  
-                  {/* Overlay badge showing current highlight */}
-                  {currentHighlightIndex !== null && isSequencePlaying && (
-                    <div className="absolute top-4 right-4 animate-in fade-in duration-300">
-                      <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white px-3 py-1 shadow-lg backdrop-blur-sm">
-                        Playing Highlight {currentHighlightIndex + 1} of {highlightData.ranges.length}
-                      </Badge>
+              {/* Two-Column Layout: Sticky Video + Scrollable Highlights */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Left Column: Video Player (sticky on large screens) */}
+                <div className="lg:sticky lg:top-6 lg:self-start">
+                  <Card className="overflow-hidden">
+                    <div className="bg-black relative aspect-video">
+                      <video
+                        ref={videoRef}
+                        className="w-full h-full"
+                        src={highlightData.sourceVideoUrl}
+                        controls
+                        muted={true}
+                        playsInline
+                        onPlay={() => setIsPlaying(true)}
+                        onPause={() => setIsPlaying(false)}
+                      />
+
+                      {/* Overlay badge showing current highlight */}
+                      {currentHighlightIndex !== null && isSequencePlaying && (
+                        <div className="absolute top-4 right-4 animate-in fade-in duration-300">
+                          <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white px-3 py-1 shadow-lg backdrop-blur-sm">
+                            Playing Highlight {currentHighlightIndex + 1} of {highlightData.ranges.length}
+                          </Badge>
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    <CardContent className="py-4">
+                      <div className="flex flex-col gap-4">
+                        {/* MAIN ACTION: Play All Sequence */}
+                        <Button
+                          onClick={handlePlayAll}
+                          size="lg"
+                          className={`w-full ${isSequencePlaying ? 'bg-red-500 hover:bg-red-600' : 'bg-orange-500 hover:bg-orange-600'} transition-all`}
+                        >
+                          {isSequencePlaying && isPlaying ? (
+                            <>
+                              <Pause className="w-5 h-5 mr-2" /> Stop Sequence
+                            </>
+                          ) : (
+                            <>
+                              <FastForward className="w-5 h-5 mr-2" /> Play Full Highlight Reel
+                            </>
+                          )}
+                        </Button>
+
+                        <p className="text-sm text-gray-500 text-center">
+                           {isSequencePlaying
+                             ? "Auto-skipping non-highlight segments..."
+                             : "Watch highlights sequentially"}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
 
-                <CardContent className="py-4">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      {/* MAIN ACTION: Play All Sequence */}
-                      <Button 
-                        onClick={handlePlayAll} 
-                        size="lg"
-                        className={`${isSequencePlaying ? 'bg-red-500 hover:bg-red-600' : 'bg-orange-500 hover:bg-orange-600'} transition-all`}
-                      >
-                        {isSequencePlaying && isPlaying ? (
-                          <>
-                            <Pause className="w-5 h-5 mr-2" /> Stop Sequence
-                          </>
-                        ) : (
-                          <>
-                            <FastForward className="w-5 h-5 mr-2" /> Play Full Highlight Reel
-                          </>
-                        )}
-                      </Button>
-                      
-                      <p className="text-sm text-gray-500">
-                         {isSequencePlaying 
-                           ? "Auto-skipping non-highlight segments..." 
-                           : "Watch highlights sequentially"}
+                {/* Right Column: Scrollable Highlights List */}
+                <div>
+                  <Card className="lg:max-h-[calc(100vh-12rem)] lg:overflow-hidden flex flex-col">
+                    <CardHeader className="flex-shrink-0">
+                      <CardTitle className="flex items-center">
+                        <Zap className="w-5 h-5 mr-2 text-orange-500" />
+                        Highlight Segments ({highlightData.rawEvents.length})
+                      </CardTitle>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Click any highlight to play, or expand to edit details and timestamps
                       </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                    </CardHeader>
+                    <CardContent className="flex-1 overflow-y-auto">
+                      <div className="space-y-3 pr-2">
+                        {highlightData.rawEvents.map((event, index) => {
+                          const currentEvent = getEvent(index);
+                          const currentRange = getRange(index);
+                          const isActive = currentHighlightIndex === index;
 
-              {/* Highlights List with Editable Panels */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <Zap className="w-5 h-5 mr-2 text-orange-500" />
-                    Highlight Segments
-                  </CardTitle>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Click any highlight to play, or expand to edit details and timestamps
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {highlightData.rawEvents.map((event, index) => {
-                      const currentEvent = getEvent(index);
-                      const currentRange = getRange(index);
-                      const isActive = currentHighlightIndex === index;
+                          return (
+                            <ClipDropdownPanel
+                              key={event.id || index}
+                              index={index}
+                              event={currentEvent}
+                              range={currentRange}
+                              isActive={isActive}
+                              isPlaying={isPlaying}
+                              onPlayClick={handleHighlightClick}
+                              onPreviewClick={handlePreviewClick}
+                              onEventUpdate={handleEventUpdate}
+                            />
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
 
-                      return (
-                        <ClipDropdownPanel
-                          key={event.id || index}
-                          index={index}
-                          event={currentEvent}
-                          range={currentRange}
-                          isActive={isActive}
-                          isPlaying={isPlaying}
-                          onPlayClick={handleHighlightClick}
-                          onPreviewClick={handlePreviewClick}
-                          onEventUpdate={handleEventUpdate}
-                        />
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-              
               {/* ... Stats Section (Unchanged) ... */}
             </div>
           )}

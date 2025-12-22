@@ -13,6 +13,7 @@ email-validator==2.3.0
 fastapi==0.116.1
 google-api-core==2.25.1
 google-auth==2.40.3
+google-auth-oauthlib==1.2.3
 google-cloud-aiplatform==1.128.0
 google-cloud-bigquery==3.38.0
 google-cloud-core==2.4.3
@@ -28,6 +29,7 @@ googleapis-common-protos==1.70.0
 grpc-google-iam-v1==0.14.2
 grpcio==1.75.0rc1
 grpcio-status==1.62.3
+gspread==6.2.1
 gunicorn==23.0.0
 h11==0.16.0
 httpcore==1.0.9
@@ -39,6 +41,7 @@ imageio-ffmpeg==0.6.0
 limits==5.6.0
 moviepy==1.0.3
 numpy==2.3.2
+oauthlib==3.3.1
 packaging==25.0
 pillow==11.3.0
 pipreqs==0.4.13
@@ -54,6 +57,7 @@ python-dotenv==1.1.1
 python-multipart==0.0.20
 PyYAML==6.0.2
 requests==2.32.5
+requests-oauthlib==2.0.0
 resend==2.19.0
 rsa==4.9.1
 shapely==2.1.2

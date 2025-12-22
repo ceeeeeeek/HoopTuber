@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-import DashboardClient from "./DashboardClient2";
+import DashboardClient from "./DashboardClientNewUI";
 
 export default function Page() {
   return <DashboardClient />;
