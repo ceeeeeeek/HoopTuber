@@ -96,7 +96,7 @@ export default function RunSettingsModal({
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Run Settings</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Configure what everyone sees on <span className="font-medium">Join a Run</span>.
+              Configure what everyone sees on the <span className="font-medium">Join a Run page</span>.
             </p>
             <p className="mt-1 text-xs text-gray-600">
               Run: <span className="font-medium">{runName}</span>
@@ -271,7 +271,7 @@ export default function RunSettingsModal({
                         </select>
 
                         <p className="mt-1 text-[11px] text-gray-500">
-                        Members will see this after joining (we’ll gate it on the run page later).
+                        Members will see this after joining.
                         </p>
                     </div>
 

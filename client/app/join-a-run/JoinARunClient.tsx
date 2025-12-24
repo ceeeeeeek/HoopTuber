@@ -272,7 +272,7 @@ export default function JoinARunClient() {
                 onClick={() => router.push("/my-runs")}
                 >
                 <DribbleIcon className="w-5 h-5" />
-                View My Runs
+                My Runs
                 </button>
 
                 <button
