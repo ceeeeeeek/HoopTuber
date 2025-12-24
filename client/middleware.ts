@@ -1,9 +1,24 @@
-// // middleware.ts (Sunday 10-12-2025 Version)
+import { withAuth } from "next-auth/middleware"
+import { NextResponse } from "next/server";
 
-export { default } from "next-auth/middleware";
+
+export default withAuth(
+  function middleware(req) {
+    const url = req.nextUrl.pathname;
+    if (url.endsWith(".php")) {
+      return new NextResponse("Not Found", {status: 404});
+    }
+    return NextResponse.next();
+  },
+  {
+    pages: {
+      signIn: "/auth/signin",
+    },
+  }
+);
 
 export const config = {
   matcher: [
-    "/upload", "/dashboard/:path*"
-  ],
+    "/dashboard/:path*",
+  ]
 };

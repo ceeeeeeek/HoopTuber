@@ -1,339 +1,556 @@
-//app/upload/page.tsx - - Tuesday 11-04-25 Version
+// upload/page.tsx (NEW UPLOAD PAGE)
+
 "use client";
 
-//React + hooks
 import { useEffect, useRef, useState, useCallback } from "react";
-//UI kit
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-//routing helper
-import { useRouter } from "next/navigation";
-//read the signed-in user so we can pass x-owner-email to FastAPI
-import { useSession } from "next-auth/react";
-import {
-  //icons
-  Upload,
-  Play,
-  CheckCircle,
-  Zap,
-  ArrowLeft,
-  FileVideo,
-  BarChart3,
-  Brain,
-  Target,
-  TrendingUp,
-  //Clock, MapPin, User,  // (kept imported in case you re-enable the legacy section)
-  Download, //UNCHANGED in your file: used for the download button
-} from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  Pause,
+  Zap,
+  FastForward,
+  Upload,
+  FileVideo,
+  Brain,
+  CheckCircle,
+} from "lucide-react";
+import ClipDropdownPanel from "@/app/app-components/ClipDropdownPanel";
 import ProfileDropdown from "../app-components/ProfileDropdown";
-
-const API_BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
-console.log("[Upload] API_BASE =", API_BASE);
-
-
+import { useUploadStatus } from "@/contexts/UploadStatusContext";
+import { uploadQueue } from "@/lib/uploadQueue";
+import { pollingService } from "@/lib/uploadPollingService";
 
 
-//types used by the “legacy immediate analysis” section and job polling
+// https://hooptuber-fastapi-devtest.onrender.com
+// https://hooptuber-fastapi-web-service-docker.onrender.com
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-devtest.onrender.com";
+
 interface GeminiShotEvent {
-  Subject: string;
-  Location: string;
-  ShotType: string;
-  TimeStamp: string;
-  Outcome: string;
+  id: string;
+  timestamp_end: string;
+  timestamp_start: string;
+  outcome: string;
+  subject: string;
+  shot_type: string;
+  shot_location: string;
 }
 
-interface UploadResult {
-  success: boolean;
-  videoUrl?: string;     
-  processingId?: string;  
-  fileName?: string;      
-  fileSize?: number;      
-  method?: string;        
-  verified?: boolean;     
-  shotEvents?: GeminiShotEvent[]; 
-  gameStats?: {
-    totalShots: number;
-    madeShots: number;
-    shootingPercentage: number;
-    shotTypes: Record<string, number>;
-    locations: Record<string, number>;
-  };
-}
-
-interface JobRecord {
+interface HighlightData {
+  ok: boolean;
   jobId: string;
-  status: "queued" | "processing" | "done" | "error" | "publish_error";
-  videoGcsUri?: string;
-  outputGcsUri?: string;
-  error?: string;
+  sourceVideoUrl: string;
+  rawEvents: GeminiShotEvent[];
+  ranges: [number, number][]; // [start_seconds, end_seconds]
 }
 
-export default function UploadPage() {
-  //protect route; bounce to /login if no session
+export default function VideoDisplayPage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const { jobs } = useUploadStatus();
+
+  // Upload states - MUST be declared before useEffect hooks
+  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete">("idle");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
+
+  // Highlight data states
+  const [highlightData, setHighlightData] = useState<HighlightData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Video playback states
+  const [currentHighlightIndex, setCurrentHighlightIndex] = useState<number | null>(null);
+  const [isSequencePlaying, setIsSequencePlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // Edit states
+  const [editedEvents, setEditedEvents] = useState<Map<number, Partial<GeminiShotEvent>>>(new Map());
+  const [editedRanges, setEditedRanges] = useState<Map<number, [number, number]>>(new Map());
+
+  // Helper function to fetch highlight data for a completed job
+  const fetchHighlightDataForJob = useCallback(async (jobId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/vertex/jobs/${jobId}/result`);
+      
+      if (!response.ok) {
+      if (response.status === 500) {
+        // Backend detected analysis error
+        const errorData = await response.json().catch(() => ({ detail: 'Analysis failed' }));
+        throw new Error(errorData.detail || 'Video analysis failed');
+      } else if (response.status === 409) {
+        throw new Error('Analysis not ready yet');
+      } else if (response.status === 404) {
+        throw new Error('Job not found');
+      } else {
+        throw new Error(`Failed to fetch: ${response.statusText}`);
+      }
+    }
+      const data: HighlightData = await response.json();
+
+      // Check for ok: false
+      if (data.ok === false) {
+        throw new Error('Video analysis failed');
+      }
+
+      if (!data.rawEvents || !Array.isArray(data.rawEvents)) {
+        throw new Error('Invalid highlight data received');
+      }
+
+      if (data.rawEvents.length === 0) {
+        throw new Error('No highlights found in this video');
+      }
+
+      // Check for VERTEX: error: in the first event
+      const firstEvent = data.rawEvents[0] as any;
+      if (firstEvent.outcome && typeof firstEvent.outcome === 'string') {
+        if (firstEvent.outcome.startsWith('VERTEX: error:') || firstEvent.outcome.toLowerCase().includes('error')) {
+          const errorMsg = firstEvent.outcome.replace('VERTEX: error:', '').trim() || 'Video analysis failed';
+          throw new Error(errorMsg);
+        }
+      }
+
+      console.log(`✅ Loaded ${data.rawEvents.length} highlights for job ${jobId}`);
+      setHighlightData(data);
+    
+    } catch (err) {
+      console.error('Error fetching highlight data:', err);
+      const errorMessage = (err as Error).message;
+      setError(errorMessage);
+
+        
+      if (currentUploadId) {
+        uploadQueue.errorJob(currentUploadId, errorMessage);
+      }
+      
+      setUploadState('idle');
+    }
+  }, [currentUploadId]);
+
+  // Session check
   useEffect(() => {
     const checkSession = async () => {
-      const res = await fetch("/api/auth/session", { method: "GET", credentials: "include" });
+      const res = await fetch("/api/auth/session", {
+        method: "GET",
+        credentials: "include",
+      });
       const data = await res.json();
-      if (!data?.user) router.push("/login?next=/upload");
+      if (!data?.user) {
+        router.push("/login?next=/upload");
+      }
     };
     checkSession();
   }, [router]);
 
-  //read session so we can pass x-owner-email on /upload
-  const { data: session } = useSession();                 
-  const ownerEmail = session?.user?.email ?? undefined;   
+  // Resume active upload on page load/reload
+  useEffect(() => {
+    const resumeActiveUpload = () => {
+      const activeUploads = uploadQueue.getActiveJobs();
 
-  //base UI state
-  const [uploadState, setUploadState] =
-    useState<"idle" | "uploading" | "processing" | "complete">("idle");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
-  const [progress, setProgress] = useState(0);
+      if (activeUploads.length > 0) {
+        // Resume the most recent active upload
+        const mostRecent = activeUploads[0];
+        console.log('[Upload Page] Resuming upload:', mostRecent);
 
-  //job + download tracking
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+        setCurrentUploadId(mostRecent.id);
+        setJobId(mostRecent.jobId || null);
+        setProgress(mostRecent.progress);
+        setStatusMessage(mostRecent.statusMessage);
+        setSelectedFile(null); // File object not persisted
 
-  //keep a browser-safe interval id (number vs NodeJS.Timer)
-  const pollRef = useRef<number | null>(null); 
+        if (mostRecent.status === 'uploading' || mostRecent.status === 'processing') {
+          setUploadState(mostRecent.status);
+        }
+      }
+    };
 
-  //file chooser
+    resumeActiveUpload();
+  }, []);
+
+  // Sync state with upload queue job
+  useEffect(() => {
+    if (!currentUploadId) return;
+
+    const job = jobs.find(j => j.id === currentUploadId);
+    if (!job) return;
+
+    setProgress(job.progress);
+    setStatusMessage(job.statusMessage);
+
+    if (job.status === 'uploading' || job.status === 'processing') {
+      setUploadState(job.status);
+    } else if (job.status === 'complete' || job.status === 'done') {
+      setUploadState('complete');
+      // Fetch highlight data when complete
+      if (job.jobId && !highlightData) {
+        fetchHighlightDataForJob(job.jobId);
+      }
+    } else if (job.status === 'error') {
+      setError(job.error || 'Upload failed');
+      setUploadState('idle');
+    }
+  }, [jobs, currentUploadId, fetchHighlightDataForJob]);
+
+  // File select handler
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!file.name.endsWith(".mp4")) {
+      alert("This file will be converted to an mp4 file.");
+    }
     setSelectedFile(file);
     setUploadState("idle");
-    setUploadResult(null);
+    setHighlightData(null);
     setProgress(0);
+    setStatusMessage("");
     setJobId(null);
-    setDownloadUrl(null);
+    setError(null);
   }, []);
+  const getVideoDuration = (file: File): Promise<number> => {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    
+    video.onloadedmetadata = () => {
+      window.URL.revokeObjectURL(video.src);
+      resolve(video.duration);  // ← Browser can read this without uploading!
+    };
+    
+    video.onerror = () => {
+      reject(new Error('Failed to load video metadata'));
+    };
+    
+    video.src = URL.createObjectURL(file);  // ← Creates local blob URL
+  });
+};
 
-  //a few helpers still used in optional/legacy render
-  const formatTimestamp = (ts: string) => ts || "0:00";
-  const getShotOutcomeColor = (outcome: string) =>
-    outcome.toLowerCase().includes("make") ? "bg-green-500" : "bg-red-500";
-  const getShotOutcomeBadge = (outcome: string): "default" | "secondary" =>
-    outcome.toLowerCase().includes("make") ? "default" : "secondary";
-  const formatShotType = (shotType: string) => shotType.replace(/([A-Z])/g, " $1").trim();
-
-  const calculateGameStats = (shotEvents: GeminiShotEvent[]) => {
-    const totalShots = shotEvents.length;
-    const madeShots = shotEvents.filter((s) => s.Outcome.toLowerCase().includes("make")).length;
-    const shootingPercentage = totalShots > 0 ? Math.round((madeShots / totalShots) * 100) : 0;
-    const shotTypes: Record<string, number> = {};
-    const locations: Record<string, number> = {};
-    for (const s of shotEvents) {
-      shotTypes[s.ShotType] = (shotTypes[s.ShotType] || 0) + 1;
-      locations[s.Location] = (locations[s.Location] || 0) + 1;
-    }
-    return { totalShots, madeShots, shootingPercentage, shotTypes, locations };
-  };
-
-  // ---- polling controls (browser-safe) ----
-  const stopPolling = () => {
-    if (pollRef.current !== null) {
-      window.clearInterval(pollRef.current);   
-      pollRef.current = null;
-    }
-  };
-
-  const startPolling = (id: string) => {
-    stopPolling();
-    pollRef.current = window.setInterval(async () => {
-      try {
-        const res = await fetch(`${API_BASE}/jobs/${id}`);
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data: JobRecord = await res.json();
-
-        if (data.status === "error" || data.status === "publish_error") {
-          stopPolling();
-          setUploadState("idle");
-          console.error("Job failed:", data.error || "unknown");
-          return;
-        }
-
-        if (data.status === "done" && data.outputGcsUri) {
-          //fetch signed URL + (optional) shot events
-          const dlRes = await fetch(`${API_BASE}/jobs/${id}/download`);
-          if (dlRes.ok) {
-            const j = await dlRes.json();
-            const shotEvents: GeminiShotEvent[] = j.shot_events || [];
-            const gameStats =
-              shotEvents.length > 0 ? calculateGameStats(shotEvents) : undefined;
-
-            setDownloadUrl(j.url ?? null);
-            setUploadResult((prev) => ({
-              ...(prev || { success: true }),
-              videoUrl: j.url,
-              processingId: id,
-              shotEvents,
-              gameStats,
-            }));
-          }
-          stopPolling();
-          setUploadState("complete");
-        } else {
-          setUploadState("processing");
-        }
-      } catch (e) {
-        console.warn("Polling error:", e);
-      }
-    }, 3000);
-  };
-
-  //cleanup any live poller on unmount
-  useEffect(() => () => stopPolling(), []);
-
-  //This is where the upload logic lives
-  // ------- Upload → enqueue job (now with identity header + error surfacing) -------
+    // NEW: Upload handler with client-side direct upload
   const handleUpload = async () => {
     if (!selectedFile) return;
 
-    setUploadState("uploading");
-    setProgress(15);
-
-    const formData = new FormData();
-    formData.append("video", selectedFile);
-
-    //progress interval typed as number (browser)
-    let progressInterval: number | null = window.setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 90) {
-          if (progressInterval !== null) {
-            window.clearInterval(progressInterval);
-            progressInterval = null;
-          }
-          return 90;
-        }
-        return prev + 10;
-      });
-    }, 500);
+    // Create upload job in queue for persistence
+    const uploadJob = uploadQueue.createJob(
+      selectedFile.name,
+      selectedFile.size,
+      session?.user?.email
+    );
+    setCurrentUploadId(uploadJob.id);
 
     try {
-      const url = `${API_BASE}/upload`;
-      console.log("[Upload] POST", url);
+      setUploadState("uploading");
+      uploadQueue.updateJob(uploadJob.id, {
+        status: 'uploading',
+        progress: 5,
+        statusMessage: 'Initializing upload...'
+      });
 
-      const res = await fetch(url, {
+      const videoDuration = await getVideoDuration(selectedFile);
+      console.log("Video duration:", videoDuration, "seconds");
+
+      // Step 1: Get signed upload URL from backend
+      const initResponse = await fetch(`${API_BASE}/vertex/upload/init`, {
         method: "POST",
-        headers: { "x-owner-email": session?.user?.email ?? "" },
-        body: formData,
+        headers: {
+          "Content-Type": "application/json",
+          "x-owner-email": session?.user?.email || "",
+        },
+        body: JSON.stringify({
+          filename: selectedFile.name,
+          contentType: selectedFile.type || "video/mp4",
+          userId: session?.user?.email,
+          videoDurationSec: Math.floor(videoDuration)
+        }),
       });
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`Upload failed (${res.status}): ${txt}`);
-      }
-      const json = await res.json();
-      const jobFromJson = json?.jobId as string | undefined;
 
-      if (progressInterval !== null) {
-        window.clearInterval(progressInterval);
-        progressInterval = null;
+      if (!initResponse.ok) {
+        const errorData = await initResponse.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Init failed: ${initResponse.statusText}`);
       }
-      setProgress(100);
 
-      //prefer queue flow if we got a jobId
-      if (jobFromJson) {                       
-        setJobId(jobFromJson);
-        setUploadState("processing");
-        setUploadResult({
-          success: true,
-          fileName: selectedFile.name,
-          fileSize: selectedFile.size,
-          method: "queue_v1",
-          verified: true,
-          shotEvents: [], //no immediate events in queue flow
+      const { jobId: newJobId, uploadUrl, videoGcsUri } = await initResponse.json();
+      console.log("Upload initialized:", { jobId: newJobId, videoGcsUri });
+
+      setJobId(newJobId);
+
+      // Update job with jobId and GCS info
+      uploadQueue.updateJob(uploadJob.id, {
+        jobId: newJobId,
+        uploadUrl,
+        gcsUri: videoGcsUri,
+        progress: 10,
+        statusMessage: 'Uploading video to cloud storage...'
+      });
+
+      // Step 2: Upload directly to GCS using signed URL with progress tracking
+      await uploadToGCS(uploadUrl, selectedFile, (percent) => {
+        // Map upload progress from 10% to 50%
+        const mappedProgress = 10 + (percent * 0.4);
+        uploadQueue.updateJob(uploadJob.id, {
+          progress: mappedProgress,
+          statusMessage: `Uploading video... ${Math.floor(percent)}%`
         });
-        startPolling(jobFromJson);
-        return;
+      });
+
+      console.log("Upload to GCS complete");
+      uploadQueue.updateJob(uploadJob.id, {
+        progress: 50,
+        statusMessage: 'Finalizing upload...'
+      });
+
+      // Step 3: Notify backend that upload is complete
+      const completeResponse = await fetch(`${API_BASE}/vertex/upload/complete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-owner-email": session?.user?.email || "",
+        },
+        body: JSON.stringify({
+          jobId: newJobId,
+          userId: session?.user?.email,
+        }),
+      });
+
+      if (!completeResponse.ok) {
+        const errorData = await completeResponse.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Complete failed: ${completeResponse.statusText}`);
       }
 
-      //legacy immediate-analysis fallback
-      const shotEvents: GeminiShotEvent[] =
-        json?.shot_events || json?.results?.shot_events || (Array.isArray(json) ? json : []);
-      if (!Array.isArray(shotEvents)) throw new Error("Invalid response format: expected jobId or shot events array");
-
-      const gameStats = calculateGameStats(shotEvents);
-      setUploadResult({
-        success: true,
-        videoUrl: "",
-        fileName: selectedFile.name,
-        fileSize: selectedFile.size,
-        method: "gemini_ai",
-        verified: true,
-        shotEvents,
-        gameStats,
+      console.log("Upload complete, analysis queued");
+      setUploadState("processing");
+      uploadQueue.updateJob(uploadJob.id, {
+        status: 'processing',
+        progress: 55,
+        statusMessage: 'Analyzing video with HoopTuber...'
       });
-      setUploadState("complete");
+
+      // Step 4: Start polling for results (pollingService will automatically pick it up)
+      pollingService.startPollingJob(uploadJob.id, newJobId);
+
     } catch (err) {
       console.error("Upload error:", err);
+      const errorMessage = (err as Error).message;
+      setError(errorMessage);
+      uploadQueue.errorJob(uploadJob.id, errorMessage);
+      alert("Upload failed: " + errorMessage);
       setUploadState("idle");
     }
   };
 
-  //reset UX
+  // NEW: Helper function to upload to GCS with progress tracking
+  const uploadToGCS = (
+    signedUrl: string, 
+    file: File, 
+    onProgress: (percent: number) => void
+  ): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      // Track upload progress
+      xhr.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = (event.loaded / event.total) * 100;
+          onProgress(percentComplete);
+        }
+      });
+
+      // Handle completion
+      xhr.addEventListener("load", () => {
+        if (xhr.status === 200 || xhr.status === 201) {
+          console.log("GCS upload successful");
+          resolve();
+        } else {
+          console.error("GCS upload failed:", xhr.status, xhr.responseText);
+          reject(new Error(`Upload to GCS failed: ${xhr.status} ${xhr.statusText}`));
+        }
+      });
+
+      // Handle errors
+      xhr.addEventListener("error", () => {
+        console.error("GCS upload network error");
+        reject(new Error("Network error during upload"));
+      });
+
+      xhr.addEventListener("abort", () => {
+        console.error("GCS upload aborted");
+        reject(new Error("Upload was aborted"));
+      });
+
+      // Send the request
+      xhr.open("PUT", signedUrl);
+      xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+      
+      // Important: Don't set other headers - signed URL handles auth
+      xhr.send(file);
+    });
+  };
+
+  // Reset for new upload
   const resetUpload = () => {
+    // Clear current upload from queue if it exists
+    if (currentUploadId) {
+      uploadQueue.removeJob(currentUploadId);
+    }
+
     setUploadState("idle");
     setSelectedFile(null);
-    setUploadResult(null);
+    setHighlightData(null);
     setProgress(0);
+    setStatusMessage("");
     setJobId(null);
-    setDownloadUrl(null);
-    stopPolling();
+    setCurrentUploadId(null);
+    setError(null);
+    setCurrentHighlightIndex(null);
+    setIsSequencePlaying(false);
+    setIsPlaying(false);
   };
 
-  //simple player helpers
-  const [ended, setEnded] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  function startPlayback() {
-    setPlaying(true);
-    setEnded(false);
-    requestAnimationFrame(() => videoRef.current?.play().catch(() => {}));
-  }
-
-  //direct browser download via signed URL
-  const handleDownload = () => {
-    if (!downloadUrl) return;
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.download = "hooptuber_highlight.mp4";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Helper to get the current (possibly edited) range for a highlight
+  const getRange = (index: number): [number, number] => {
+    if (editedRanges.has(index)) {
+      return editedRanges.get(index)!;
+    }
+    return highlightData?.ranges[index] || [0, 0];
   };
 
-  //======== UI (preserved styling) ========
+  // Helper to get the current (possibly edited) event for a highlight
+  const getEvent = (index: number): GeminiShotEvent => {
+    const originalEvent = highlightData?.rawEvents[index];
+    if (!originalEvent) return {} as GeminiShotEvent;
+
+    if (editedEvents.has(index)) {
+      return { ...originalEvent, ...editedEvents.get(index) };
+    }
+    return originalEvent;
+  };
+
+  // Callback to handle updates from ClipDropdownPanel
+  const handleEventUpdate = (
+    index: number,
+    updatedEvent: Partial<GeminiShotEvent>,
+    updatedRange: [number, number]
+  ) => {
+    // Update edited events
+    setEditedEvents((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(index, { ...newMap.get(index), ...updatedEvent });
+      return newMap;
+    });
+
+    // Update edited ranges
+    setEditedRanges((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(index, updatedRange);
+      return newMap;
+    });
+  };
+
+  // Sequential playback logic
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const handleTimeUpdate = () => {
+      if (!isSequencePlaying || currentHighlightIndex === null) return;
+
+      const [_, endTime] = getRange(currentHighlightIndex);
+
+      if (video.currentTime >= endTime) {
+        const nextIndex = currentHighlightIndex + 1;
+
+        if (nextIndex < highlightData.ranges.length) {
+          const [nextStartTime] = getRange(nextIndex);
+          console.log(`Skipping to highlight #${nextIndex + 1} at ${nextStartTime}s`);
+          video.currentTime = nextStartTime;
+          setCurrentHighlightIndex(nextIndex);
+        } else {
+          console.log("All highlights finished.");
+          video.pause();
+          setIsSequencePlaying(false);
+          setIsPlaying(false);
+          setCurrentHighlightIndex(null);
+        }
+      }
+    };
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    return () => video.removeEventListener("timeupdate", handleTimeUpdate);
+  }, [currentHighlightIndex, highlightData, isSequencePlaying, editedRanges]);
+
+  // Play all highlights sequentially
+  const handlePlayAll = () => {
+    const video = videoRef.current;
+    if (!video || !highlightData || highlightData.ranges.length === 0) return;
+
+    const [firstStart] = getRange(0);
+    video.currentTime = firstStart;
+    setCurrentHighlightIndex(0);
+    setIsSequencePlaying(true);
+    video.play().then(() => setIsPlaying(true));
+  };
+
+  // Play single clip
+  const handleHighlightClick = (index: number) => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const [startTime] = getRange(index);
+    video.currentTime = startTime;
+    setCurrentHighlightIndex(index);
+    setIsSequencePlaying(true);
+    video.play().then(() => setIsPlaying(true));
+  };
+
+  // Preview single clip
+  const handlePreviewClick = (index: number) => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const [startTime] = getRange(index);
+    video.currentTime = startTime;
+    setCurrentHighlightIndex(index);
+    setIsSequencePlaying(true);
+    video.play().then(() => setIsPlaying(true));
+    console.log(`Previewing highlight #${index + 1} with range: ${getRange(index)}`);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
-      {/* Header (UNCHANGED look) */}
+      {/* Header */}
       <header className="border-b bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
             <ArrowLeft className="w-5 h-5" />
-            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-              <Play className="w-4 h-4 text-white fill-white" />
-            </div>
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              className="w-8 h-8 object-contain"
+              width={32}
+              height={32}
+              priority
+            />
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </Link>
           <div className="flex items-center space-x-4">
-            <Badge variant="secondary">Basketball AI</Badge>
+            <Badge variant="secondary">AI Analysis</Badge>
             <ProfileDropdown />
           </div>
         </div>
       </header>
 
       <div className="container mx-auto px-4 py-12">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">Upload Basketball Video</h1>
-            <p className="text-gray-600">
-              Upload your basketball footage for AI-powered analysis and highlight generation
-            </p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">AI Video Analysis</h1>
+            <p className="text-gray-600">Upload your basketball footage for advanced AI-powered highlight detection</p>
           </div>
 
           {/* Upload Form */}
@@ -352,7 +569,7 @@ export default function UploadPage() {
                     <h3 className="text-lg font-semibold mb-2">
                       {selectedFile ? selectedFile.name : "Choose Basketball Video"}
                     </h3>
-                    <p className="text-gray-600 mb-4">MP4, MOV, AVI - Any size supported</p>
+                    <p className="text-gray-600 mb-4">MP4 - Any size supported</p>
 
                     <input
                       type="file"
@@ -369,144 +586,195 @@ export default function UploadPage() {
                           <p className="text-sm text-blue-600">
                             {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • {selectedFile.type}
                           </p>
-                          <p className="text-sm text-green-600 mt-1">✅ Ready for AI analysis</p>
+                          <p className="text-sm text-green-600 mt-1">Ready for video analysis</p>
                         </div>
                       </div>
                     )}
                   </div>
 
                   {selectedFile && (
-                    <Button
-                      onClick={handleUpload}
-                      className="w-full bg-orange-500 hover:bg-orange-600"
-                      size="lg"
-                    >
+                    <Button onClick={handleUpload} className="w-full bg-orange-500 hover:bg-orange-600" size="lg">
                       <Brain className="w-4 h-4 mr-2" />
-                      Analyze Basketball Video
+                      Analyze with HoopTuber
                     </Button>
                   )}
-
-                  {/*3 feature cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="p-4 bg-blue-50 rounded-lg text-center">
-                      <Target className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-                      <h4 className="font-semibold text-blue-900 mb-1">Shot Detection</h4>
-                      <p className="text-sm text-blue-700">AI identifies every shot attempt with precision</p>
-                    </div>
-                    <div className="p-4 bg-green-50 rounded-lg text-center">
-                      <TrendingUp className="w-8 h-8 text-green-600 mx-auto mb-2" />
-                      <h4 className="font-semibold text-green-900 mb-1">Performance Stats</h4>
-                      <p className="text-sm text-green-700">Detailed shooting percentages and analytics</p>
-                    </div>
-                    <div className="p-4 bg-purple-50 rounded-lg text-center">
-                      <Zap className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-                      <h4 className="font-semibold text-purple-900 mb-1">Auto Highlights</h4>
-                      <p className="text-sm text-purple-700">Best moments automatically identified</p>
-                    </div>
-                  </div>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/*Uploading / Processing*/}
+          {/* Uploading / Processing */}
           {(uploadState === "uploading" || uploadState === "processing") && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Brain className="w-5 h-5 mr-2 text-orange-500" />
-                  {uploadState === "uploading" ? "Uploading Video" : "Processing Video"}
+                  {uploadState === "uploading" ? "Uploading Video" : "Processing with HoopTuber"}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <Progress value={progress} className="w-full" />
-                  <p className="text-center text-gray-600">
-                    {uploadState === "uploading" ? "Uploading" : "Analyzing"} {selectedFile?.name}
-                    … {progress}%
-                  </p>
+                  <div className="space-y-2">
+                    <Progress value={progress} className="w-full" />
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm text-gray-600 font-medium">{statusMessage}</p>
+                      <p className="text-sm text-gray-500">{Math.floor(progress)}%</p>
+                    </div>
+                  </div>
+                  <p className="text-center text-gray-500 text-sm">{selectedFile?.name}</p>
+                  {jobId && (
+                    <p className="text-center text-xs text-gray-400">Job ID: {jobId}</p>
+                  )}
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      if (currentUploadId) {
+                        pollingService.stopPollingJob(currentUploadId);
+                        uploadQueue.errorJob(currentUploadId, 'Cancelled by user');
+                        setUploadState('idle');
+                        setCurrentUploadId(null);
+                      }
+                    }}
+                  >
+                    Cancel Upload
+                  </Button>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/*Complete*/}
-          {uploadState === "complete" && uploadResult && (
+          {/* Complete - Show Video Player and Highlights */}
+          {uploadState === "complete" && highlightData && (
             <div className="space-y-6">
+              {/* Success Banner */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <CheckCircle className="w-5 h-5 mr-2 text-green-500" />
-                    Basketball Analysis Complete!
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <CheckCircle className="w-5 h-5 mr-2 text-green-500" />
+                      Analysis Complete!
+                    </div>
+                    <Button onClick={resetUpload} variant="outline" size="sm">
+                      Analyze Another Video
+                    </Button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-center space-y-4">
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                      <CheckCircle className="w-8 h-8 text-green-500" />
-                    </div>
-
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-semibold mb-2">AI Analysis Complete!</h3>
-                      <p className="text-gray-600 mb-4">
-                        {uploadResult.fileName} ({(uploadResult.fileSize! / 1024 / 1024).toFixed(2)} MB)
-                      </p>
-
-                      {/*Preview */}
-                      <div className="relative w-full max-w-md mx-auto">
-                        <video
-                          ref={videoRef}
-                          className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
-                          src={downloadUrl ?? undefined}
-                          muted
-                          playsInline
-                          controls
-                          onEnded={() => setEnded(true)}
-                        />
-                        {downloadUrl && (
-                          <Button onClick={handleDownload} className="bg-orange-500 hover:bg-orange-600 mt-4">
-                            <Download className="w-4 h-4 mr-2" />
-                            Download Highlight
-                          </Button>
-                        )}
-                        {/*Show in Dashboard Button */}
-                        {/*11/30-25 Update - When we know the jobId, include it as a `refresh` query param
-                            so /dashboard?refresh=<jobId> is different for every completed upload 
-                            -Each finished upload has a unique jobId.
-                            -Clicking Show in Dashboard now goes to /dashboard?refresh=<that jobId>.
-                            -Next.js treats /dashboard?refresh=a and /dashboard?refresh=b as different route states, which we’ll use in the dashboard effect. */}
-                        {jobId ? (
-                          <Link href={`/dashboard?refresh=${encodeURIComponent(jobId)}`}>
-                            <Button variant="secondary" className="mt-2">
-                              Show in Dashboard
-                            </Button>
-                          </Link>
-                        ) : (
-                          //fallback if, for some reason, we don't have a jobId
-                          <Link href="/dashboard">
-                            <Button variant="secondary" className="mt-2">
-                              Show in Dashboard
-                            </Button>
-                          </Link>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-3 mt-6">
-                      <Button className="flex-1" asChild>
-                        <Link href="/upload/enhanced">
-                          <BarChart3 className="w-4 h-4 mr-2" />
-                          View Detailed Analysis
-                        </Link>
-                      </Button>
-                      <Button variant="outline" className="flex-1" onClick={resetUpload}>
-                        Analyze Another Video
-                      </Button>
-                    </div>
-                  </div>
+                  <p className="text-gray-600 text-center">
+                    Found {highlightData.rawEvents.length} highlights in your video
+                  </p>
                 </CardContent>
               </Card>
+
+              {/* Two-Column Layout: Sticky Video + Scrollable Highlights */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Left Column: Video Player (sticky on large screens) */}
+                <div className="lg:sticky lg:top-6 lg:self-start">
+                  <Card className="overflow-hidden">
+                    <div className="bg-black relative aspect-video">
+                      <video
+                        ref={videoRef}
+                        className="w-full h-full"
+                        src={highlightData.sourceVideoUrl}
+                        controls
+                        muted={true}
+                        playsInline
+                        onPlay={() => setIsPlaying(true)}
+                        onPause={() => setIsPlaying(false)}
+                      />
+
+                      {/* Overlay badge showing current highlight */}
+                      {currentHighlightIndex !== null && isSequencePlaying && (
+                        <div className="absolute top-4 right-4 animate-in fade-in duration-300">
+                          <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white px-3 py-1 shadow-lg backdrop-blur-sm">
+                            Playing Highlight {currentHighlightIndex + 1} of {highlightData.ranges.length}
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+
+                    <CardContent className="py-4">
+                      <div className="flex flex-col gap-4">
+                        <Button
+                          onClick={handlePlayAll}
+                          size="lg"
+                          className={`w-full ${
+                            isSequencePlaying ? "bg-red-500 hover:bg-red-600" : "bg-orange-500 hover:bg-orange-600"
+                          } transition-all`}
+                        >
+                          {isSequencePlaying && isPlaying ? (
+                            <>
+                              <Pause className="w-5 h-5 mr-2" /> Stop Sequence
+                            </>
+                          ) : (
+                            <>
+                              <FastForward className="w-5 h-5 mr-2" /> Play Full Highlight Reel
+                            </>
+                          )}
+                        </Button>
+
+                        <p className="text-sm text-gray-500 text-center">
+                          {isSequencePlaying
+                            ? "Auto-skipping non-highlight segments..."
+                            : "Watch highlights sequentially"}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Right Column: Scrollable Highlights List */}
+                <div>
+                  <Card className="lg:max-h-[calc(100vh-12rem)] lg:overflow-hidden flex flex-col">
+                    <CardHeader className="flex-shrink-0">
+                      <CardTitle className="flex items-center">
+                        <Zap className="w-5 h-5 mr-2 text-orange-500" />
+                        Highlight Segments ({highlightData.rawEvents.length})
+                      </CardTitle>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Click any highlight to play, or expand to edit details and timestamps
+                      </p>
+                    </CardHeader>
+                    <CardContent className="flex-1 overflow-y-auto">
+                      <div className="space-y-3 pr-2">
+                        {highlightData.rawEvents.map((event, index) => {
+                          const currentEvent = getEvent(index);
+                          const currentRange = getRange(index);
+                          const isActive = currentHighlightIndex === index;
+
+                          return (
+                            <ClipDropdownPanel
+                              key={event.id || index}
+                              index={index}
+                              event={currentEvent}
+                              range={currentRange}
+                              isActive={isActive}
+                              isPlaying={isPlaying}
+                              onPlayClick={handleHighlightClick}
+                              onPreviewClick={handlePreviewClick}
+                              onEventUpdate={handleEventUpdate}
+                            />
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
             </div>
+          )}
+
+          {/* Error State */}
+          {error && (
+            <Card className="border-red-200 bg-red-50">
+              <CardContent className="pt-6">
+                <p className="text-red-600 text-center">{error}</p>
+                <Button onClick={resetUpload} variant="outline" className="w-full mt-4">
+                  Try Again
+                </Button>
+              </CardContent>
+            </Card>
           )}
         </div>
       </div>

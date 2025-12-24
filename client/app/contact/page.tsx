@@ -44,12 +44,12 @@ export default function ContactPage() {
               },
               {
                 name: "Chris Alpuerto",
-                role: "Lead Developer",
+                role: "Founding Developer",
                 img: "/placeholder-user.jpg",
               },
               {
-                name: "Chris Napuli",
-                role: "Lead Developer",
+                name: "Chris Kyle Napuli",
+                role: "Founding Developer",
                 img: "/placeholder-user.jpg",
               },
             ].map((m) => (
@@ -77,11 +77,11 @@ export default function ContactPage() {
       {/* Contact CTA */}
       <section className="py-16 px-4 bg-orange-500 text-white">
         <div className="container mx-auto text-center">
-          <h2 className="text-3xl font-bold mb-4">Want to email us?</h2>
+          <h2 className="text-3xl font-bold mb-4">Want to partner or coach?</h2>
           <p className="text-lg opacity-90 mb-6">
-          We collaborate with teams, parks, rec leagues, and hoopers.
+            We collaborate with teams, trainers, tournaments, and especially hoopers.
           </p>
-          <a href="mailto:team@hooptuber.com">
+          <a href="mailto:christian@hooptuber.com, ali@hooptuber.com, chris@hooptuber.com">
             <Button variant="secondary" className="text-gray-900">
               <Mail className="w-5 h-5 mr-2" />
               Email the Team

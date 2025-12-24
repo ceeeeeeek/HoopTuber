@@ -8,7 +8,6 @@ import {
   Upload,
   Globe2,
   Plus,
-  User,
   Users,
   Eye,
   Lock,
@@ -19,7 +18,6 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";                  
 import Link from "next/link";
@@ -27,15 +25,12 @@ import { useSession } from "next-auth/react";
 import ProfileDropdown from "../app-components/ProfileDropdown";
 import CreateRunModal from "./CreateRunModal"; //12-11-25 Thursday 7:30pm - Better polished Create a Run button modal for my-runs page
 import InviteLinkModal from "./InviteLinkModal"; //12-11-25 Thursday 7:30pm - Better polished Invite Link button modal for my-runs page
-import RunSettingsModal, { RunSettingsDraft } from "./RunSettingsModal";
 import VisibilityWarningModal from "./VisibilityWarningModal";
 import { useRouter } from "next/navigation";
 import { DribbleIcon } from "@/components/icons/DribbleIcon";
 import { DribbleIcon2 } from "@/components/icons/DribbleIcon2";
 
-//reuse your FastAPI base like DashboardClient
-const API_BASE =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-devtest.onrender.com";
 
 //11/30/25 Update: Abort-related “NetworkError when attempting to fetch resource” won’t be treated as real failures.
 //Your UI states (highlightsError, folderError, etc.) will only show for real failures, not cancelled requests.
@@ -61,15 +56,7 @@ type RunsSummary = {
     highlightIds?: string[];
     createdAt?: string;
     updatedAt?: string;
-    maxMembers?: number | null;
-    location?: string;
-    allowComments?: boolean;
-    allowInviteLinks?: boolean;
-    pinnedMessage?: string;
-    featuredHighlightId?: string;
-    publicThumbnailHighlightId?: string;
-    publicThumbnail?: string;      //or a highlightId/jobId later
-    pinnedHighlightId?: string;    //highlight the owner pins
+    maxMembers?: number;
   };
 
   //12-01-25 Monday 4pm - Highlight summary type
@@ -82,7 +69,7 @@ type RunsSummary = {
   
 
 //11-22-25 Saturday 12am - For my runs page
-//===================== RUNS API HELPERS/HANDLERS (START) =====================
+//===================== RUNS API HELPERS (START) =====================
 async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
     const url = `${API_BASE}/runs?memberEmail=${encodeURIComponent(memberEmail)}`;
     const r = await fetch(url, { cache: "no-store" });
@@ -120,8 +107,7 @@ async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
   
   async function apiUpdateRun(
     runId: string,
-    //patch: Partial<Pick<RunsSummary, "name" | "visibility">>
-    patch: Partial<RunsSummary>
+    patch: Partial<Pick<RunsSummary, "name" | "visibility">>
   ): Promise<RunsSummary> {
     const r = await fetch(`${API_BASE}/runs/${encodeURIComponent(runId)}`, {
       method: "PATCH",
@@ -179,8 +165,6 @@ async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
     }
     throw new Error("Invite URL not found in response");
   }
-
-  
 //===================== RUNS API HELPERS (END) =====================
 //11-22-25 Saturday 12am - For my runs page
 
@@ -188,7 +172,6 @@ async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
 //===================== COMPONENT (START) ============================
 //Props come from server wrapper in app/my-runs/page.tsx         
 //export default function MyRunsClient({ userEmail }: { userEmail: string }) {
-//component - MyRunsClient()
 export default function MyRunsClient() {
     const { data: session, status } = useSession();
     const router = useRouter();
@@ -219,8 +202,8 @@ export default function MyRunsClient() {
     const [creating, setCreating] = useState<boolean>(false);
 
     //For rename modal
-    //const [editingRunId, setEditingRunId] = useState<string | null>(null);
-    //const [renameValue, setRenameValue] = useState<string>("");
+    const [editingRunId, setEditingRunId] = useState<string | null>(null);
+    const [renameValue, setRenameValue] = useState<string>("");
   
     //For visibility dropdown
     const [visibilityMenuFor, setVisibilityMenuFor] = useState<string | null>(
@@ -232,7 +215,7 @@ export default function MyRunsClient() {
     const [inviteCopiedFor, setInviteCopiedFor] = useState<string | null>(null);
 
     //12-11-25 Thursday 8pm - For visibility change warning modal
-    //For "make public" warning modal
+    // For "make public" warning modal
     const [visibilityWarningOpen, setVisibilityWarningOpen] = useState(false);
     const [pendingVisibility, setPendingVisibility] = useState<{
       run: RunsSummary | null;
@@ -242,9 +225,7 @@ export default function MyRunsClient() {
       visibility: null,
     });
 
-    //12-11-25 Thursday 7:30pm - For my runs page — accepts name directly (used by modal)
-    const [pendingConfirmAction, setPendingConfirmAction] = useState<null | (() => Promise<void>)>(null);
-
+  
     //12-11-25 Thursday 7:30pm - Better polished Invite Link button Modal for my-runs page
     const [inviteOpen, setInviteOpen] = useState(false);
     const [inviteUrl, setInviteUrl] = useState("");
@@ -252,70 +233,6 @@ export default function MyRunsClient() {
     //12-11-25 Thursday 7:30pm - Better polished Create a Run button Modal for my-runs page
     const [createModalOpen, setCreateModalOpen] = useState(false);
 
-    //12-16-25 Tuesday 9:30pm - Run Settings Modal for my-runs page
-    const [settingsOpen, setSettingsOpen] = useState(false);
-    const [settingsRun, setSettingsRun] = useState<RunsSummary | null>(null);
-    const [settingsSaving, setSettingsSaving] = useState(false);
-
-    //12-21-25 Sunday 6am - Build dropdown menu options for the run settings modal in my-runs page
-    const settingsHighlightOptions =
-    (settingsRun?.highlightIds ?? []).map((hId) => {
-      const meta = highlightMap[hId];
-      return {
-        id: hId,
-        label: meta?.title || meta?.originalFileName || hId,
-        thumbUrl: meta?.signedUrl, //optional: lets the modal preview the thumbnail choice
-      };
-    });
-
-
-    //12-16-25 Tuesday 9:30pm - Run Settings Modal save handler
-    async function saveRunSettings(draft: RunSettingsDraft) {
-      if (!settingsRun) return;
-
-      const selectedThumb =
-      settingsHighlightOptions.find(
-        (o) => o.id === (draft.publicThumbnailHighlightId ?? "")
-      )?.thumbUrl || "";
-
-      const patch: any = {
-        maxMembers: draft.maxMembers ?? null,
-        location: draft.location ?? "",
-        allowComments: !!draft.allowComments,
-        allowInviteLinks: !!draft.allowInviteLinks,
-        pinnedMessage: draft.pinnedMessage ?? "",
-        visibility: draft.visibility,
-        featuredHighlightId: draft.featuredHighlightId ?? "",
-        publicThumbnailHighlightId: draft.publicThumbnailHighlightId ?? "",
-        publicThumbnailUrl: selectedThumb,
-        name: draft.name?.trim() || settingsRun.name,
-      };
-    
-      const doSave = async () => {
-        try {
-          setSettingsSaving(true);
-          const updated = await apiUpdateRun(settingsRun.runId, patch);
-    
-          setRuns((prev) => prev.map((r) => (r.runId === updated.runId ? updated : r)));
-          setSettingsRun(updated);
-          setSettingsOpen(false);
-        } catch (e: any) {
-          alert(e?.message || "Failed to save run settings.");
-        } finally {
-          setSettingsSaving(false);
-        }
-      };
-    
-      //if switching to public from non-public, reuse warning modal
-      if (draft.visibility === "public" && settingsRun.visibility !== "public") {
-        setPendingConfirmAction(() => doSave);
-        setVisibilityWarningOpen(true);
-        return;
-      }
-    
-      await doSave();
-    }
-    
     //helper to check ownership
     const isOwner = useCallback(
         (run: RunsSummary) => run.ownerEmail === userEmail,
@@ -457,30 +374,30 @@ export default function MyRunsClient() {
         }
       };
 
-      // const openRenameModal = (run: RunsSummary) => {
-      //   setEditingRunId(run.runId);
-      //   setRenameValue(run.name);
-      // };
+      const openRenameModal = (run: RunsSummary) => {
+        setEditingRunId(run.runId);
+        setRenameValue(run.name);
+      };
     
-      // const cancelRename = () => {
-      //   setEditingRunId(null);
-      //   setRenameValue("");
-      // };
+      const cancelRename = () => {
+        setEditingRunId(null);
+        setRenameValue("");
+      };
     
-      // const saveRename = async () => {
-      //   if (!editingRunId || !renameValue.trim()) return;
-      //   try {
-      //     const updated = await apiUpdateRun(editingRunId, {
-      //       name: renameValue.trim(),
-      //     });
-      //     setRuns((prev) =>
-      //       prev.map((r) => (r.runId === updated.runId ? updated : r))
-      //     );
-      //     cancelRename();
-      //   } catch (e: any) {
-      //     alert(e?.message || "Failed to rename run.");
-      //   }
-      // };
+      const saveRename = async () => {
+        if (!editingRunId || !renameValue.trim()) return;
+        try {
+          const updated = await apiUpdateRun(editingRunId, {
+            name: renameValue.trim(),
+          });
+          setRuns((prev) =>
+            prev.map((r) => (r.runId === updated.runId ? updated : r))
+          );
+          cancelRename();
+        } catch (e: any) {
+          alert(e?.message || "Failed to rename run.");
+        }
+      };
     
       //updateVisibility()- no UI - helper that really talks to the backend
       const updateVisibility = async (
@@ -499,7 +416,7 @@ export default function MyRunsClient() {
         }
       };
 
-      //Main handler used by your visibility menu
+      // Main handler used by your visibility menu
       const changeVisibility = async (
         run: RunsSummary,
         visibility: RunVisibility
@@ -509,19 +426,20 @@ export default function MyRunsClient() {
           return;
         }
 
-        //If switching to public, open the nice modal instead of window.confirm()
+        // If switching to public, open the nice modal instead of window.confirm()
         if (visibility === "public") {
           setPendingVisibility({ run, visibility });
           setVisibilityWarningOpen(true);
-          //close the little dropdown immediately
+          // close the little dropdown immediately
           setVisibilityMenuFor(null);
           return;
         }
 
-        //Any non-public change can go straight through
+        // Any non-public change can go straight through
         await updateVisibility(run, visibility);
       };
 
+    
       const handleDeleteRun = async (run: RunsSummary) => {
         if (!isOwner(run)) {
           alert("Only the run owner can delete this run.");
@@ -540,12 +458,6 @@ export default function MyRunsClient() {
         }
       };
 
-      //12-11-25 Thursday 8pm - For my runs page - “Open settings” helper function
-      function openRunSettings(run: RunsSummary) {
-        setSettingsRun(run);
-        setSettingsOpen(true);
-      }
-      
       //12-09-25 Tuesday 1pm - Thumbnails in my-runs page
       const toggleRunThumbnails = (runId: string) => {
         setExpandedRuns((prev) => ({
@@ -620,7 +532,7 @@ return (
           </div>
 
           {/*Join a Run + Create a Run actions – replaces single button layout */}
-          <div className="flex items-center gap-3">     
+          <div className="flex items-center gap-3">
             <button
               type="button"
               className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
@@ -638,15 +550,6 @@ return (
             >
               <Plus className="w-5 h-5" />
               {creating ? "Creating…" : "Create a Run"}
-            </button>
-
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-orange-700"
-              onClick={() => router.push("/dashboard")}
-            >
-              <User className="w-5 h-5" />
-              Dashboard
             </button>
           </div>
         </header>
@@ -791,20 +694,9 @@ return (
                           )}
                         </div>
 
-                        {/*settings + rename + delete*/}
+                        {/*rename + delete*/}
                         <div className="flex items-center gap-2">
                           {owned && (
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                              onClick={() => openRunSettings(run)}
-                            >
-                              <Settings className="w-3 h-3" />
-                              Settings
-                            </button>
-                        )}
-                        {/* <div className="flex items-center gap-2"> */}
-                          {/* {owned && (
                             <button
                               type="button"
                               className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
@@ -813,7 +705,7 @@ return (
                               <Pencil className="w-3 h-3" />
                               Rename
                             </button>
-                          )} */}
+                          )}
                           {owned && (
                             <button
                               type="button"
@@ -824,10 +716,9 @@ return (
                               Delete
                             </button>
                           )}
-                        {/* </div> */}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
                     {/*body copy – updated text */}
                     <p className="text-xs text-gray-500">
@@ -1088,60 +979,28 @@ return (
         />
 
         {/*12-11-25 Tuesday 8pm - the Visibility Warning Modal – when changing from Private (default) to Public */}
-        {/* Visibility Warning Modal – Private → Public */}
         <VisibilityWarningModal
           open={visibilityWarningOpen}
           onCancel={() => {
             setVisibilityWarningOpen(false);
             setPendingVisibility({ run: null, visibility: null });
-            setPendingConfirmAction(null);
           }}
           onConfirm={async () => {
-            //close modal first
-            setVisibilityWarningOpen(false);
-
-            //1) if we were confirming a deferred "save settings" action, run it
-            const action = pendingConfirmAction;
-            setPendingConfirmAction(null);
-            if (action) {
-              await action();
-              return;
-            }
-
-            //2) otherwise fall back to the standard visibility dropdown flow
             if (!pendingVisibility.run || !pendingVisibility.visibility) return;
-            await updateVisibility(pendingVisibility.run, pendingVisibility.visibility);
+
+            await updateVisibility(
+              pendingVisibility.run,
+              pendingVisibility.visibility
+            );
+
+            setVisibilityWarningOpen(false);
             setPendingVisibility({ run: null, visibility: null });
           }}
         />
 
-        {/*12-16-25 Tuesday 9:30pm - the Run Settings Modal Modal - for the owner to set rules and settings of a run*/}
-        <RunSettingsModal
-          open={settingsOpen}
-          saving={settingsSaving}
-          runName={settingsRun?.name || "Run"}
-          initial={{
-            visibility: (settingsRun?.visibility || "private") as any,
-            maxMembers: settingsRun?.maxMembers ?? null,
-            location: settingsRun?.location ?? "",
-            allowComments: settingsRun?.allowComments ?? true,
-            allowInviteLinks: settingsRun?.allowInviteLinks ?? true,
-            pinnedMessage: settingsRun?.pinnedMessage ?? "",
-            featuredHighlightId: settingsRun?.featuredHighlightId ?? "",
-            publicThumbnailHighlightId: settingsRun?.publicThumbnailHighlightId ?? "",
-          }}
-          onClose={() => {
-            setSettingsOpen(false);
-            setSettingsRun(null);
-          }}
-          onSave={(draft) => {
-            void saveRunSettings(draft); 
-          }}
-          highlightOptions={settingsHighlightOptions} 
-        />
 
         {/*the rename "modal" – overlay */}
-        {/* {editingRunId && (
+        {editingRunId && (
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
             <div className="w-full max-w-sm rounded-lg bg-white p-4 shadow-lg">
               <h2 className="text-sm font-semibold mb-2">
@@ -1171,7 +1030,7 @@ return (
               </div>
             </div>
           </div>
-        )}  */}
+        )} 
       </main>
     </div>
   );

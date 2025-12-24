@@ -1,4 +1,5 @@
-//tsconfig.json (Version as of Sunday 10-19-25)
+//tsconfig.json (Version as of 09-23-25)
+
 {
   "compilerOptions": {
     "target": "ES2022",
@@ -11,13 +12,11 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve", // fixes "Cannot find name 'React'" with TS 5+
+    "jsx": "preserve",
     "noEmit": true,
     "esModuleInterop": true,
     "allowJs": true,
     "skipLibCheck": true,
-    "strict": false, // keep your current loosened settings
-    "incremental": true,
     "types": [
       "node"
     ],
@@ -25,11 +24,10 @@
     "paths": {
       "@/*": [
         "./*"
-      ],
-      "@components/*": [
-        "components/*"
-      ] // lets you import "@components/..."
+      ]
     },
+    "strict": false,
+    "incremental": true,
     "plugins": [
       {
         "name": "next"
@@ -46,3 +44,5 @@
     "node_modules"
   ]
 }
+
+

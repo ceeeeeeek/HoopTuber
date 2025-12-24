@@ -1,5 +1,5 @@
-import JoinARunClient from "./JoinARunClient";
+import  JoinARunClient  from "./JoinARunClient";
 
-export default function Page() {
-  return <JoinARunClient />;
+export default function page() {
+    return <JoinARunClient />;
 }

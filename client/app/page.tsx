@@ -10,17 +10,17 @@ import Link from "next/link"
 import TryFreeUploadButton from "./app-components/TryFreeUploadButton"
 import ProfileDropdown from "./app-components/ProfileDropdown"
 import { useSession } from "next-auth/react"
-
+import Image from "next/image";
 
 export default function LandingPage() {
   const { data: session, status } = useSession()
 
-  //inline player state + ref
+  // NEW: inline player state + ref
   const [playing, setPlaying] = useState(false);
   const [ended, setEnded] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  //helpers
+    // NEW: helpers
   function startPlayback() {
     setPlaying(true);
     setEnded(false);
@@ -50,9 +50,14 @@ export default function LandingPage() {
       <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-              <Play className="w-4 h-4 text-white fill-white" />
-            </div>
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              width={32}
+              height={32}
+              className="object-contain"
+              priority
+            />
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </div>
           <nav className="hidden md:flex items-center space-x-6">
@@ -97,15 +102,15 @@ export default function LandingPage() {
       <section className="py-20 px-4">
         <div className="container mx-auto text-center">
           <Badge className="mb-4 bg-orange-100 text-orange-800 hover:bg-orange-100">
-            An AI-Powered Basketball Highlight Maker
+            AI-Powered Basketball Highlights
           </Badge>
           <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
             Turn Your Game Into
             <span className="text-orange-500"> Epic Highlights</span>
           </h1>
           <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-            Upload your basketball footage and let HoopTuber's AI automatically detect every basket, creating highlight-style reels
-            that showcase your best plays on the court
+            Upload your basketball footage and let AI automatically detect every basket, creating highlight-style reels
+            that showcase your best moments.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <TryFreeUploadButton
@@ -144,7 +149,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Record & Upload</h3>
                 <p className="text-gray-600">
-                  Record & upload your pickup basketball footage
+                  Upload any game footage.
                 </p>
               </CardContent>
             </Card>
@@ -155,7 +160,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">AI Detection</h3>
                 <p className="text-gray-600">
-                  Use our AI to automatically detect your team's baskets and key plays
+                  Our AI automatically detects every basket and captures the 5 seconds leading up to each shot.
                 </p>
               </CardContent>
             </Card>
@@ -166,7 +171,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Share & Connect</h3>
                 <p className="text-gray-600">
-                  Create highlights, share them with friends, & build your own basketball community
+                  Create TikTok-style reels, share with your team, and connect with the basketball community.
                 </p>
               </CardContent>
             </Card>
@@ -299,7 +304,7 @@ export default function LandingPage() {
         <div className="container mx-auto text-center">
           <h2 className="text-3xl font-bold mb-4">Ready to Elevate Your Game?</h2>
           <p className="text-xl mb-8 opacity-90">
-            Join hundreds of local hoopers & support your local hoop
+            Join thousands of players already using HoopTuber to showcase their skills.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             {/* <Button size="lg" variant="secondary" asChild>
@@ -330,12 +335,17 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center space-x-2 mb-4">
-                <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                  <Play className="w-4 h-4 text-white fill-white" />
-                </div>
+                <Image
+                  src="/hooptubericon2.png"
+                  alt="HoopTuber Logo"
+                  width={32}
+                  height={32}
+                  className="object-contain"
+                  priority
+                />
                 <span className="text-xl font-bold">HoopTuber</span>
               </div>
-              <p className="text-gray-400">AI-powered & ready for pickup</p>
+              <p className="text-gray-400">AI-powered basketball highlights for every player.</p>
             </div>
             <div>
               <h4 className="font-semibold mb-4">Product</h4>

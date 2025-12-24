@@ -1,17 +1,18 @@
-// app/about/page.tsx
+
+"use client"
+
 import Link from "next/link";
 import { Play, Users, Target, Rocket, Trophy, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-export const metadata = {
-  title: "About Us • HoopTuber",
-  description:
-    "Meet the team building AI-powered basketball highlights. Our mission is to help every hooper showcase their game.",
-};
+import { useSession } from "next-auth/react"
+import TryFreeUploadButton from "../app-components/TryFreeUploadButton";
+import ProfileDropdown from "../app-components/ProfileDropdown";
 
 export default function AboutPage() {
+  const { data: session, status } = useSession() 
+  // added dropown menu for profile when logged in 10/17
   return (
     <main className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
       {/* Top Bar */}
@@ -29,10 +30,17 @@ export default function AboutPage() {
             </Link>
             <Link href="/about" className="text-gray-900 font-medium">
               About Us
-            </Link>
+            </Link> 
+            {status === "authenticated" && session ? (
+              <>
+              
+              <ProfileDropdown />
+              </>
+            ) : (
             <Link href="/login" className="text-gray-600 hover:text-orange-500">
               Login
             </Link>
+          )}
           </nav>
         </div>
       </header>
@@ -90,7 +98,7 @@ export default function AboutPage() {
           <h2 className="text-3xl font-bold text-center mb-10">Our Mission</h2>
           <p className="max-w-3xl mx-auto text-center text-gray-600 mb-10">
             Unlock every player’s potential by making high-quality highlights—for film study purposes. 
-            Perfect for athletes, teams, families, and fans of the game of basketball.
+            Perfect for athletes, coaches, families, and fans of the game of basketball.
           </p>
 
           <div className="grid md:grid-cols-3 gap-6">
@@ -101,7 +109,8 @@ export default function AboutPage() {
                 </div>
                 <h3 className="text-lg font-semibold mb-2">Precision AI</h3>
                 <p className="text-gray-600">
-                  Precise shot detection and subject recognition tailored for pickup basketball games
+                  Detect shots, isolate moments, and keep the action crisp and
+                  meaningful.
                 </p>
               </CardContent>
             </Card>
@@ -114,7 +123,7 @@ export default function AboutPage() {
                 <h3 className="text-lg font-semibold mb-2">Speed & Simplicity</h3>
                 <p className="text-gray-600">
                   Go from full game to shareable highlights in minutes—not
-                  hours
+                  hours.
                 </p>
               </CardContent>
             </Card>
@@ -126,7 +135,8 @@ export default function AboutPage() {
                 </div>
                 <h3 className="text-lg font-semibold mb-2">For the Community</h3>
                 <p className="text-gray-600">
-                  Built for players, coaches, and teams to share their best basketball highlights
+                  Built for players, parents, coaches, and teams to celebrate
+                  progress together.
                 </p>
               </CardContent>
             </Card>
@@ -138,9 +148,9 @@ export default function AboutPage() {
       <section className="py-14 px-4 bg-gray-50">
         <div className="container mx-auto grid md:grid-cols-3 gap-6">
           {[
-            { value: "1,000+", label: "Highlights generated" },
+            { value: "10,000+", label: "Highlights generated" },
             { value: "5x", label: "Faster than manual editing" },
-            { value: "75-90%", label: "Shot-detection accuracy*" },
+            { value: "98%", label: "Shot-detection accuracy*" },
           ].map((s, i) => (
             <Card key={i} className="text-center">
               <CardContent className="pt-8 pb-8">
@@ -164,10 +174,11 @@ export default function AboutPage() {
             <CardContent className="p-6">
               <div className="flex items-center gap-3 mb-3">
                 <Trophy className="w-5 h-5 text-orange-500" />
-                <h3 className="font-semibold text-gray-900">Film Study</h3>
+                <h3 className="font-semibold text-gray-900">Play the Long Game</h3>
               </div>
               <p className="text-gray-600">
-                We obsess over getting better at the fundamentals: It all starts with watching film.
+                We obsess over fundamentals: reliability, speed, and clear UX.
+                We’d rather ship the right thing than the loud thing.
               </p>
             </CardContent>
           </Card>
@@ -175,10 +186,11 @@ export default function AboutPage() {
             <CardContent className="p-6">
               <div className="flex items-center gap-3 mb-3">
                 <Users className="w-5 h-5 text-orange-500" />
-                <h3 className="font-semibold text-gray-900">Share to Your Feed</h3>
+                <h3 className="font-semibold text-gray-900">Win as a Team</h3>
               </div>
               <p className="text-gray-600">
-                Collborate and share your best highlights on your feed for other hoopers to see.
+                Great highlights are a team sport—feedback from hoopers and
+                coaches directly shapes our roadmap.
               </p>
             </CardContent>
           </Card>
@@ -188,9 +200,9 @@ export default function AboutPage() {
       {/* Contact CTA */}
       <section className="py-16 px-4 bg-orange-500 text-white">
         <div className="container mx-auto text-center">
-          <h2 className="text-3xl font-bold mb-4">Want to email us?</h2>
+          <h2 className="text-3xl font-bold mb-4">Want to partner for your next run?</h2>
           <p className="text-lg opacity-90 mb-6">
-          We collaborate with teams, parks, rec leagues, and hoopers.
+            We collaborate with teams, trainers, and tournaments.
           </p>
           <a href="mailto:team@hooptuber.com">
             <Button variant="secondary" className="text-gray-900">

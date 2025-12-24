@@ -1,4 +1,4 @@
-//app/login/page.tsx
+// app/login/page.tsx
 import LoginPageClient from "./LoginPageClient";
 
 export const dynamic = "force-dynamic";

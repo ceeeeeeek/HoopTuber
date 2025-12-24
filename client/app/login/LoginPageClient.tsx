@@ -1,110 +1,93 @@
-//client/app/login/LoginPageClient.tsx - 12-02-25 Tuesday 7pm Version 
-"use client"
+"use client";
 
-import { useState } from "react"
-import { signIn } from "next-auth/react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
-import { Play, ArrowLeft, Mail, Lock } from "lucide-react"
-import Link from "next/link"
-import {useRouter, useSearchParams} from "next/navigation"
+import { useState } from "react";
+import { signIn } from "next-auth/react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Play, ArrowLeft, Mail, Lock, User } from "lucide-react";
+import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const [isLogin, setIsLogin] = useState(true)
-  //const [name, setName] = useState("");
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+  const [isLogin, setIsLogin] = useState(true);
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  //Signup profile fields
-  const [firstName, setFirstName] = useState("")
-  const [lastName, setLastName] = useState("")
-  const [birthday, setBirthday] = useState("") // YYYY-MM-DD
-  const [phone, setPhone] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-
-  //Validation Error State
-  const [error, setError] = useState<string | null>(null)
-  
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const next = searchParams.get("next") || "/upload";
-  //const next = searchParams.get("next") ?? "/dashboard"
+  const search = useSearchParams();
+  const next = search.get("next") ?? "/dashboard";
 
   async function handleCredentialsSignIn(e: React.FormEvent) {
-      e.preventDefault()
-      setError(null)
+    e.preventDefault();
 
-  //Login Flow
-  if (isLogin) {
-    //**Sign In** via NextAuth credentials
-    const res = await signIn("credentials", {
-      redirect: false,
-      email,
-      password,
-      callbackUrl: next,
-    });
+    setMessage("");
+    setLoading(true);
 
-    if (res?.ok) router.push(next);
-    else alert("Invalid email or password");
-    return;
-  }
+    // --- LOGIN MODE ---
+    if (isLogin) {
+      const res = await signIn("credentials", {
+        redirect: false,
+        email,
+        password,
+        callbackUrl: next,
+      });
 
-  //12-02-25 Tuesday 5pm: Sign up validation
-  if (!email.includes("@") || !email.includes(".")) {
-    setError("Please enter a valid, real email address.")
-    return
-  }
+      setLoading(false);
 
-  if (password.length < 8) {
-    setError("Password must be at least 8 characters long.")
-    return
-  }
-
-  if (password !== confirmPassword) {
-    setError("Passwords do not match.")
-    return
-  }
-
-  // **Create Account** via your signup API, then auto sign in
-  const r = await fetch("/api/auth/signup", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    //body: JSON.stringify({ name, email, password }),
-    body: JSON.stringify({
-      firstName,
-      lastName,
-      email,
-      birthday,
-      phone,
-      password
-      }),
-    });
-
-    if (!r.ok) {
-      const msg = await r.json().catch(() => ({}));
-      alert(msg?.error || "Signup failed");
+      if (res?.ok) router.push(next);
+      else if (res?.error?.toLowerCase().includes("verify")) {
+        alert("Please verify your email before logging in.");
+      } else {
+        alert("Invalid email or password.");
+      }
       return;
     }
 
-  //Auto sign-in ater signup/Immediately sign in the new user
-  const res = await signIn("credentials", {
-    redirect: false,
-    email,
-    password,
-    callbackUrl: next,
-  });
-  
-  if (res?.ok) router.push(next);
-  else router.push("/login?next=" + encodeURIComponent(next));
-}
+    // --- SIGNUP MODE ---
+    if (password !== confirmPassword) {
+      alert("Passwords do not match.");
+      setLoading(false);
+      return;
+    }
+
+    const r = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, username, email, password }),
+    });
+
+    setLoading(false);
+
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      alert(data?.error || "Signup failed");
+      return;
+    }
+
+    // ✅ Ask user to verify email instead of auto-login
+    setMessage(
+      "✅ Account created successfully! Please check your email to verify your account before signing in."
+    );
+    setIsLogin(true);
+    setName("");
+    setUsername("");
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/*Header */}
+        {/* Header */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center space-x-2 mb-6">
             <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
@@ -130,39 +113,40 @@ export default function LoginPage() {
           </CardHeader>
 
           <CardContent className="space-y-4">
-
-        {/*REGISTRATION FORM */}
-        <form onSubmit={handleCredentialsSignIn} className="space-y-4">
-              {/*extra signup-only fields at the top */}
+            <form onSubmit={handleCredentialsSignIn} className="space-y-4">
               {!isLogin && (
                 <>
-                  <div className="grid grid-cols-2 gap-2">
+                  {/* Name */}
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Full Name</Label>
                     <Input
-                      placeholder="First name"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                    />
-                    <Input
-                      placeholder="Last name"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
+                      id="name"
+                      placeholder="Enter your full name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      disabled={loading}
                     />
                   </div>
 
-                  <Input
-                    type="date"
-                    value={birthday}
-                    onChange={(e) => setBirthday(e.target.value)}
-                  />
-                  <Input
-                    placeholder="Phone number"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                  />
+                  {/* Username */}
+                  <div className="space-y-2">
+                    <Label htmlFor="username">Username</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      <Input
+                        id="username"
+                        placeholder="Choose a username"
+                        className="pl-10"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        disabled={loading}
+                      />
+                    </div>
+                  </div>
                 </>
               )}
 
-              {/*Email block (helper text for signup) */}
+              {/* Email */}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <div className="relative">
@@ -174,17 +158,12 @@ export default function LoginPage() {
                     className="pl-10"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    disabled={loading}
                   />
                 </div>
-                {/*helper text for signup mode */}
-                {!isLogin && (
-                  <p className="text-xs text-gray-500">
-                    Please use a valid email (e.g. @gmail.com, @yahoo.com...).
-                  </p>
-                )}
               </div>
 
-              {/*Password block (helper text + confirm binding) */}
+              {/* Password */}
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
@@ -196,17 +175,12 @@ export default function LoginPage() {
                     className="pl-10"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
                   />
                 </div>
-                {/*password length hint (signup only) */}
-                {!isLogin && (
-                  <p className="text-xs text-gray-500">
-                    Password must be at least 8 characters long.
-                  </p>
-                )}
               </div>
 
-              {/*Confirm password block*/}
+              {/* Confirm password (signup only) */}
               {!isLogin && (
                 <div className="space-y-2">
                   <Label htmlFor="confirm-password">Confirm Password</Label>
@@ -217,16 +191,15 @@ export default function LoginPage() {
                       type="password"
                       placeholder="Confirm your password"
                       className="pl-10"
-                      //wire to state
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
+                      disabled={loading}
                     />
                   </div>
                 </div>
               )}
 
-
-              {/*Remember me + Forgot password*/}
+              {/* Remember Me + Forgot Password */}
               {isLogin && (
                 <div className="flex items-center justify-between">
                   <label className="flex items-center space-x-2 text-sm">
@@ -242,19 +215,27 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/*inline error message from signup/login validation */}
-              {error && (
-                <p className="text-sm text-red-600">
-                  {error}
-                </p>
-              )}
-
-              <Button type="submit" className="w-full bg-orange-500 hover:bg-orange-600">
-                {isLogin ? "Sign In" : "Create Account"}
+              {/* Submit button */}
+              <Button
+                type="submit"
+                className="w-full bg-orange-500 hover:bg-orange-600"
+                disabled={loading}
+              >
+                {loading
+                  ? "Processing..."
+                  : isLogin
+                  ? "Sign In"
+                  : "Create Account"}
               </Button>
             </form>
-            
-            {/* Separator*/}
+
+            {/* ✅ Message feedback */}
+            {message && (
+              <p className="text-center text-green-600 text-sm font-medium">
+                {message}
+              </p>
+            )}
+
             <div className="relative">
               <Separator />
               <span className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-sm text-gray-500">
@@ -267,6 +248,7 @@ export default function LoginPage() {
               variant="outline"
               className="w-full"
               onClick={() => signIn("google", { callbackUrl: next })}
+              disabled={loading}
             >
               <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
                 <path
@@ -289,7 +271,7 @@ export default function LoginPage() {
               Continue with Google
             </Button>
 
-            {/*Toggle between login/signup */}
+            {/* Toggle between login/signup */}
             <p className="text-center text-sm text-gray-600">
               {isLogin ? "Don't have an account? " : "Already have an account? "}
               <button
@@ -300,7 +282,6 @@ export default function LoginPage() {
               </button>
             </p>
 
-            {/*Terms + Privacy */}
             {!isLogin && (
               <p className="text-xs text-gray-500 text-center">
                 By creating an account, you agree to our{" "}
@@ -308,7 +289,10 @@ export default function LoginPage() {
                   Terms of Service
                 </Link>{" "}
                 and{" "}
-                <Link href="/privacy" className="text-orange-500 hover:underline">
+                <Link
+                  href="/privacy"
+                  className="text-orange-500 hover:underline"
+                >
                   Privacy Policy
                 </Link>
               </p>
@@ -316,7 +300,6 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        {/*Back to home link*/}
         <div className="text-center mt-6">
           <Link
             href="/"
@@ -328,5 +311,5 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }

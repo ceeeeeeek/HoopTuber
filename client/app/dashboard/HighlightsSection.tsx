@@ -19,8 +19,9 @@ type HighlightItem = {
   status?: string;        
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+// https://hooptuber-fastapi-devtest.onrender.com
+// https://hooptuber-fastapi-web-service-docker.onrender.com
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-devtest.onrender.com";
 
 export default function HighlightsSection() {
   const { data: session } = useSession();
@@ -67,7 +68,7 @@ export default function HighlightsSection() {
     };
 
     run();
-  }, [session?.user?.email, bump]);
+  }, [session?.user?.email, bump]); // PRESERVED + NEW bump
 
   //manual refresh
   const onRefresh = () => setBump((n) => n + 1);
@@ -132,7 +133,7 @@ export default function HighlightsSection() {
                       const r = await fetch(`${API_BASE.replace(/\/+$/, "")}/highlights/${h.jobId}`, {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ title: newTitle }),  
+                        body: JSON.stringify({ title: newTitle }), // NEW
                       });
                       if (r.ok) onRefresh();
                       else alert("Rename failed");

@@ -1,256 +1,526 @@
-"use client"
+// upload/page.tsx (NEW UPLOAD PAGE)
 
-import type React from "react"
+"use client";
 
-import { useState, useCallback } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Upload, Play, CheckCircle, Clock, Zap, ArrowLeft, FileVideo, AlertTriangle } from "lucide-react"
-import Link from "next/link"
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import Image from "next/image";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  Pause,
+  Zap,
+  FastForward,
+  Upload,
+  FileVideo,
+  Brain,
+  CheckCircle,
+} from "lucide-react";
+import ClipDropdownPanel from "@/app/app-components/ClipDropdownPanel";
+import ProfileDropdown from "../../app-components/ProfileDropdown";
+import { useUploadStatus } from "@/contexts/UploadStatusContext";
+import { uploadQueue } from "@/lib/uploadQueue";
+import { pollingService } from "@/lib/uploadPollingService";
 
-interface ProcessingStatus {
-  processingId: string
-  status: string
-  progress: number
-  stage: string
-  estimatedTimeRemaining: number
+
+// https://hooptuber-fastapi-devtest.onrender.com
+// https://hooptuber-fastapi-web-service-docker.onrender.com
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-devtest.onrender.com";
+
+interface GeminiShotEvent {
+  id: string;
+  timestamp_end: string;
+  timestamp_start: string;
+  outcome: string;
+  subject: string;
+  shot_type: string;
+  shot_location: string;
 }
 
-interface ShotData {
-  timestamp: number
-  confidence: number
-  shotType: string
-  player: {
-    position: { x: number; y: number }
-    jersey?: string
-  }
-  basket: {
-    position: { x: number; y: number }
-    made: boolean
-  }
-  clipStart: number
-  clipEnd: number
-  description: string
-  outcome: string
+interface HighlightData {
+  ok: boolean;
+  jobId: string;
+  sourceVideoUrl: string;
+  rawEvents: GeminiShotEvent[];
+  ranges: [number, number][]; // [start_seconds, end_seconds]
 }
 
-interface AnalysisResult {
-  shots: ShotData[]
-  videoMetadata: {
-    duration: number
-    resolution: { width: number; height: number }
-    fps: number
-  }
-  highlightClips?: any[]
-  processingMethod: string
-  aiModel: string
-}
+export default function VideoDisplayPage() {
+  const router = useRouter();
+  const { data: session } = useSession();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const { jobs } = useUploadStatus();
 
-export default function EnhancedUploadPage() {
-  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete" | "error">("idle")
-  const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null)
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // Upload states - MUST be declared before useEffect hooks
+  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "processing" | "complete">("idle");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
 
-  const [videoMetadata, setVideoMetadata] = useState<any>(null)
-  const [highlightReel, setHighlightReel] = useState<any>(null)
-  const [uploadResult, setUploadResult] = useState<any>(null)
+  // Highlight data states
+  const [highlightData, setHighlightData] = useState<HighlightData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
+  // Video playback states
+  const [currentHighlightIndex, setCurrentHighlightIndex] = useState<number | null>(null);
+  const [isSequencePlaying, setIsSequencePlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // Edit states
+  const [editedEvents, setEditedEvents] = useState<Map<number, Partial<GeminiShotEvent>>>(new Map());
+  const [editedRanges, setEditedRanges] = useState<Map<number, [number, number]>>(new Map());
+
+  // Helper function to fetch highlight data for a completed job
+  const fetchHighlightDataForJob = useCallback(async (jobId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/vertex/jobs/${jobId}/result`);
+      
+      if (!response.ok) {
+      if (response.status === 500) {
+        // Backend detected analysis error
+        const errorData = await response.json().catch(() => ({ detail: 'Analysis failed' }));
+        throw new Error(errorData.detail || 'Video analysis failed');
+      } else if (response.status === 409) {
+        throw new Error('Analysis not ready yet');
+      } else if (response.status === 404) {
+        throw new Error('Job not found');
+      } else {
+        throw new Error(`Failed to fetch: ${response.statusText}`);
+      }
+    }
+      const data: HighlightData = await response.json();
+
+      // Check for ok: false
+      if (data.ok === false) {
+        throw new Error('Video analysis failed');
+      }
+
+      if (!data.rawEvents || !Array.isArray(data.rawEvents)) {
+        throw new Error('Invalid highlight data received');
+      }
+
+      if (data.rawEvents.length === 0) {
+        throw new Error('No highlights found in this video');
+      }
+
+      // Check for VERTEX: error: in the first event
+      const firstEvent = data.rawEvents[0] as any;
+      if (firstEvent.outcome && typeof firstEvent.outcome === 'string') {
+        if (firstEvent.outcome.startsWith('VERTEX: error:') || firstEvent.outcome.toLowerCase().includes('error')) {
+          const errorMsg = firstEvent.outcome.replace('VERTEX: error:', '').trim() || 'Video analysis failed';
+          throw new Error(errorMsg);
+        }
+      }
+
+      console.log(`✅ Loaded ${data.rawEvents.length} highlights for job ${jobId}`);
+      setHighlightData(data);
+    
+    } catch (err) {
+      console.error('Error fetching highlight data:', err);
+      const errorMessage = (err as Error).message;
+      setError(errorMessage);
+
+        
+      if (currentUploadId) {
+        uploadQueue.errorJob(currentUploadId, errorMessage);
+      }
+      
+      setUploadState('idle');
+    }
+  }, [currentUploadId]);
+
+  // Session check
+  useEffect(() => {
+    const checkSession = async () => {
+      const res = await fetch("/api/auth/session", {
+        method: "GET",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!data?.user) {
+        router.push("/login?next=/upload");
+      }
+    };
+    checkSession();
+  }, [router]);
+
+  // Resume active upload on page load/reload
+  useEffect(() => {
+    const resumeActiveUpload = () => {
+      const activeUploads = uploadQueue.getActiveJobs();
+
+      if (activeUploads.length > 0) {
+        // Resume the most recent active upload
+        const mostRecent = activeUploads[0];
+        console.log('[Upload Page] Resuming upload:', mostRecent);
+
+        setCurrentUploadId(mostRecent.id);
+        setJobId(mostRecent.jobId || null);
+        setProgress(mostRecent.progress);
+        setStatusMessage(mostRecent.statusMessage);
+        setSelectedFile(null); // File object not persisted
+
+        if (mostRecent.status === 'uploading' || mostRecent.status === 'processing') {
+          setUploadState(mostRecent.status);
+        }
+      }
+    };
+
+    resumeActiveUpload();
+  }, []);
+
+  // Sync state with upload queue job
+  useEffect(() => {
+    if (!currentUploadId) return;
+
+    const job = jobs.find(j => j.id === currentUploadId);
+    if (!job) return;
+
+    setProgress(job.progress);
+    setStatusMessage(job.statusMessage);
+
+    if (job.status === 'uploading' || job.status === 'processing') {
+      setUploadState(job.status);
+    } else if (job.status === 'complete' || job.status === 'done') {
+      setUploadState('complete');
+      // Fetch highlight data when complete
+      if (job.jobId && !highlightData) {
+        fetchHighlightDataForJob(job.jobId);
+      }
+    } else if (job.status === 'error') {
+      setError(job.error || 'Upload failed');
+      setUploadState('idle');
+    }
+  }, [jobs, currentUploadId, fetchHighlightDataForJob]);
+
+  // File select handler
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      console.log("File selected:", {
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        sizeInMB: (file.size / 1024 / 1024).toFixed(2),
-      })
-      setSelectedFile(file)
-      // Reset states when new file is selected
-      setUploadState("idle")
-      setProcessingStatus(null)
-      setAnalysisResult(null)
-      setHighlightReel(null)
-      setError(null)
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith(".mp4")) {
+      alert("This file will be converted to an mp4 file.");
     }
-  }, [])
+    setSelectedFile(file);
+    setUploadState("idle");
+    setHighlightData(null);
+    setProgress(0);
+    setStatusMessage("");
+    setJobId(null);
+    setError(null);
+  }, []);
+  const getVideoDuration = (file: File): Promise<number> => {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    
+    video.onloadedmetadata = () => {
+      window.URL.revokeObjectURL(video.src);
+      resolve(video.duration);  // ← Browser can read this without uploading!
+    };
+    
+    video.onerror = () => {
+      reject(new Error('Failed to load video metadata'));
+    };
+    
+    video.src = URL.createObjectURL(file);  // ← Creates local blob URL
+  });
+};
 
+    // NEW: Upload handler with client-side direct upload
   const handleUpload = async () => {
-    if (!selectedFile) {
-      console.error("No file selected")
-      return
-    }
+    if (!selectedFile) return;
 
-    console.log("🎥 Starting REAL Gemini analysis test for:", selectedFile.name)
-    setUploadState("uploading")
-    setError(null)
+    // Create upload job in queue for persistence
+    const uploadJob = uploadQueue.createJob(
+      selectedFile.name,
+      selectedFile.size,
+      session?.user?.email
+    );
+    setCurrentUploadId(uploadJob.id);
 
     try {
-      // Step 1: Upload the video file first
-      setProcessingStatus({
-        processingId: `test_${Date.now()}`,
-        status: "uploading",
+      setUploadState("uploading");
+      uploadQueue.updateJob(uploadJob.id, {
+        status: 'uploading',
+        progress: 5,
+        statusMessage: 'Initializing upload...'
+      });
+
+      const videoDuration = await getVideoDuration(selectedFile);
+      console.log("Video duration:", videoDuration, "seconds");
+
+      // Step 1: Get signed upload URL from backend
+      const initResponse = await fetch(`${API_BASE}/vertex/upload/init`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-owner-email": session?.user?.email || "",
+        },
+        body: JSON.stringify({
+          filename: selectedFile.name,
+          contentType: selectedFile.type || "video/mp4",
+          userId: session?.user?.email,
+          videoDurationSec: Math.floor(videoDuration)
+        }),
+      });
+
+      if (!initResponse.ok) {
+        const errorData = await initResponse.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Init failed: ${initResponse.statusText}`);
+      }
+
+      const { jobId: newJobId, uploadUrl, videoGcsUri } = await initResponse.json();
+      console.log("Upload initialized:", { jobId: newJobId, videoGcsUri });
+
+      setJobId(newJobId);
+
+      // Update job with jobId and GCS info
+      uploadQueue.updateJob(uploadJob.id, {
+        jobId: newJobId,
+        uploadUrl,
+        gcsUri: videoGcsUri,
         progress: 10,
-        stage: "Uploading video file...",
-        estimatedTimeRemaining: 30,
-      })
+        statusMessage: 'Uploading video to cloud storage...'
+      });
 
-      const formData = new FormData()
-      formData.append("video", selectedFile)
+      // Step 2: Upload directly to GCS using signed URL with progress tracking
+      await uploadToGCS(uploadUrl, selectedFile, (percent) => {
+        // Map upload progress from 10% to 50%
+        const mappedProgress = 10 + (percent * 0.4);
+        uploadQueue.updateJob(uploadJob.id, {
+          progress: mappedProgress,
+          statusMessage: `Uploading video... ${Math.floor(percent)}%`
+        });
+      });
 
-      console.log("📤 Uploading video file...")
-      const uploadResponse = await fetch("/api/upload", {
+      console.log("Upload to GCS complete");
+      uploadQueue.updateJob(uploadJob.id, {
+        progress: 50,
+        statusMessage: 'Finalizing upload...'
+      });
+
+      // Step 3: Notify backend that upload is complete
+      const completeResponse = await fetch(`${API_BASE}/vertex/upload/complete`, {
         method: "POST",
-        body: formData,
-      })
+        headers: {
+          "Content-Type": "application/json",
+          "x-owner-email": session?.user?.email || "",
+        },
+        body: JSON.stringify({
+          jobId: newJobId,
+          userId: session?.user?.email,
+        }),
+      });
 
-      const uploadData = await uploadResponse.json()
-      console.log("📤 Upload response:", uploadData)
-
-      let videoUrl: string
-
-      if (uploadData.success && uploadData.videoUrl) {
-        console.log("✅ Video uploaded successfully to:", uploadData.videoUrl)
-        videoUrl = uploadData.videoUrl
-        setUploadResult(uploadData)
-      } else {
-        console.log("⚠️ Upload failed, using direct file analysis...")
-        // If upload fails, we'll send the file directly to Gemini
-        setProcessingStatus((prev) =>
-          prev
-            ? {
-                ...prev,
-                progress: 20,
-                stage: "Upload failed, preparing direct file analysis...",
-                estimatedTimeRemaining: 25,
-              }
-            : null,
-        )
+      if (!completeResponse.ok) {
+        const errorData = await completeResponse.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Complete failed: ${completeResponse.statusText}`);
       }
 
-      // Step 2: Analyze with Gemini
-      setUploadState("processing")
-      setProcessingStatus((prev) =>
-        prev
-          ? {
-              ...prev,
-              progress: 30,
-              stage: "Preparing video for Gemini analysis...",
-              estimatedTimeRemaining: 25,
-            }
-          : null,
-      )
+      console.log("Upload complete, analysis queued");
+      setUploadState("processing");
+      uploadQueue.updateJob(uploadJob.id, {
+        status: 'processing',
+        progress: 55,
+        statusMessage: 'Analyzing video with Vertex AI...'
+      });
 
-      setTimeout(() => {
-        setProcessingStatus((prev) =>
-          prev
-            ? {
-                ...prev,
-                progress: 50,
-                stage: "Sending video to Gemini 2.0 Flash...",
-                estimatedTimeRemaining: 20,
-              }
-            : null,
-        )
-      }, 2000)
+      // Step 4: Start polling for results (pollingService will automatically pick it up)
+      pollingService.startPollingJob(uploadJob.id, newJobId);
 
-      setTimeout(() => {
-        setProcessingStatus((prev) =>
-          prev
-            ? {
-                ...prev,
-                progress: 70,
-                stage: "Gemini analyzing basketball footage...",
-                estimatedTimeRemaining: 15,
-              }
-            : null,
-        )
-      }, 4000)
-
-      // Test the REAL Gemini API with direct file upload
-      console.log("🤖 Calling Gemini 2.0 Flash API with direct file...")
-
-      const analysisFormData = new FormData()
-      analysisFormData.append("video", selectedFile)
-      analysisFormData.append("fileName", selectedFile.name)
-      analysisFormData.append("processingId", `test_${Date.now()}`)
-
-      const analysisResponse = await fetch("/api/analyze-video-gemini-direct", {
-        method: "POST",
-        body: analysisFormData,
-      })
-
-      console.log("📊 Gemini response status:", analysisResponse.status)
-      const analysisData = await analysisResponse.json()
-      console.log("📊 Gemini response data:", analysisData)
-
-      setProcessingStatus((prev) =>
-        prev
-          ? {
-              ...prev,
-              progress: 90,
-              stage: "Processing Gemini results...",
-              estimatedTimeRemaining: 5,
-            }
-          : null,
-      )
-
-      if (analysisData.success) {
-        console.log("✅ REAL Gemini analysis successful!")
-        console.log("🏀 Analysis method:", analysisData.result.analysis.processingMethod)
-        console.log("🤖 AI model used:", analysisData.result.analysis.aiModel)
-        console.log("📈 Shots detected:", analysisData.result.analysis.shots.length)
-
-        setAnalysisResult(analysisData.result.analysis)
-
-        // Generate highlight reel from real analysis
-        if (analysisData.result.analysis.highlightClips) {
-          const highlightResponse = await fetch("/api/generate-highlight-video", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              processingId: analysisData.result.processingId,
-              clips: analysisData.result.analysis.highlightClips,
-              originalVideoUrl: uploadData?.videoUrl || "local_file",
-            }),
-          })
-
-          const highlightData = await highlightResponse.json()
-          if (highlightData.success) {
-            setHighlightReel(highlightData.result)
-            console.log("🎬 Highlight reel generated!")
-          }
-        }
-
-        setProcessingStatus((prev) =>
-          prev
-            ? {
-                ...prev,
-                progress: 100,
-                stage: "Analysis complete!",
-                estimatedTimeRemaining: 0,
-              }
-            : null,
-        )
-
-        setUploadState("complete")
-      } else {
-        console.error("❌ Gemini analysis failed:", analysisData.error)
-        setError(
-          `Gemini Analysis Failed: ${analysisData.error}\n\nDetails: ${analysisData.details || "No additional details"}`,
-        )
-        setUploadState("error")
-      }
-    } catch (error) {
-      console.error("💥 Upload/Analysis error:", error)
-      setError(`Analysis Error: ${error instanceof Error ? error.message : "Unknown error"}`)
-      setUploadState("error")
+    } catch (err) {
+      console.error("Upload error:", err);
+      const errorMessage = (err as Error).message;
+      setError(errorMessage);
+      uploadQueue.errorJob(uploadJob.id, errorMessage);
+      alert("Upload failed: " + errorMessage);
+      setUploadState("idle");
     }
-  }
+  };
+
+  // NEW: Helper function to upload to GCS with progress tracking
+  const uploadToGCS = (
+    signedUrl: string, 
+    file: File, 
+    onProgress: (percent: number) => void
+  ): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      // Track upload progress
+      xhr.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = (event.loaded / event.total) * 100;
+          onProgress(percentComplete);
+        }
+      });
+
+      // Handle completion
+      xhr.addEventListener("load", () => {
+        if (xhr.status === 200 || xhr.status === 201) {
+          console.log("GCS upload successful");
+          resolve();
+        } else {
+          console.error("GCS upload failed:", xhr.status, xhr.responseText);
+          reject(new Error(`Upload to GCS failed: ${xhr.status} ${xhr.statusText}`));
+        }
+      });
+
+      // Handle errors
+      xhr.addEventListener("error", () => {
+        console.error("GCS upload network error");
+        reject(new Error("Network error during upload"));
+      });
+
+      xhr.addEventListener("abort", () => {
+        console.error("GCS upload aborted");
+        reject(new Error("Upload was aborted"));
+      });
+
+      // Send the request
+      xhr.open("PUT", signedUrl);
+      xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+      
+      // Important: Don't set other headers - signed URL handles auth
+      xhr.send(file);
+    });
+  };
+
+  // Reset for new upload
+  const resetUpload = () => {
+    // Clear current upload from queue if it exists
+    if (currentUploadId) {
+      uploadQueue.removeJob(currentUploadId);
+    }
+
+    setUploadState("idle");
+    setSelectedFile(null);
+    setHighlightData(null);
+    setProgress(0);
+    setStatusMessage("");
+    setJobId(null);
+    setCurrentUploadId(null);
+    setError(null);
+    setCurrentHighlightIndex(null);
+    setIsSequencePlaying(false);
+    setIsPlaying(false);
+  };
+
+  // Helper to get the current (possibly edited) range for a highlight
+  const getRange = (index: number): [number, number] => {
+    if (editedRanges.has(index)) {
+      return editedRanges.get(index)!;
+    }
+    return highlightData?.ranges[index] || [0, 0];
+  };
+
+  // Helper to get the current (possibly edited) event for a highlight
+  const getEvent = (index: number): GeminiShotEvent => {
+    const originalEvent = highlightData?.rawEvents[index];
+    if (!originalEvent) return {} as GeminiShotEvent;
+
+    if (editedEvents.has(index)) {
+      return { ...originalEvent, ...editedEvents.get(index) };
+    }
+    return originalEvent;
+  };
+
+  // Callback to handle updates from ClipDropdownPanel
+  const handleEventUpdate = (
+    index: number,
+    updatedEvent: Partial<GeminiShotEvent>,
+    updatedRange: [number, number]
+  ) => {
+    // Update edited events
+    setEditedEvents((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(index, { ...newMap.get(index), ...updatedEvent });
+      return newMap;
+    });
+
+    // Update edited ranges
+    setEditedRanges((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(index, updatedRange);
+      return newMap;
+    });
+  };
+
+  // Sequential playback logic
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const handleTimeUpdate = () => {
+      if (!isSequencePlaying || currentHighlightIndex === null) return;
+
+      const [_, endTime] = getRange(currentHighlightIndex);
+
+      if (video.currentTime >= endTime) {
+        const nextIndex = currentHighlightIndex + 1;
+
+        if (nextIndex < highlightData.ranges.length) {
+          const [nextStartTime] = getRange(nextIndex);
+          console.log(`Skipping to highlight #${nextIndex + 1} at ${nextStartTime}s`);
+          video.currentTime = nextStartTime;
+          setCurrentHighlightIndex(nextIndex);
+        } else {
+          console.log("All highlights finished.");
+          video.pause();
+          setIsSequencePlaying(false);
+          setIsPlaying(false);
+          setCurrentHighlightIndex(null);
+        }
+      }
+    };
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    return () => video.removeEventListener("timeupdate", handleTimeUpdate);
+  }, [currentHighlightIndex, highlightData, isSequencePlaying, editedRanges]);
+
+  // Play all highlights sequentially
+  const handlePlayAll = () => {
+    const video = videoRef.current;
+    if (!video || !highlightData || highlightData.ranges.length === 0) return;
+
+    const [firstStart] = getRange(0);
+    video.currentTime = firstStart;
+    setCurrentHighlightIndex(0);
+    setIsSequencePlaying(true);
+    video.play().then(() => setIsPlaying(true));
+  };
+
+  // Play single clip
+  const handleHighlightClick = (index: number) => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const [startTime] = getRange(index);
+    video.currentTime = startTime;
+    setCurrentHighlightIndex(index);
+    setIsSequencePlaying(true);
+    video.play().then(() => setIsPlaying(true));
+  };
+
+  // Preview single clip
+  const handlePreviewClick = (index: number) => {
+    const video = videoRef.current;
+    if (!video || !highlightData) return;
+
+    const [startTime] = getRange(index);
+    video.currentTime = startTime;
+    setCurrentHighlightIndex(index);
+    setIsSequencePlaying(true);
+    video.play().then(() => setIsPlaying(true));
+    console.log(`Previewing highlight #${index + 1} with range: ${getRange(index)}`);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
@@ -259,60 +529,53 @@ export default function EnhancedUploadPage() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
             <ArrowLeft className="w-5 h-5" />
-            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-              <Play className="w-4 h-4 text-white fill-white" />
-            </div>
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              className="w-8 h-8 object-contain"
+              width={32}
+              height={32}
+              priority
+            />
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </Link>
-          <Badge variant="secondary">Gemini 2.0 Flash Testing</Badge>
+          <div className="flex items-center space-x-4">
+            <Badge variant="secondary">AI Analysis</Badge>
+            <ProfileDropdown />
+          </div>
         </div>
       </header>
 
       <div className="container mx-auto px-4 py-12">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">🤖 Gemini Basketball Analysis Test</h1>
-            <p className="text-gray-600">
-              Test Gemini 2.0 Flash's ability to analyze basketball videos and detect shots
-            </p>
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-800">
-                <strong>Testing Goal:</strong> Verify if Gemini can accurately identify basketball shots, baskets, and
-                create highlight reels from real game footage.
-              </p>
-            </div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">AI Video Analysis</h1>
+            <p className="text-gray-600">Upload your basketball footage for advanced AI-powered highlight detection</p>
           </div>
 
+          {/* Upload Form */}
           {uploadState === "idle" && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Upload className="w-5 h-5 mr-2" />
-                  Upload Basketball Video for Gemini Analysis
+                  Select Basketball Video
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {/* File Input */}
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-orange-300 transition-colors">
                     <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold mb-2">
-                      {selectedFile ? selectedFile.name : "Select Basketball Video"}
+                      {selectedFile ? selectedFile.name : "Choose Basketball Video"}
                     </h3>
-                    <p className="text-gray-600 mb-4">MP4, MOV, AVI - Test Gemini's basketball analysis</p>
+                    <p className="text-gray-600 mb-4">MP4 - Any size supported</p>
 
                     <input
                       type="file"
-                      accept="video/mp4,video/mov,video/avi,video/quicktime,video/*"
+                      accept="video/*"
                       onChange={handleFileSelect}
-                      className="block w-full text-sm text-gray-500 
-                     file:mr-4 file:py-2 file:px-4 
-                     file:rounded-full file:border-0 
-                     file:text-sm file:font-semibold 
-                     file:bg-orange-50 file:text-orange-700 
-                     hover:file:bg-orange-100
-                     file:cursor-pointer cursor-pointer"
-                      id="video-upload-input"
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100 file:cursor-pointer cursor-pointer"
                     />
 
                     {selectedFile && (
@@ -323,287 +586,195 @@ export default function EnhancedUploadPage() {
                           <p className="text-sm text-blue-600">
                             {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • {selectedFile.type}
                           </p>
+                          <p className="text-sm text-green-600 mt-1">✅ Ready for Vertex AI analysis</p>
                         </div>
                       </div>
                     )}
                   </div>
 
                   {selectedFile && (
-                    <Button
-                      onClick={handleUpload}
-                      className="w-full bg-orange-500 hover:bg-orange-600"
-                      disabled={uploadState !== "idle"}
-                    >
-                      <Zap className="w-4 h-4 mr-2" />
-                      Test Gemini 2.0 Flash Analysis
+                    <Button onClick={handleUpload} className="w-full bg-orange-500 hover:bg-orange-600" size="lg">
+                      <Brain className="w-4 h-4 mr-2" />
+                      Analyze with Vertex AI
                     </Button>
                   )}
-
-                  {/* Testing Info */}
-                  <div className="grid md:grid-cols-2 gap-4 mt-6 text-sm">
-                    <div className="p-3 bg-green-50 rounded-lg">
-                      <h4 className="font-semibold text-green-900 mb-1">✅ What We're Testing:</h4>
-                      <ul className="text-green-800 space-y-1">
-                        <li>• Basketball shot detection</li>
-                        <li>• Basket/hoop identification</li>
-                        <li>• Player tracking</li>
-                        <li>• Highlight clip generation</li>
-                      </ul>
-                    </div>
-                    <div className="p-3 bg-orange-50 rounded-lg">
-                      <h4 className="font-semibold text-orange-900 mb-1">🔍 Analysis Method:</h4>
-                      <ul className="text-orange-800 space-y-1">
-                        <li>• Real Gemini 2.0 Flash API</li>
-                        <li>• Direct file processing</li>
-                        <li>• Actual video analysis</li>
-                        <li>• Live error reporting</li>
-                      </ul>
-                    </div>
-                  </div>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {(uploadState === "uploading" || uploadState === "processing") && processingStatus && (
+          {/* Uploading / Processing */}
+          {(uploadState === "uploading" || uploadState === "processing") && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
-                  <Zap className="w-5 h-5 mr-2 text-orange-500" />🤖 Gemini 2.0 Flash Analysis in Progress
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Zap className="w-8 h-8 text-orange-500 animate-pulse" />
-                    </div>
-                    <h3 className="text-lg font-semibold mb-2">{processingStatus.stage}</h3>
-                    <p className="text-gray-600 mb-4">Testing real Gemini basketball analysis...</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Analysis Progress</span>
-                      <span>{processingStatus.progress}%</span>
-                    </div>
-                    <Progress value={processingStatus.progress} className="w-full" />
-                  </div>
-
-                  <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
-                    <Clock className="w-4 h-4" />
-                    <span>
-                      {processingStatus.estimatedTimeRemaining > 0
-                        ? `${processingStatus.estimatedTimeRemaining} seconds remaining`
-                        : "Finalizing analysis..."}
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-blue-50 rounded-lg">
-                    <p className="text-sm text-blue-800">
-                      <strong>Real-time test:</strong> This is calling the actual Gemini 2.0 Flash API to analyze your
-                      basketball video. Any errors or successes will show the true capabilities of the AI model.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {uploadState === "error" && error && (
-            <Card className="border-red-200">
-              <CardHeader>
-                <CardTitle className="flex items-center text-red-600">
-                  <AlertTriangle className="w-5 h-5 mr-2" />
-                  Gemini Analysis Failed
+                  <Brain className="w-5 h-5 mr-2 text-orange-500" />
+                  {uploadState === "uploading" ? "Uploading Video" : "Processing with Vertex AI"}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="p-4 bg-red-50 rounded-lg">
-                    <h4 className="font-semibold text-red-900 mb-2">Error Details:</h4>
-                    <pre className="text-sm text-red-800 whitespace-pre-wrap">{error}</pre>
+                  <div className="space-y-2">
+                    <Progress value={progress} className="w-full" />
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm text-gray-600 font-medium">{statusMessage}</p>
+                      <p className="text-sm text-gray-500">{Math.floor(progress)}%</p>
+                    </div>
                   </div>
-
-                  <div className="p-4 bg-yellow-50 rounded-lg">
-                    <h4 className="font-semibold text-yellow-900 mb-2">🔧 Troubleshooting:</h4>
-                    <ul className="text-sm text-yellow-800 space-y-1">
-                      <li>• Check if GOOGLE_API_KEY is set in environment variables</li>
-                      <li>• Verify the API key has access to Gemini 2.0 Flash</li>
-                      <li>• Ensure the video file is not corrupted</li>
-                      <li>• Check if you've exceeded API quota limits</li>
-                      <li>• Try a smaller video file (under 10MB)</li>
-                    </ul>
-                  </div>
-
+                  <p className="text-center text-gray-500 text-sm">{selectedFile?.name}</p>
+                  {jobId && (
+                    <p className="text-center text-xs text-gray-400">Job ID: {jobId}</p>
+                  )}
                   <Button
-                    onClick={() => {
-                      setUploadState("idle")
-                      setError(null)
-                    }}
                     variant="outline"
                     className="w-full"
+                    onClick={() => {
+                      if (currentUploadId) {
+                        pollingService.stopPollingJob(currentUploadId);
+                        uploadQueue.errorJob(currentUploadId, 'Cancelled by user');
+                        setUploadState('idle');
+                        setCurrentUploadId(null);
+                      }
+                    }}
                   >
-                    Try Again
+                    Cancel Upload
                   </Button>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {uploadState === "complete" && analysisResult && (
+          {/* Complete - Show Video Player and Highlights */}
+          {uploadState === "complete" && highlightData && (
             <div className="space-y-6">
-              <Card className="border-green-200">
+              <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center text-green-600">
-                    <CheckCircle className="w-5 h-5 mr-2" />✅ Gemini Analysis Successful!
+                  <CardTitle className="flex items-center">
+                    <CheckCircle className="w-5 h-5 mr-2 text-green-500" />
+                    Analysis Complete!
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="p-3 bg-green-50 rounded-lg text-center">
-                        <div className="text-2xl font-bold text-green-600">{analysisResult.shots.length}</div>
-                        <div className="text-sm text-gray-600">Shots Detected</div>
-                      </div>
-                      <div className="p-3 bg-blue-50 rounded-lg text-center">
-                        <div className="text-2xl font-bold text-blue-600">
-                          {analysisResult.shots.filter((shot) => shot.basket.made).length}
-                        </div>
-                        <div className="text-sm text-gray-600">Made Shots</div>
-                      </div>
-                      <div className="p-3 bg-purple-50 rounded-lg text-center">
-                        <div className="text-lg font-bold text-purple-600">{analysisResult.processingMethod}</div>
-                        <div className="text-sm text-gray-600">Analysis Method</div>
-                      </div>
-                      <div className="p-3 bg-orange-50 rounded-lg text-center">
-                        <div className="text-lg font-bold text-orange-600">{analysisResult.aiModel}</div>
-                        <div className="text-sm text-gray-600">AI Model</div>
-                      </div>
+                  <div className="text-center space-y-4">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                      <CheckCircle className="w-8 h-8 text-green-500" />
                     </div>
+                    <p className="text-gray-600">
+                      Found {highlightData.rawEvents.length} highlights in your video
+                    </p>
+                    <Button onClick={resetUpload} variant="outline">
+                      Analyze Another Video
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
 
-                    <div className="p-4 bg-blue-50 rounded-lg">
-                      <h4 className="font-semibold text-blue-900 mb-2">🎯 Analysis Results:</h4>
-                      <p className="text-sm text-blue-800">
-                        Gemini {analysisResult.processingMethod.includes("gemini") ? "successfully" : "failed to"}{" "}
-                        analyze your basketball video.
-                        {analysisResult.processingMethod.includes("mock") && " Showing fallback demo data."}
+              {/* Video Player */}
+              <Card className="overflow-hidden">
+                <div className="bg-black relative aspect-video">
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full"
+                    src={highlightData.sourceVideoUrl}
+                    controls
+                    muted={true}
+                    playsInline
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                  />
+
+                  {/* Overlay badge showing current highlight */}
+                  {currentHighlightIndex !== null && isSequencePlaying && (
+                    <div className="absolute top-4 right-4 animate-in fade-in duration-300">
+                      <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white px-3 py-1 shadow-lg backdrop-blur-sm">
+                        Playing Highlight {currentHighlightIndex + 1} of {highlightData.ranges.length}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+
+                <CardContent className="py-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <Button
+                        onClick={handlePlayAll}
+                        size="lg"
+                        className={`${
+                          isSequencePlaying ? "bg-red-500 hover:bg-red-600" : "bg-orange-500 hover:bg-orange-600"
+                        } transition-all`}
+                      >
+                        {isSequencePlaying && isPlaying ? (
+                          <>
+                            <Pause className="w-5 h-5 mr-2" /> Stop Sequence
+                          </>
+                        ) : (
+                          <>
+                            <FastForward className="w-5 h-5 mr-2" /> Play Full Highlight Reel
+                          </>
+                        )}
+                      </Button>
+
+                      <p className="text-sm text-gray-500">
+                        {isSequencePlaying
+                          ? "Auto-skipping non-highlight segments..."
+                          : "Watch highlights sequentially"}
                       </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Tabs defaultValue="shots" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="shots">Shot Analysis</TabsTrigger>
-                  <TabsTrigger value="technical">Technical Details</TabsTrigger>
-                </TabsList>
+              {/* Highlights List with Editable Panels */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Zap className="w-5 h-5 mr-2 text-orange-500" />
+                    Highlight Segments
+                  </CardTitle>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Click any highlight to play, or expand to edit details and timestamps
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {highlightData.rawEvents.map((event, index) => {
+                      const currentEvent = getEvent(index);
+                      const currentRange = getRange(index);
+                      const isActive = currentHighlightIndex === index;
 
-                <TabsContent value="shots" className="space-y-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Detected Basketball Shots</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        {analysisResult.shots.map((shot, index) => (
-                          <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <div className="flex items-center space-x-3">
-                              <div
-                                className={`w-3 h-3 rounded-full ${shot.basket.made ? "bg-green-500" : "bg-red-500"}`}
-                              />
-                              <div>
-                                <div className="font-medium">
-                                  {shot.shotType.replace("_", " ").toUpperCase()} at {Math.round(shot.timestamp)}s
-                                </div>
-                                <div className="text-sm text-gray-600">
-                                  {shot.outcome} • Confidence: {Math.round(shot.confidence * 100)}%
-                                </div>
-                                <div className="text-xs text-gray-500">{shot.description}</div>
-                              </div>
-                            </div>
-                            <Badge variant={shot.basket.made ? "default" : "secondary"}>
-                              {shot.basket.made ? "Made" : "Missed"}
-                            </Badge>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-
-                <TabsContent value="technical" className="space-y-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Technical Analysis Details</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-4">
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div>
-                            <h4 className="font-semibold mb-2">Processing Information</h4>
-                            <div className="space-y-1 text-sm">
-                              <div>
-                                <strong>Method:</strong> {analysisResult.processingMethod}
-                              </div>
-                              <div>
-                                <strong>AI Model:</strong> {analysisResult.aiModel}
-                              </div>
-                              <div>
-                                <strong>Video Duration:</strong> {Math.round(analysisResult.videoMetadata.duration)}s
-                              </div>
-                              <div>
-                                <strong>Resolution:</strong> {analysisResult.videoMetadata.resolution.width}x
-                                {analysisResult.videoMetadata.resolution.height}
-                              </div>
-                            </div>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold mb-2">Analysis Quality</h4>
-                            <div className="space-y-1 text-sm">
-                              <div>
-                                <strong>Shots Detected:</strong> {analysisResult.shots.length}
-                              </div>
-                              <div>
-                                <strong>Average Confidence:</strong>{" "}
-                                {Math.round(
-                                  (analysisResult.shots.reduce((sum, shot) => sum + shot.confidence, 0) /
-                                    analysisResult.shots.length) *
-                                    100,
-                                )}
-                                %
-                              </div>
-                              <div>
-                                <strong>Success Rate:</strong>{" "}
-                                {Math.round(
-                                  (analysisResult.shots.filter((shot) => shot.basket.made).length /
-                                    analysisResult.shots.length) *
-                                    100,
-                                )}
-                                %
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="p-3 bg-gray-50 rounded-lg">
-                          <h4 className="font-semibold mb-2">🔍 Test Results Summary</h4>
-                          <p className="text-sm text-gray-700">
-                            {analysisResult.processingMethod.includes("gemini")
-                              ? "✅ Gemini 2.0 Flash successfully analyzed the basketball video and detected shots with AI."
-                              : "❌ Gemini analysis failed - showing fallback demo data. Check API configuration."}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
+                      return (
+                        <ClipDropdownPanel
+                          key={event.id || index}
+                          index={index}
+                          event={currentEvent}
+                          range={currentRange}
+                          isActive={isActive}
+                          isPlaying={isPlaying}
+                          onPlayClick={handleHighlightClick}
+                          onPreviewClick={handlePreviewClick}
+                          onEventUpdate={handleEventUpdate}
+                        />
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
+          )}
+
+          {/* Error State */}
+          {error && (
+            <Card className="border-red-200 bg-red-50">
+              <CardContent className="pt-6">
+                <p className="text-red-600 text-center">{error}</p>
+                <Button onClick={resetUpload} variant="outline" className="w-full mt-4">
+                  Try Again
+                </Button>
+              </CardContent>
+            </Card>
           )}
         </div>
       </div>
     </div>
-  )
+  );
 }

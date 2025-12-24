@@ -32,30 +32,30 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState("")
 
-  //Profile settings
+  // Profile settings
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [bio, setBio] = useState("")
 
-  //Notification settings
+  // Notification settings
   const [emailNotifications, setEmailNotifications] = useState(true)
   const [pushNotifications, setPushNotifications] = useState(true)
   const [highlightNotifications, setHighlightNotifications] = useState(true)
   const [teamNotifications, setTeamNotifications] = useState(true)
 
-  //Privacy settings
+  // Privacy settings
   const [profilePublic, setProfilePublic] = useState(true)
   const [showEmail, setShowEmail] = useState(false)
   const [allowTeamInvites, setAllowTeamInvites] = useState(true)
 
-  //Check authentication
+  // Check authentication
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/login?next=/settings")
     }
   }, [status, router])
 
-  //Load user data
+  // Load user data
   useEffect(() => {
     if (session?.user) {
       setName(session.user.name || "")
@@ -93,7 +93,7 @@ export default function SettingsPage() {
 
     try {
       await new Promise((resolve) => setTimeout(resolve, 1000))
-      //TODO: Implement actual API call
+      // TODO: Implement actual API call
       setSaveMessage("Notification preferences updated!")
       setTimeout(() => setSaveMessage(""), 3000)
     } catch (error) {
@@ -109,7 +109,7 @@ export default function SettingsPage() {
 
     try {
       await new Promise((resolve) => setTimeout(resolve, 1000))
-      //TODO: Implement actual API call
+      // TODO: Implement actual API call
       setSaveMessage("Privacy settings updated!")
       setTimeout(() => setSaveMessage(""), 3000)
     } catch (error) {
@@ -133,7 +133,7 @@ export default function SettingsPage() {
       <header className="border-b bg-white">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center space-x-2">
+            <Link href="/dashboard" className="flex items-center space-x-2">
               <ArrowLeft className="w-5 h-5" />
               <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
                 <Play className="w-4 h-4 text-white fill-white" />
@@ -147,20 +147,20 @@ export default function SettingsPage() {
 
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
-          {/*Page Header */}
+          {/* Page Header */}
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Settings</h1>
             <p className="text-gray-600">Manage your account settings and preferences</p>
           </div>
 
-          {/*Save Message */}
+          {/* Save Message */}
           {saveMessage && (
             <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
               <p className="text-green-800 text-sm font-medium">{saveMessage}</p>
             </div>
           )}
 
-          {/*Settings Tabs */}
+          {/* Settings Tabs */}
           <Tabs defaultValue="profile" className="w-full">
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="profile">Profile</TabsTrigger>
@@ -169,7 +169,7 @@ export default function SettingsPage() {
               <TabsTrigger value="billing">Billing</TabsTrigger>
             </TabsList>
 
-            {/*Profile Tab */}
+            {/* Profile Tab */}
             <TabsContent value="profile" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -202,7 +202,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  {/*Name */}
+                  {/* Name */}
                   <div className="space-y-2">
                     <Label htmlFor="name">Full Name</Label>
                     <Input
@@ -214,7 +214,7 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  {/*Email */}
+                  {/* Email */}
                   <div className="space-y-2">
                     <Label htmlFor="email">Email Address</Label>
                     <Input
@@ -227,7 +227,7 @@ export default function SettingsPage() {
                     <p className="text-sm text-gray-500">Your email is used for login and notifications</p>
                   </div>
 
-                  {/*Bio */}
+                  {/* Bio */}
                   <div className="space-y-2">
                     <Label htmlFor="bio">Bio</Label>
                     <textarea
@@ -246,7 +246,7 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
-              {/*Account Security */}
+              {/* Account Security */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center">
@@ -268,7 +268,7 @@ export default function SettingsPage() {
               </Card>
             </TabsContent>
 
-            {/*Notifications Tab */}
+            {/* Notifications Tab */}
             <TabsContent value="notifications" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -292,7 +292,7 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  {/*Push Notifications */}
+                  {/* Push Notifications */}
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label htmlFor="push-notif">Push Notifications</Label>
@@ -305,7 +305,7 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  {/*Highlight Notifications */}
+                  {/* Highlight Notifications */}
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label htmlFor="highlight-notif">Highlight Ready</Label>
@@ -318,7 +318,7 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  {/*Team Notifications */}
+                  {/* Team Notifications */}
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label htmlFor="team-notif">Team Updates</Label>
@@ -343,7 +343,7 @@ export default function SettingsPage() {
               </Card>
             </TabsContent>
 
-            {/*Privacy Tab */}
+            {/* Privacy Tab */}
             <TabsContent value="privacy" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -354,7 +354,7 @@ export default function SettingsPage() {
                   <CardDescription>Control who can see your information and activity</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/*Public Profile */}
+                  {/* Public Profile */}
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label htmlFor="public-profile">Public Profile</Label>
@@ -363,7 +363,7 @@ export default function SettingsPage() {
                     <Switch id="public-profile" checked={profilePublic} onCheckedChange={setProfilePublic} />
                   </div>
 
-                  {/*Show Email */}
+                  {/* Show Email */}
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label htmlFor="show-email">Show Email on Profile</Label>
@@ -372,7 +372,7 @@ export default function SettingsPage() {
                     <Switch id="show-email" checked={showEmail} onCheckedChange={setShowEmail} />
                   </div>
 
-                  {/*Team Invites */}
+                  {/* Team Invites */}
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label htmlFor="team-invites">Allow Team Invites</Label>
@@ -393,7 +393,7 @@ export default function SettingsPage() {
               </Card>
             </TabsContent>
 
-            {/*Billing Tab */}
+            {/* Billing Tab */}
             <TabsContent value="billing" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -416,7 +416,7 @@ export default function SettingsPage() {
                     </Button>
                   </div>
 
-                  {/*Billing History */}
+                  {/* Billing History */}
                   <div>
                     <h4 className="font-semibold mb-3">Billing History</h4>
                     <p className="text-sm text-gray-500">No billing history yet</p>
