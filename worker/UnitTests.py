@@ -1,16 +1,24 @@
-#worker/UnitTest.py Sunday 10-26-25 Version (same as on hooptuber-new-merge-oct branch on github)
 from VideoInputTest import process_video_and_summarize, client, CreateHighlightVideo2, timestamp_maker, strip_code_fences, convert_timestamp_to_seconds
 import json
+from VideoInputTest import return_enhanced_timestamps
+from utils import convert_to_mp4
+
+# FUNCTION RETURNS FORMATTED DICT FOR FRONTEND
+from utils import format_gemini_output 
+
+gcs_uri = "gs://hooptuber-raw-1757394912/uploads/06217305-9f30-48bd-9e58-65a0509245ab/meshooting2.mp4"
+
 
 if __name__ == "__main__":
     Creator = CreateHighlightVideo2()
-    file_path = "videoDataset/danielShooting.mp4"
+    file_path = "videoDataset/meshooting2.mp4"
     res = process_video_and_summarize(file_path)
     print(f"DEBUG: gemini is outputting: {type(res)}, coming from worker/VideoInputTest.py")
     print(f"DEBUG: Gem output: {res}\n")
     #if not isinstance(res, str) or not isinstance(res, list) or not isinstance(res, dict):
      #   parsed_data = json.loads(res)
-    parsed_data = res
+    
+    parsed_data = res # PARSED DATA = GEMINI OUTPUT
     if isinstance(res, str):
         parsed_data = json.loads(res)
     
@@ -23,6 +31,10 @@ if __name__ == "__main__":
             print(f"Made shot at: {shot['TimeStamp']}")
         elif shot["Outcome"].lower() == "miss":
             print(f"Missed shot at {shot['TimeStamp']}")
+    
+    print(f"TESTING HIGHLIGHT CREATION WITH FIXED DATA: ")
+    checking69 = return_enhanced_timestamps(parsed_data)
+    print(f"Enhanced timestamps: {checking69}\n")
     """
     WORKING: Using analyze function with only timestamps working
     NEED: 
@@ -31,8 +43,11 @@ if __name__ == "__main__":
         print(shot)
     print(f"TESTING SECONDS CONVERSION")
     checking1 = timestamp_maker(parsed_data)
-    checking2 = Creator.converting_tester(checking1)
-    print(checking2)
+    start_end_tuple_array = Creator.converting_tester(checking1)
+    print(start_end_tuple_array)
+
+    print(f"DEBUG FOR: combining tuple \n")
+    formatted_gem_output_for_frontend = format_gemini_output(parsed_data, start_end_tuple_array)
+    print(formatted_gem_output_for_frontend)
     # TESTING TIMESTAMP CONVERSION
     
-#-------------------------------------

@@ -1,8 +1,10 @@
-#worker/VideoInputTest.py Sunday 10-26-25 Version (same as on hooptuber-new-merge-oct branch on github)
 import os
 import subprocess
 import google.genai as genai
+from google.genai import types
 from dotenv import load_dotenv
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part
 import time
 import json, re
 import glob
@@ -10,19 +12,41 @@ import tempfile
 import logging
 load_dotenv()
 from moviepy.editor import VideoFileClip, vfx, concatenate_videoclips
-from prompts import prompt_4, json_input, prompt_shot_outcomes_only
+from prompts import prompt_4, json_input, prompt_shot_outcomes_only, prompt_shot_outcomes_only2
 from uuid import uuid4 
+from utils import convert_to_mp4
 
 
-# turning Gemini call to async, avoid repeated API calls
+# NEW: turning Gemini call to async, avoid repeated API calls
 import asyncio
 
 logging.basicConfig(level=logging.INFO)
 
+load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv('GOOGLE_VERTEX_CREDS')
+
+
 if not api_key:
     raise ValueError("GEMINI_API_KEY environment variable not set")
+
 client = genai.Client()
+vertexai.init(project=os.getenv("GOOGLE_CLOUD_PROJECT"), location="us-central1")
+
+
+def vertex_basic_test():
+    project_id = "hooptuber-dev-1234"
+    location = "us-central1"
+    vertexai.init(project=project_id, location=location)
+    model = GenerativeModel("gemini-2.5-flash-lite")
+    response = model.generate_content("")
+    return response.text
+
+"""
+VERTEX_TEST2: testing this function out, able to analyze from GCS
+
+
+"""
 
 class SlowVideo:
     def __init__(self, input_path, output_path, speed_factor=0.5):
@@ -48,8 +72,9 @@ def process_video_and_summarize(file_path):
     This method is for all file sizes.
     """
     try:
+        #td = "videoDataset/"
         print(f"Uploading file: {file_path}...")
-
+        #tester = convert_to_mp4(file_path, td)
         uploaded_file =  client.files.upload(file=file_path)
         
         print(f"File uploaded successfully with name: {uploaded_file.name}")
@@ -110,7 +135,7 @@ def process_video_and_summarize(file_path):
         try:
             parsed = json.loads(clean_text)
         except json.JSONDecodeError as e:
-            logging.info(f"Failed to parse Gemini output as JSON: {e} ")
+            logging.info(f"(PROCESS_VIDEO_SUMMARIZE): Failed to parse Gemini output as JSON: {e} ")
             return clean_text
         #list_test = json.loads(clean_text)
         return parsed
@@ -128,23 +153,43 @@ def process_video_and_summarize(file_path):
     except Exception as e:
         return {"ok": False, "error": str(e)}
     
-# def convert_timestamp_to_seconds(timestamp):
-#     parts = timestamp.split(':')
-#     hours, minutes, seconds = map(int, parts)
-#     total_seconds = (hours * 3600) + (minutes * 60) + seconds
-#     return total_seconds
-def convert_timestamp_to_seconds(timestamp: str) -> int:
-    parts = [p.strip() for p in str(timestamp).split(":")]
-    if len(parts) == 3:
-        h, m, s = parts
-    elif len(parts) == 2:
-        h, m, s = "0", parts[0], parts[1]
-    elif len(parts) == 1:
-        h, m, s = "0", "0", parts[0]
-    else:
-        raise ValueError(f"Unrecognized timestamp format: {timestamp}")
-    return int(h) * 3600 + int(m) * 60 + int(s)
+def convert_timestamp_to_seconds(timestamp):
+    """
+    Convert timestamp to seconds. Handles multiple formats:
+    - HH:MM:SS (e.g., "00:05:30")
+    - MM:SS (e.g., "05:30")
+    - SS (e.g., "30")
+    """
+    if isinstance(timestamp, (int, float)):
+        return int(timestamp)
+    if isinstance(timestamp, str) and ":" not in timestamp:
+        return int(timestamp)
+    if ":" not in str(timestamp):
+        return int(timestamp)
+    
+    try:
+        parts = timestamp.split(':')
 
+        if len(parts) == 3:
+            # HH:MM:SS format
+            hours, minutes, seconds = map(int, parts)
+            total_seconds = (hours * 3600) + (minutes * 60) + seconds
+        elif len(parts) == 2:
+            # MM:SS format (assume hours = 0)
+            minutes, seconds = map(int, parts)
+            total_seconds = (minutes * 60) + seconds
+        elif len(parts) == 1:
+            # SS format (assume hours and minutes = 0)
+            total_seconds = int(parts[0])
+        else:
+            logging.error(f"Invalid timestamp format: {timestamp}")
+            raise ValueError(f"Invalid timestamp format: {timestamp}")
+
+        logging.info(f"Converted timestamp {timestamp} to {total_seconds} seconds")
+        return total_seconds
+    except (ValueError, AttributeError) as e:
+        logging.error(f"Error converting timestamp '{timestamp}': {e}")
+        raise ValueError(f"Could not convert timestamp '{timestamp}' to seconds: {e}")
 
 def timestamp_maker(gem_output):
     logging.info(f"DEBUG @ timestamp_maker: gemini output before process is: {type(gem_output)}")
@@ -167,20 +212,29 @@ def timestamp_maker(gem_output):
                 parsed = json.loads(parsed) # try to parse again if it's a string
         except json.JSONDecodeError as e:
             raise ValueError(f"Gemini output is a str but not valid JSON: {e}")
-    
+
     # Now process the parsed data
     #if isinstance(parsed, list):
     makes_timestamps = [] # ONLY MAKES TIMESTAMPS
 
-    for shot in parsed:
-        if "TimeStamp" in shot and "Outcome" in shot:
-            #if shot["Outcome"].lower() == "make" or shot["Outcome"].lower() == "miss" or shot["Outcome"].lower() == "made" or shot["Outcome"].lower() == "missed": # TESTING ALL TIMESTAMPSs
-            if shot["Outcome"]:
-                # make_timestamps.append(shot["TimeStamp"])
-                test_timestamp = shot["TimeStamp"]
-                timestamp_undefined = convert_timestamp_to_seconds(test_timestamp)
-                print(f"DEBUG for timestamp conversion: converted timestamp: {timestamp_undefined}")
-                makes_timestamps.append(timestamp_undefined)
+    for idx, shot in enumerate(parsed):
+        try:
+            if "TimeStamp" in shot and "Outcome" in shot:
+                #if shot["Outcome"].lower() == "make" or shot["Outcome"].lower() == "miss" or shot["Outcome"].lower() == "made" or shot["Outcome"].lower() == "missed": # TESTING ALL TIMESTAMPSs
+                if shot["Outcome"]:
+                    # make_timestamps.append(shot["TimeStamp"])
+                    test_timestamp = shot["TimeStamp"]
+                    timestamp_undefined = convert_timestamp_to_seconds(test_timestamp)
+                    print(f"DEBUG for timestamp conversion: converted timestamp: {timestamp_undefined}")
+                    makes_timestamps.append(timestamp_undefined)
+        except Exception as e:
+            logging.error(f"Error processing shot at index {idx}: {shot}. Error: {e}")
+            # Continue processing other shots even if one fails
+            continue
+
+    if not makes_timestamps:
+        logging.warning("No valid timestamps extracted from Gemini output")
+
     return makes_timestamps
     #elif isinstance(parsed, dict):
         #raise ValueError("Gemini output is a dict, not a list of shots")
@@ -206,30 +260,22 @@ def return_enhanced_timestamps(gem_output):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
-#--- begin safe console helpers (Windows-safe, ASCII only) ---
-def _log_ok(msg: str):
-    print(f"[OK] {msg}")
-
-def _log_err(msg: str):
-    # never print unicode glyphs like ✓ or ✗ in Windows cp1252 consoles
-    print(f"[ERR] {msg}")
-
 
 class CreateHighlightVideo2:
     def __init__(self, clip_duration=5):
         self.clip_duration = clip_duration
     
-    def converting_tester(self, timestamp_list, merge_gap=0):
+    def converting_tester(self, timestamp_list, start_before=1, merge_gap=0): # RETURNS THE TUPLE ARRAY (STARTTIME,ENDTIME)
         try:
             if not timestamp_list:
                     print(f"No timestamps")
                     return []
             timestamps_first = sorted(timestamp_list)
             timestamps = []
-            curr_start = timestamps_first[0]
+            curr_start = max(0, timestamps_first[0]-start_before)
             curr_end = curr_start + self.clip_duration
             for i in range(1, len(timestamps_first)):
-                start_time = timestamps_first[i]
+                start_time = max(0, timestamps_first[i]-start_before)
                 end_time = start_time + self.clip_duration
                 # here we are checking for overlapping timestamps
                 if start_time <= curr_end + merge_gap:
@@ -262,7 +308,7 @@ class CreateHighlightVideo2:
             clip_files = []
             
             try:
-                timestamps = self.converting_tester(timestamps_input)
+                timestamps = timestamps_input
                 
                 # Create individual clips
                 for i, (start, end) in enumerate(timestamps):
@@ -278,36 +324,24 @@ class CreateHighlightVideo2:
                         '-y',                           # Overwrite
                         clip_path
                     ]
-                    """
-                    EDGE CASE NOT REALLY: HANDLE
-                    will be times that the highlight times overlap.
-                    In that case, maybe start the next highlight at the end of the previous highlight?
-                    H
-                    
-                    """
-                    result = subprocess.run(cmd, capture_output=True, text=True, encoding ="utf-8", errors="replace") #this is the function that is being called. 
-                    #There are 2 functions but this function is what is being called.
+                    result = subprocess.run(cmd, capture_output=True, text=True)
 
                     if result.returncode == 0:
                         clip_files.append(clip_path)
-                        #print(f"✓ Created clip {i+1}: {start} seconds to {end} seconds.")
-                        #print(f"[OK] Created clip {i+1}: {start} seconds to {end} seconds.") 
-                        _log_ok(f"Created clip {i+1}: {start} to {end} seconds.") 
+                        print(f"✓ Created clip {i+1}: {start} seconds to {end} seconds.")
                     else:
-                        #print(f"✗ Error creating clip {i+1}: {result.stderr}")
-                        #print(f"[ERR] Error creating clip {i+1}: {result.stderr}")
-                        _log_err(f"Error creating clip {i+1}: {result.stderr}") 
+                        print(f"✗ Error creating clip {i+1}: {result.stderr}")
 
                 # If we have clips, combine them
                 if clip_files:
                     return self._combine_clips(clip_files, out_path, temp_dir)
+                    
                 else:
                     print("No clips were created successfully")
                     return False
                     
             except Exception as e:
-                #print(f"✗ General error: {e}")
-                print(f"[ERR] General error: {e}")
+                print(f"✗ General error: {e}")
                 return False
 
     def _combine_clips(self, clip_files, out_path, temp_dir):
@@ -340,22 +374,18 @@ class CreateHighlightVideo2:
                 out_path
             ]
 
-            #print(f"Combining {len(clip_files)} clips into highlight video...")
-            _log_ok(f"Combining {len(clip_files)} clips into highlight video...") 
+            print(f"Combining {len(clip_files)} clips into highlight video...")
             result = subprocess.run(cmd, capture_output=True, text=True)
 
             if result.returncode == 0:
-                #print(f"✓ Highlight video saved as: {out_path}")
-                _log_ok("Highlight video created successfully as: " + out_path)
+                print(f"✓ Highlight video saved as: {out_path}")
                 return True
             else:
-                #print(f"✗ Error combining clips: {result.stderr}")
-                _log_err(f"ffmpeg concat failed: {result.stderr}")  
+                print(f"✗ Error combining clips: {result.stderr}")
                 return False
 
         except Exception as e:
-            #print(f"✗ Error combining clips: {e}")
-            _log_err(f"General error during concat: {e}") 
+            print(f"✗ Error combining clips: {e}")
             return False
 
 def check_json(json_input):
@@ -378,12 +408,13 @@ def check_json(json_input):
     
     return ("Input is not a str or json object:", parsed_stripped, parsed_regular)
 
+
 if __name__ == "__main__":
     file_name = "meshooting2.mp4"
     file_path = f"videoDataset/{file_name}"
 
     # Create an instance of your class
-    # highlighter = CreateHighlightVideo(video_path=file_path, output_dir="clips", combined_dir="combined", clip_duration=5)
+    #highlighter = CreateHighlightVideo(video_path=file_path, output_dir="clips", combined_dir="combined", clip_duration=5)
 
     #slowed_file_path = f"videoDataset/{file_name.split('.')[0]}_slowed.mp4"
     #slow_down_video(file_path, slowed_file_path, speed_factor=0.5)
@@ -398,4 +429,5 @@ if __name__ == "__main__":
 
     # Testing different outputs, will be put into actual test file later lol
     
-#------------------------------------
+
+    

@@ -198,3 +198,43 @@ def prompt_shot_outcomes_only():
     Your response should be a structured JSON array of shot events, where each event is represented as an object with the keys 'TimeStamp' and 'Outcome'. 
     Do not include any explanations, text, or formatting such as code fences—output only the pure JSON."""
     return prompt
+
+def prompt_shot_outcomes_only2(video_duration_sec):
+    video_duration_min = video_duration_sec / 60
+
+    desired_output = """[
+    {"TimeStamp": 47, "Outcome": "Make"},
+    {"TimeStamp": 185, "Outcome": "Miss"}
+    ]"""
+    if_duration = ""
+    if video_duration_sec > 0:
+        if_duration = f"""
+            CRITICAL VIDEO ANALYSIS INSTRUCTIONS:
+            - THIS VIDEO IS {video_duration_sec} seconds long.
+            - DO NOT generate timestamps beyond {video_duration_sec} seconds
+            - ONLY output timestamps that exist within the video
+            - If you reach the end of the video, STOP analyzing
+            """
+    prompt = f"""
+    
+    Act as a world-class basketball analyst with a precise understanding of basketball shot mechanics.
+    Analyze the video to identify every distinct shot attempt.
+    A shot attempt is defined as any instance where a player shoots the basketball towards the hoop with the intention of scoring.
+    Identify shots such as layups, jump shots, dunks, and three-pointers.
+    {if_duration}
+    RETURN OUTPUT AS A JSON ARRAY ONLY. NO MARKDOWN. NO CODE FENCES.
+    For each shot, extract:
+    1. "TimeStamp": The precise time of the shot in integer seconds.
+       CRITICAL FORMATTING RULE: You MUST use seconds format.
+       - Correct: "105" (for 1 minute 45 seconds)
+       - Correct: "5" (for 5 seconds)
+       - INCORRECT: "1:45", "01:45", "5s, 00:00:20"
+
+    2. "Outcome": "Make", "Miss".
+
+    ### EXAMPLE DESIRED OUTPUT:
+        {desired_output}
+    
+    Analyze the video now and return the JSON array:
+    """
+    return prompt
