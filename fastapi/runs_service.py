@@ -112,7 +112,7 @@ def create_run(body: dict = Body(...)):
     return {"success": True, "run": run_doc}
 
 
-@router.patch("/runs/{run_id}")
+@router.patch("/{run_id}")
 def update_run(run_id: str, body: dict = Body(...)):
     """
     Update run name or visibility.
@@ -145,7 +145,7 @@ def update_run(run_id: str, body: dict = Body(...)):
     return {"success": True, "run": doc_ref.get().to_dict()}
 
 
-@router.delete("/runs/{run_id}")
+@router.delete("/{run_id}")
 def delete_run(run_id: str):
     """
     Delete a run (does NOT delete videos).
@@ -196,7 +196,7 @@ def assign_highlight(run_id: str, body: dict = Body(...)):
 # INVITE LINKS
 # ======================================================
 
-@router.post("/runs/{run_id}/invite")
+@router.post("/{run_id}/invite")
 def generate_invite(run_id: str):
     """
     Generate invite token.

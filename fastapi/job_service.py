@@ -71,17 +71,6 @@ def job_download(job_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"signing failed: {e}")
 
-@router.get("/{job_id}")
-def job_status(job_id: str):
-    """
-    Fetch the Firestore record for this job.
-    Frontend can poll this until status becomes 'done' and outputGcsUri is present.
-    """
-    snap = _job_doc(job_id).get()
-    if not snap.exists:
-        raise HTTPException(status_code=404, detail="job not found")
-    return snap.to_dict()
-
 @router.get("/{job_id}/highlight-data")
 def highlight_data(job_id: str):
     snap = _job_doc(job_id).get()

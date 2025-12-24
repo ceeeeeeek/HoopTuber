@@ -237,7 +237,7 @@ export default function VideoDisplayPage() {
 
     try {
       const response = await fetch(`${API_BASE}/jobs/${jobId}/shot-events/delete`, {
-        method: "POST",
+        method: "DELETE",
         headers: {
           "Content-Type": "application/json",
           "x-owner-email": session?.user?.email || "",
