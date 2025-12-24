@@ -579,7 +579,6 @@ export default function VideoDisplayPage() {
     const eventToDelete = highlightData.rawEvents[index];
     if (!eventToDelete) return;
 
-    // Set deleting state to trigger fade-out animation
     setDeletingIndex(index);
 
     try {
@@ -595,51 +594,70 @@ export default function VideoDisplayPage() {
       });
 
       if (!response.ok) {
-        setDeletingIndex(null); // Reset on error
+        setDeletingIndex(null); 
         throw new Error(`Failed to delete highlight: ${response.statusText}`);
       }
 
-      const data = await response.json();
-
-      // Wait for animation to complete before updating data
+      // Wait for animation
       setTimeout(() => {
-        // Update highlight data with new shot events
-        if (data.shotEvents) {
-          setHighlightData((prev) => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              rawEvents: data.shotEvents,
-              ranges: data.shotEvents.map((event: GeminiShotEvent) => [
-                parseTimestamp(event.timestamp_start),
-                parseTimestamp(event.timestamp_end),
-              ]),
-            };
-          });
+        
+        // 1. UPDATE HIGHLIGHT DATA (Local Filter)
+        setHighlightData((prev) => {
+          if (!prev) return null;
+          const newEvents = prev.rawEvents.filter((_, i) => i !== index);
+          const newRanges = prev.ranges.filter((_, i) => i !== index);
+          return {
+            ...prev,
+            rawEvents: newEvents,
+            ranges: newRanges,
+          };
+        });
 
-          // Clear any edits for deleted highlight
-          setEditedEvents((prev) => {
-            const newMap = new Map(prev);
-            newMap.delete(index);
-            return newMap;
+        // 2. SHIFT EDITED EVENTS
+        // We must move edits for index+1 down to index, index+2 down to index+1, etc.
+        setEditedEvents((prev) => {
+          const newMap = new Map();
+          prev.forEach((value, key) => {
+            if (key < index) {
+              // Keep items before the deletion as is
+              newMap.set(key, value);
+            } else if (key > index) {
+              // Shift items after the deletion down by 1
+              newMap.set(key - 1, value);
+            }
+            // If key === index, we simply don't add it (deleting it)
           });
+          return newMap;
+        });
 
-          setEditedRanges((prev) => {
-            const newMap = new Map(prev);
-            newMap.delete(index);
-            return newMap;
+        // 3. SHIFT EDITED RANGES (Critical for playback!)
+        setEditedRanges((prev) => {
+          const newMap = new Map();
+          prev.forEach((value, key) => {
+            if (key < index) {
+              newMap.set(key, value);
+            } else if (key > index) {
+              newMap.set(key - 1, value);
+            }
           });
+          return newMap;
+        });
 
-          // Reset current highlight if it was playing
-          if (currentHighlightIndex === index) {
-            setCurrentHighlightIndex(null);
-            setIsSequencePlaying(false);
-          }
+        // 4. FIX PLAYBACK INDEX
+        // If we deleted a clip *before* the one we are watching, our index needs to decrease by 1
+        if (currentHighlightIndex !== null) {
+            if (index === currentHighlightIndex) {
+                // We deleted the active clip -> Stop playing
+                setCurrentHighlightIndex(null);
+                setIsSequencePlaying(false);
+            } else if (index < currentHighlightIndex) {
+                // We deleted a previous clip -> Shift our index left to stay on the same video
+                setCurrentHighlightIndex(prev => prev! - 1);
+            }
         }
 
-        // Reset deleting state
         setDeletingIndex(null);
-      }, 300); // Match animation duration
+      }, 300); 
     } catch (err) {
       console.error("Error deleting highlight:", err);
       alert("Failed to delete highlight: " + (err as Error).message);

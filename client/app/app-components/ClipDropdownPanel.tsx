@@ -114,33 +114,73 @@ export default function ClipDropdownPanel({
       [updatedStartSeconds, updatedEndSeconds]
     );
   };
-
   // Auto-update parent when any field changes
   const handleFieldChange = (field: string, value: string) => {
+    // 1. Update the UI state (so the input box shows what you typed)
     switch (field) {
-      case "outcome":
-        setOutcome(value);
-        break;
-      case "subject":
-        setSubject(value);
-        break;
-      case "shotType":
-        setShotType(value);
-        break;
-      case "shotLocation":
-        setShotLocation(value);
-        break;
-      case "startTime":
-        setStartTimeInput(value);
-        break;
-      case "endTime":
-        setEndTimeInput(value);
-        break;
+      case "outcome": setOutcome(value); break;
+      case "subject": setSubject(value); break;
+      case "shotType": setShotType(value); break;
+      case "shotLocation": setShotLocation(value); break;
+      case "startTime": setStartTimeInput(value); break;
+      case "endTime": setEndTimeInput(value); break;
     }
 
-    // Debounced update would be better, but for now we update immediately
-    setTimeout(() => handleUpdate(), 0);
+    // 2. DETERMINE THE FRESH VALUES
+    // If the field matches what we are typing, use the raw 'value'. 
+    // Otherwise, use the existing state.
+    const nextOutcome = field === "outcome" ? value : outcome;
+    const nextSubject = field === "subject" ? value : subject;
+    const nextShotType = field === "shotType" ? value : shotType;
+    const nextShotLocation = field === "shotLocation" ? value : shotLocation;
+    
+    // THIS FIXES THE BUG:
+    // If we are typing the end time, use 'value' ("0:12"), NOT 'endTimeInput' ("0:1")
+    const nextStartTime = field === "startTime" ? value : startTimeInput;
+    const nextEndTime = field === "endTime" ? value : endTimeInput;
+
+    // 3. Parse immediately using the FRESH values
+    const updatedStartSeconds = parseTimeInput(nextStartTime);
+    const updatedEndSeconds = parseTimeInput(nextEndTime);
+
+    // 4. Send to Parent (bypassing handleUpdate entirely)
+    onEventUpdate(
+      index,
+      {
+        outcome: nextOutcome,
+        subject: nextSubject,
+        shot_type: nextShotType,
+        shot_location: nextShotLocation,
+      },
+      [updatedStartSeconds, updatedEndSeconds]
+    );
   };
+  // Auto-update parent when any field changes
+  // const handleFieldChange = (field: string, value: string) => {
+  //   switch (field) {
+  //     case "outcome":
+  //       setOutcome(value);
+  //       break;
+  //     case "subject":
+  //       setSubject(value);
+  //       break;
+  //     case "shotType":
+  //       setShotType(value);
+  //       break;
+  //     case "shotLocation":
+  //       setShotLocation(value);
+  //       break;
+  //     case "startTime":
+  //       setStartTimeInput(value);
+  //       break;
+  //     case "endTime":
+  //       setEndTimeInput(value);
+  //       break;
+  //   }
+
+  //   // Debounced update would be better, but for now we update immediately
+  //   setTimeout(() => handleUpdate(), 0);
+  // };
 
   return (
     <motion.div
