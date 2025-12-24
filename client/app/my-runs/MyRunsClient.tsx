@@ -30,7 +30,7 @@ import { useRouter } from "next/navigation";
 import { DribbleIcon } from "@/components/icons/DribbleIcon";
 import { DribbleIcon2 } from "@/components/icons/DribbleIcon2";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-devtest.onrender.com";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 
 //11/30/25 Update: Abort-related “NetworkError when attempting to fetch resource” won’t be treated as real failures.
 //Your UI states (highlightsError, folderError, etc.) will only show for real failures, not cancelled requests.
