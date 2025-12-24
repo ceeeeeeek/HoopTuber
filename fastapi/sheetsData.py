@@ -37,6 +37,7 @@ def sec_to_time(sec):
 def write_to_sheet(job_id):
     # sheets creds
     ss_creds = os.getenv('SHEETS_CREDS')
+    ENVIRONMENT = os.getenv("ENVIRONMENT")
     # open service acount for sheets
     gc = gspread.service_account(filename=ss_creds)
     # open sheet
@@ -64,7 +65,7 @@ def write_to_sheet(job_id):
             print(f"end time: {end_time}")
             print(f"duration: {duration} and type: {type(duration)}")
             how_long = sec_to_time((end_time - start_time).total_seconds())
-            add_data = [job_id, owner, duration, how_long, start_time_str, end_time_str]
+            add_data = [job_id, owner, duration, how_long, start_time_str, end_time_str, str(ENVIRONMENT)]
             sheet.append_row(add_data)
             print(f"Added data for job: {job_id}")
         else:
