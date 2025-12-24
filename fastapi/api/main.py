@@ -1,4 +1,4 @@
-# fastapi server as of 10/17/2025
+# fastapi main server
 
 from fastapi import Body, FastAPI, UploadFile, File, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,10 +21,10 @@ from urllib.parse import urlparse
 from fastapi.responses import StreamingResponse
 from google.cloud import storage
 import io
+import logging
 
 
-
-from api.utils import (_make_keys,
+from utils import (_make_keys,
                    _job_doc,_publish_job,
                    _upload_filelike_to_gcs,
                    _sign_get_url,
@@ -32,10 +32,10 @@ from api.utils import (_make_keys,
                    ts_to_seconds)
 
 # IMPORTING SERVICE ROUTERS
-from api.vertex_service import router as vertex_router
-from api.video_service import router as video_router
-from api.folders_router import router as folders_router
-
+from vertex_service import router as vertex_router
+from video_service import router as video_router
+from folders_router import router as folders_router
+from runs_service import router as runs_router
 
 
 from typing import Dict, Any, List
@@ -129,6 +129,7 @@ app.state.limiter = limiter
 app.include_router(vertex_router)
 app.include_router(video_router)
 app.include_router(folders_router)
+app.include_router(runs_router)
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request, exc):
@@ -469,15 +470,16 @@ def delete_highlight(job_id: str):
     })
 
     #remove output file in GCS if you want a hard delete
-    #Comment out if you prefer to keep the file.
-    out_uri = data.get("outputGcsUri")
+    out_uri = data.get("videoGcsUri")
     try:
         if out_uri and out_uri.startswith("gs://"):
             bucket_name, blob_path = _parse_gs_uri(out_uri)  #reuse use _job_doc / firestore_client helper
             bucket = storage_client.bucket(bucket_name)
             blob = bucket.blob(blob_path)
             blob.delete()  #may raise if not found; safe to ignore below
+            print(f"SUCCESSFULLY deleted GCS blob {out_uri} for job {job_id}")
     except Exception:
+        print(f"Warning: failed to delete GCS blob {out_uri} for job {job_id}")
         pass
 
     return {"ok": True, "deleted": True}
@@ -568,221 +570,98 @@ def highlight_data(job_id: str):
         "ranges": ranges,
     }
 
-def _runs_collection():
-    return firestore_client.collection(RUNS_COLLECTION)
-
-def _comments_collection():
-    return firestore_client.collection(COMMENTS_COLLECTION)
-
-def _folders_collection():
-    return firestore_client.collection(FOLDER_COLLECTION)
-
-@app.get("/runs")
-def list_runs(
-    ownerEmail: Optional[str] = None,
-    memberEmail: Optional[str] = None,
-):
-    """
-    List runs.
-
-    - memberEmail → runs where email is in members[]
-    - ownerEmail → runs owned by user
-    """
-    if memberEmail:
-        query = _runs_collection().where(
-            "members", "array_contains", memberEmail
-        )
-    elif ownerEmail:
-        query = _runs_collection().where(
-            "ownerEmail", "==", ownerEmail
-        )
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Provide ownerEmail or memberEmail"
-        )
-
-    items = []
-    for doc in query.stream():
-        data = doc.to_dict() or {}
-        data.setdefault("runId", doc.id)
-        items.append(data)
-
-    return {"items": items, "count": len(items)}
-
-
-@app.post("/runs")
-def create_run(body: dict = Body(...)):
-    """
-    Create a new run.
-    """
-    name = (body.get("name") or "").strip()
-    owner_email = (body.get("ownerEmail") or "").strip()
-    visibility = (body.get("visibility") or "private").lower()
-    max_members = body.get("maxMembers")
-
-    if not name:
-        raise HTTPException(status_code=400, detail="Run name is required")
-    if not owner_email:
-        raise HTTPException(status_code=400, detail="ownerEmail is required")
-
-    if visibility not in ("public", "unlisted", "private"):
-        visibility = "private"
-
-    run_id = str(uuid.uuid4())
-    now = datetime.utcnow()
-
-    run_doc = {
-        "runId": run_id,
-        "name": name,
-        "ownerEmail": owner_email,
-        "visibility": visibility,
-        "members": [owner_email],
-        "highlightIds": [],
-        "createdAt": now,
-        "updatedAt": now,
+# adding shot events to a job
+@app.post("/jobs/{job_id}/shot-events/add")
+async def add_shot_event(job_id: str, payload: dict):
+    job_ref = firestore_client.collection("jobs").document(job_id)
+    doc = job_ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Job not found")
+    # Basic validation
+    if "timestamp_start" not in payload or "timestamp_end" not in payload:
+        raise HTTPException(status_code=400, detail="Missing timestamps")
+    shot_event = {
+        # Use frontend ID if provided, otherwise generate one
+        "id": payload.get("id", str(uuid.uuid4())),
+        # Normalize outcome (Make -> make)
+        "outcome": payload.get("outcome", "other").lower(),
+        # Optional nullable fields
+        "shot_location": payload.get("shot_location"),
+        "shot_type": payload.get("shot_type"),
+        "subject": payload.get("subject"),
+        "timestamp_end": payload["timestamp_end"],
+        "timestamp_start": payload["timestamp_start"],
+        "deleted": False,
+        "show": True,
     }
-
-    if max_members is not None:
-        run_doc["maxMembers"] = max_members
-
-    _runs_collection().document(run_id).set(run_doc)
-
-    return {"success": True, "run": run_doc}
-
-
-@app.patch("/runs/{run_id}")
-def update_run(run_id: str, body: dict = Body(...)):
-    """
-    Update run name or visibility.
-    """
-    doc_ref = _runs_collection().document(run_id)
-    snap = doc_ref.get()
-
-    if not snap.exists:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    updates = {}
-
-    if "name" in body:
-        name = body["name"].strip()
-        if name:
-            updates["name"] = name
-
-    if "visibility" in body:
-        vis = body["visibility"].lower()
-        if vis not in ("private", "public", "unlisted"):
-            raise HTTPException(status_code=400, detail="Invalid visibility")
-        updates["visibility"] = vis
-
-    if not updates:
-        raise HTTPException(status_code=400, detail="No valid fields provided")
-
-    updates["updatedAt"] = datetime.utcnow()
-    doc_ref.update(updates)
-
-    return {"success": True, "run": doc_ref.get().to_dict()}
-
-
-@app.delete("/runs/{run_id}")
-def delete_run(run_id: str):
-    """
-    Delete a run (does NOT delete videos).
-    """
-    doc_ref = _runs_collection().document(run_id)
-    snap = doc_ref.get()
-
-    if not snap.exists:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    doc_ref.delete()
-    return {"success": True}
-
-
-@app.post("/runs/{run_id}/assignHighlight")
-def assign_highlight(run_id: str, body: dict = Body(...)):
-    """
-    Add highlightId to run.
-    """
-    highlight_id = (body.get("highlightId") or "").strip()
-    if not highlight_id:
-        raise HTTPException(status_code=400, detail="highlightId required")
-
-    doc_ref = _runs_collection().document(run_id)
-    snap = doc_ref.get()
-
-    if not snap.exists:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    data = snap.to_dict() or {}
-    highlights = data.get("highlightIds", [])
-
-    if highlight_id not in highlights:
-        highlights.append(highlight_id)
-
-    doc_ref.update({
-        "highlightIds": highlights,
-        "updatedAt": datetime.utcnow(),
-    })
-
-    return {"success": True}
-
-
-# ======================================================
-# INVITE LINKS
-# ======================================================
-
-@app.post("/runs/{run_id}/invite")
-def generate_invite(run_id: str):
-    """
-    Generate invite token.
-    """
-    token = str(uuid.uuid4())
-    doc_ref = _runs_collection().document(run_id)
-
-    if not doc_ref.get().exists:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    doc_ref.update({"inviteToken": token})
-
+    try: 
+        job_ref.update({
+            "shotEvents": firestore.ArrayUnion([shot_event])
+        })
+    except Exception as e:
+        print(f"Error upodating shot event: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     return {
-        "success": True,
-        "token": token,
-        "joinUrl": f"/runs/invite/{token}",
+        "ok": True,
+        "shotEvent": shot_event
     }
 
+# deleting shot events from a job
+@app.delete("/jobs/{job_id}/shot-events/delete")
+async def delete_shot_event(job_id: str, payload: dict = Body(...)):
+    event_id = payload.get("event_id")
+    if not event_id:
+        raise HTTPException(status_code=400, detail="Missing event_id")
 
-@app.get("/runs/invite/{token}")
-def accept_invite(token: str, email: str):
-    """
-    Accept invite link.
-    """
-    query = (
-        _runs_collection()
-        .where("inviteToken", "==", token)
-        .limit(1)
-        .stream()
-    )
+    job_ref = firestore_client.collection("jobs").document(job_id)
+    job_doc = job_ref.get()
+    
+    if not job_doc.exists:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-    run_doc = None
-    run_id = None
-    for doc in query:
-        run_doc = doc.to_dict()
-        run_id = doc.id
+    job_data = job_doc.to_dict()
+    shot_events = job_data.get("shotEvents", [])
+    # Create a new list excluding the one we want to delete
+    updated_events = [event for event in shot_events if event.get("id") != event_id]
+    # Update Firestore
+    job_ref.update({
+        "shotEvents": updated_events
+    })
+    return {"ok": True, "event_id": event_id}
 
-    if not run_doc:
-        raise HTTPException(status_code=404, detail="Invalid invite token")
+# updating shot events from a job
+@app.post("/jobs/{job_id}/shot-events/update")
+async def update_shot_event(job_id: str, payload: dict = Body(...)):
+    event_id = payload.get("event_id")
+    if not event_id:
+        raise HTTPException(status_code=400, detail="Missing event_id")
+    job_ref = firestore_client.collection("jobs").document(job_id)
+    job_doc = job_ref.get()
+    if not job_doc.exists:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+@app.post("/jobs/{job_id}/shot-events/mute")
+async def mute_shot_event(job_id: str, event_id: str):
+    job_ref = firestore_client.collection("jobs").document(job_id)
+    job_doc = job_ref.get()
+    if not job_doc.exists:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-    members = run_doc.get("members", [])
-    if email not in members:
-        members.append(email)
+    job_data = job_doc.to_dict()
+    shot_events = job_data.get("shotEvents", [])
+    updated_events = []
 
-    _runs_collection().document(run_id).update({
-        "members": members,
-        "updatedAt": datetime.utcnow(),
+    for event in shot_events:
+        if event["id"] == event_id:
+            event["deleted"] = True
+        updated_events.append(event)
+
+    job_ref.update({
+        "shotEvents": updated_events
     })
 
-    return {"success": True, "runId": run_id}
+    return {"ok": True, "event_id": event_id}
+
 
 @app.get("/healthz")
 def healthz():

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, ChevronUp, MapPin, Clock, Play, Pause } from "lucide-react";
+import { ChevronDown, ChevronUp, MapPin, Clock, Play, Pause, Save, X, Trash2 } from "lucide-react";
 
 interface GeminiShotEvent {
   id: string;
@@ -33,6 +33,10 @@ interface ClipDropdownPanelProps {
   onPlayClick: (index: number) => void;
   onPreviewClick: (index: number) => void;
   onEventUpdate: (index: number, updatedEvent: Partial<GeminiShotEvent>, updatedRange: [number, number]) => void;
+  isNewHighlight?: boolean;
+  onSave?: () => void;
+  onCancel?: () => void;
+  onDelete?: (index: number) => void;
 }
 
 // Helper to format seconds to MM:SS
@@ -69,8 +73,13 @@ export default function ClipDropdownPanel({
   onPlayClick,
   onPreviewClick,
   onEventUpdate,
+  isNewHighlight = false,
+  onSave,
+  onCancel,
+  onDelete,
 }: ClipDropdownPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(isNewHighlight); // Auto-expand if new highlight
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false); // Delete confirmation state
 
   // Local state for editable fields
   const [outcome, setOutcome] = useState(event.outcome);
@@ -134,7 +143,9 @@ export default function ClipDropdownPanel({
   return (
     <div
       className={`rounded-lg border-2 transition-all bg-white
-        ${isActive
+        ${isNewHighlight
+          ? "border-green-500 bg-green-50 ring-1 ring-green-200"
+          : isActive
           ? "border-orange-500 bg-orange-50 ring-1 ring-orange-200"
           : "border-gray-200 hover:border-orange-200"
         }`}
@@ -147,9 +158,14 @@ export default function ClipDropdownPanel({
         <div className="flex items-center gap-4 flex-1">
           <div
             className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm
-              ${isActive ? "bg-orange-500 text-white" : "bg-gray-200 text-gray-600 group-hover:bg-orange-200"}`}
+              ${isNewHighlight
+                ? "bg-green-500 text-white"
+                : isActive
+                ? "bg-orange-500 text-white"
+                : "bg-gray-200 text-gray-600 group-hover:bg-orange-200"
+              }`}
           >
-            {index + 1}
+            {isNewHighlight ? "+" : index + 1}
           </div>
 
           <div className="flex-1">
@@ -246,50 +262,53 @@ export default function ClipDropdownPanel({
                 />
               </div>
 
-              {/* Shot Type Dropdown */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Shot Type</label>
-                <Select
-                  value={shotType}
-                  onValueChange={(value) => handleFieldChange("shotType", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select shot type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Layup">Layup</SelectItem>
-                    <SelectItem value="Dunk">Dunk</SelectItem>
-                    <SelectItem value="Midrange Jump Shot">Midrange Jump Shot</SelectItem>
-                    <SelectItem value="3-Point Jump Shot">3-Point Jump Shot</SelectItem>
-                    <SelectItem value="Hook Shot">Hook Shot</SelectItem>
-                    <SelectItem value="Free Throw">Free Throw</SelectItem>
-                    <SelectItem value="Floater">Floater</SelectItem>
-                    <SelectItem value="Step-back">Step-back</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Shot Type and Shot Location Dropdowns - Side by Side */}
+              <div className="flex gap-4">
+                {/* Shot Type Dropdown */}
+                <div className="space-y-2 flex-1">
+                  <label className="text-sm font-medium text-gray-700">Shot Type</label>
+                  <Select
+                    value={shotType}
+                    onValueChange={(value) => handleFieldChange("shotType", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select shot type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Layup">Layup</SelectItem>
+                      <SelectItem value="Dunk">Dunk</SelectItem>
+                      <SelectItem value="Midrange Jump Shot">Midrange Jump Shot</SelectItem>
+                      <SelectItem value="3-Point Jump Shot">3-Point Jump Shot</SelectItem>
+                      <SelectItem value="Hook Shot">Hook Shot</SelectItem>
+                      <SelectItem value="Free Throw">Free Throw</SelectItem>
+                      <SelectItem value="Floater">Floater</SelectItem>
+                      <SelectItem value="Step-back">Step-back</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              {/* Shot Location Dropdown */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Shot Location</label>
-                <Select
-                  value={shotLocation}
-                  onValueChange={(value) => handleFieldChange("shotLocation", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select location" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Left Corner">Left Corner</SelectItem>
-                    <SelectItem value="Right Corner">Right Corner</SelectItem>
-                    <SelectItem value="Top of Key">Top of Key</SelectItem>
-                    <SelectItem value="Left Wing">Left Wing</SelectItem>
-                    <SelectItem value="Right Wing">Right Wing</SelectItem>
-                    <SelectItem value="Paint">Paint</SelectItem>
-                    <SelectItem value="Free Throw Line">Free Throw Line</SelectItem>
-                    <SelectItem value="Baseline">Baseline</SelectItem>
-                  </SelectContent>
-                </Select>
+                {/* Shot Location Dropdown */}
+                <div className="space-y-2 flex-1">
+                  <label className="text-sm font-medium text-gray-700">Shot Location</label>
+                  <Select
+                    value={shotLocation}
+                    onValueChange={(value) => handleFieldChange("shotLocation", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Left Corner">Left Corner</SelectItem>
+                      <SelectItem value="Right Corner">Right Corner</SelectItem>
+                      <SelectItem value="Top of Key">Top of Key</SelectItem>
+                      <SelectItem value="Left Wing">Left Wing</SelectItem>
+                      <SelectItem value="Right Wing">Right Wing</SelectItem>
+                      <SelectItem value="Paint">Paint</SelectItem>
+                      <SelectItem value="Free Throw Line">Free Throw Line</SelectItem>
+                      <SelectItem value="Baseline">Baseline</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               {/* Time Range Inputs */}
@@ -315,29 +334,111 @@ export default function ClipDropdownPanel({
                 </p>
               </div>
 
-              {/* Preview Button */}
-              <div className="pt-2">
-                <Button
-                  onClick={() => {
-                    // Ensure parent state is updated before preview
-                    handleUpdate();
-                    // Trigger preview playback
-                    setTimeout(() => onPreviewClick(index), 50);
-                  }}
-                  className="w-full bg-blue-600 hover:bg-blue-700"
-                  variant="default"
-                >
-                  <Play className="w-4 h-4 mr-2" />
-                  Preview with Current Edits
-                </Button>
+              {/* Action Buttons */}
+              <div className="pt-2 space-y-2">
+                {isNewHighlight ? (
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={onCancel}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        handleUpdate();
+                        onSave?.();
+                      }}
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                      variant="default"
+                    >
+                      <Save className="w-4 h-4 mr-2" />
+                      Save
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Button
+                      onClick={() => {
+                        // Ensure parent state is updated before preview
+                        handleUpdate();
+                        // Trigger preview playback
+                        setTimeout(() => onPreviewClick(index), 50);
+                      }}
+                      className="w-full bg-blue-600 hover:bg-blue-700"
+                      variant="default"
+                    >
+                      <Play className="w-4 h-4 mr-2" />
+                      Preview with Current Edits
+                    </Button>
+
+                    {/* Save and Delete Buttons */}
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => {
+                          handleUpdate();
+                          onSave?.();
+                        }}
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                        variant="default"
+                      >
+                        <Save className="w-4 h-4 mr-2" />
+                        Save
+                      </Button>
+
+                      {showDeleteConfirm ? (
+                        <div className="flex-1 flex gap-2">
+                          <Button
+                            onClick={() => setShowDeleteConfirm(false)}
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                          >
+                            No
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              onDelete?.(index);
+                              setShowDeleteConfirm(false);
+                            }}
+                            variant="destructive"
+                            size="sm"
+                            className="flex-1"
+                          >
+                            Yes
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          onClick={() => setShowDeleteConfirm(true)}
+                          variant="destructive"
+                          className="flex-1"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+
+                    {showDeleteConfirm && (
+                      <p className="text-sm text-red-600 text-center font-medium">
+                        Are you sure you want to delete this highlight?
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
 
               {/* Info Banner */}
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <p className="text-xs text-blue-800">
-                  Changes are saved in local state immediately. Backend saving not yet implemented.
-                </p>
-              </div>
+              {!isNewHighlight && (
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-xs text-blue-800">
+                    Changes are saved in local state immediately. Backend saving not yet implemented.
+                  </p>
+                </div>
+              )}
             </div>
           </motion.div>
         )}

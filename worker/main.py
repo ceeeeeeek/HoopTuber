@@ -101,7 +101,7 @@ def handle_job_vertex(msg: pubsub_v1.subscriber.message.Message):
         video_dur_sec = job_data.get("videoDurationSec") if len(job_data) != 0 else 0
 
         try:
-            print(f"Sending to Vertex AI: {input_gcs_uri}")
+            print(f"Sending to HoopTuber AI: {input_gcs_uri}")
             # this returns the FINAL formatted JSON with stat_times
             vertex_response = vertex_data_cleaned(input_gcs_uri, video_dur_sec)
             print(f"DEBUG: Vertex response type: {type(vertex_response)}")

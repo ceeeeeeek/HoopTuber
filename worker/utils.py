@@ -218,6 +218,8 @@ def format_gemini_output(gem_output, start_end_times):
                 "subject": None,
                 "shot_type": None,
                 "shot_location": None,
+                "show": True,
+                "deleted": False,
             })
     except Exception as e:
         print(f"Error has occured: {e}")
