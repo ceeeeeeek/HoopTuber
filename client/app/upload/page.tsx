@@ -20,12 +20,15 @@ import {
   FileVideo,
   Brain,
   CheckCircle,
+  Plus,
+  X,
 } from "lucide-react";
 import ClipDropdownPanel from "@/app/app-components/ClipDropdownPanel";
 import ProfileDropdown from "../app-components/ProfileDropdown";
 import { useUploadStatus } from "@/contexts/UploadStatusContext";
 import { uploadQueue } from "@/lib/uploadQueue";
 import { pollingService } from "@/lib/uploadPollingService";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 
 // https://hooptuber-fastapi-devtest.onrender.com
@@ -76,6 +79,11 @@ export default function VideoDisplayPage() {
   // Edit states
   const [editedEvents, setEditedEvents] = useState<Map<number, Partial<GeminiShotEvent>>>(new Map());
   const [editedRanges, setEditedRanges] = useState<Map<number, [number, number]>>(new Map());
+
+  // New highlight states
+  const [isAddingNewHighlight, setIsAddingNewHighlight] = useState(false);
+  const [newHighlight, setNewHighlight] = useState<{event: Partial<GeminiShotEvent>, range: [number, number]} | null>(null);
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
 
   // Helper function to fetch highlight data for a completed job
   const fetchHighlightDataForJob = useCallback(async (jobId: string) => {
@@ -453,6 +461,142 @@ export default function VideoDisplayPage() {
     });
   };
 
+  // Callback to handle updates for new highlight
+  const handleNewHighlightUpdate = (
+    _index: number,
+    updatedEvent: Partial<GeminiShotEvent>,
+    updatedRange: [number, number]
+  ) => {
+    setNewHighlight({ event: updatedEvent, range: updatedRange });
+  };
+
+  // Handler for adding a new highlight
+  const handleAddNewHighlight = () => {
+    setIsAddingNewHighlight(true);
+    setNewHighlight({
+      event: {
+        outcome: "Make",
+        subject: "",
+        shot_type: "Layup",
+        shot_location: "Paint",
+      },
+      range: [0, 0]
+    });
+  };
+
+  // Handler for saving new highlight
+  const handleSaveNewHighlight = async () => {
+    if (!newHighlight || !jobId) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/jobs/${jobId}/shot-events/add`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-owner-email": session?.user?.email || "",
+        },
+        body: JSON.stringify({
+          timestamp_start: newHighlight.range[0].toString(),
+          timestamp_end: newHighlight.range[1].toString(),
+          outcome: newHighlight.event.outcome || "Make",
+          subject: newHighlight.event.subject || "",
+          shot_type: newHighlight.event.shot_type || "Layup",
+          shot_location: newHighlight.event.shot_location || "Paint",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to save highlight: ${response.statusText}`);
+      }
+
+      // Show success alert
+      setShowSuccessAlert(true);
+      setTimeout(() => setShowSuccessAlert(false), 3000);
+
+      // Reset new highlight state
+      setIsAddingNewHighlight(false);
+      setNewHighlight(null);
+
+      // Refresh highlight data
+      if (jobId) {
+        await fetchHighlightDataForJob(jobId);
+      }
+    } catch (err) {
+      console.error("Error saving new highlight:", err);
+      alert("Failed to save highlight: " + (err as Error).message);
+    }
+  };
+
+  // Handler for canceling new highlight
+  const handleCancelNewHighlight = () => {
+    setIsAddingNewHighlight(false);
+    setNewHighlight(null);
+  };
+
+  // Handler for deleting a highlight
+  const handleDeleteHighlight = async (index: number) => {
+    if (!highlightData || !jobId) return;
+
+    const eventToDelete = highlightData.rawEvents[index];
+    if (!eventToDelete) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/jobs/${jobId}/shot-events/delete`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "x-owner-email": session?.user?.email || "",
+        },
+        body: JSON.stringify({
+          event_id: eventToDelete.id,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete highlight: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Update highlight data with new shot events
+      if (data.shotEvents) {
+        setHighlightData((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            rawEvents: data.shotEvents,
+            ranges: data.shotEvents.map((event: GeminiShotEvent) => [
+              parseFloat(event.timestamp_start),
+              parseFloat(event.timestamp_end),
+            ]),
+          };
+        });
+
+        // Clear any edits for deleted highlight
+        setEditedEvents((prev) => {
+          const newMap = new Map(prev);
+          newMap.delete(index);
+          return newMap;
+        });
+
+        setEditedRanges((prev) => {
+          const newMap = new Map(prev);
+          newMap.delete(index);
+          return newMap;
+        });
+
+        // Reset current highlight if it was playing
+        if (currentHighlightIndex === index) {
+          setCurrentHighlightIndex(null);
+          setIsSequencePlaying(false);
+        }
+      }
+    } catch (err) {
+      console.error("Error deleting highlight:", err);
+      alert("Failed to delete highlight: " + (err as Error).message);
+    }
+  };
+
   // Sequential playback logic
   useEffect(() => {
     const video = videoRef.current;
@@ -667,100 +811,320 @@ export default function VideoDisplayPage() {
                 </CardContent>
               </Card>
 
-              {/* Two-Column Layout: Sticky Video + Scrollable Highlights */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Left Column: Video Player (sticky on large screens) */}
-                <div className="lg:sticky lg:top-6 lg:self-start">
-                  <Card className="overflow-hidden">
-                    <div className="bg-black relative aspect-video">
-                      <video
-                        ref={videoRef}
-                        className="w-full h-full"
-                        src={highlightData.sourceVideoUrl}
-                        controls
-                        muted={true}
-                        playsInline
-                        onPlay={() => setIsPlaying(true)}
-                        onPause={() => setIsPlaying(false)}
-                      />
+              {/* Responsive Layout: Horizontal on desktop, Vertical on mobile */}
+              <div className="hidden lg:block">
+                <PanelGroup direction="horizontal" className="gap-6">
+                  {/* Left Panel: Video Player */}
+                  <Panel defaultSize={50} minSize={30}>
+                    <div className="lg:sticky lg:top-6 lg:self-start">
+                      <Card className="overflow-hidden">
+                        <div className="bg-black relative aspect-video">
+                          <video
+                            ref={videoRef}
+                            className="w-full h-full"
+                            src={highlightData.sourceVideoUrl}
+                            controls
+                            muted={true}
+                            playsInline
+                            onPlay={() => setIsPlaying(true)}
+                            onPause={() => setIsPlaying(false)}
+                          />
 
-                      {/* Overlay badge showing current highlight */}
-                      {currentHighlightIndex !== null && isSequencePlaying && (
-                        <div className="absolute top-4 right-4 animate-in fade-in duration-300">
-                          <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white px-3 py-1 shadow-lg backdrop-blur-sm">
-                            Playing Highlight {currentHighlightIndex + 1} of {highlightData.ranges.length}
-                          </Badge>
-                        </div>
-                      )}
-                    </div>
-
-                    <CardContent className="py-4">
-                      <div className="flex flex-col gap-4">
-                        <Button
-                          onClick={handlePlayAll}
-                          size="lg"
-                          className={`w-full ${
-                            isSequencePlaying ? "bg-red-500 hover:bg-red-600" : "bg-orange-500 hover:bg-orange-600"
-                          } transition-all`}
-                        >
-                          {isSequencePlaying && isPlaying ? (
-                            <>
-                              <Pause className="w-5 h-5 mr-2" /> Stop Sequence
-                            </>
-                          ) : (
-                            <>
-                              <FastForward className="w-5 h-5 mr-2" /> Play Full Highlight Reel
-                            </>
+                          {/* Overlay badge showing current highlight */}
+                          {currentHighlightIndex !== null && isSequencePlaying && (
+                            <div className="absolute top-4 right-4 animate-in fade-in duration-300">
+                              <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white px-3 py-1 shadow-lg backdrop-blur-sm">
+                                Playing Highlight {currentHighlightIndex + 1} of {highlightData.ranges.length}
+                              </Badge>
+                            </div>
                           )}
-                        </Button>
+                        </div>
 
-                        <p className="text-sm text-gray-500 text-center">
-                          {isSequencePlaying
-                            ? "Auto-skipping non-highlight segments..."
-                            : "Watch highlights sequentially"}
+                        <CardContent className="py-4">
+                          <div className="flex flex-col gap-4">
+                            <Button
+                              onClick={handlePlayAll}
+                              size="lg"
+                              className={`w-full ${
+                                isSequencePlaying ? "bg-red-500 hover:bg-red-600" : "bg-orange-500 hover:bg-orange-600"
+                              } transition-all`}
+                            >
+                              {isSequencePlaying && isPlaying ? (
+                                <>
+                                  <Pause className="w-5 h-5 mr-2" /> Stop Sequence
+                                </>
+                              ) : (
+                                <>
+                                  <FastForward className="w-5 h-5 mr-2" /> Play Full Highlight Reel
+                                </>
+                              )}
+                            </Button>
+
+                            <p className="text-sm text-gray-500 text-center">
+                              {isSequencePlaying
+                                ? "Auto-skipping non-highlight segments..."
+                                : "Watch highlights sequentially"}
+                            </p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </Panel>
+
+                  {/* Resize Handle - Horizontal */}
+                  <PanelResizeHandle className="w-2 bg-gray-200 hover:bg-orange-300 transition-colors rounded-full cursor-col-resize" />
+
+                  {/* Right Panel: Scrollable Highlights List */}
+                  <Panel defaultSize={50} minSize={30}>
+                    <Card className="lg:max-h-[calc(100vh-12rem)] lg:overflow-hidden flex flex-col h-full">
+                      <CardHeader className="flex-shrink-0">
+                        <CardTitle className="flex items-center">
+                          <Zap className="w-5 h-5 mr-2 text-orange-500" />
+                          Highlight Segments ({highlightData.rawEvents.length})
+                        </CardTitle>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Click any highlight to play, or expand to edit details and timestamps
                         </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
+                      </CardHeader>
+                      <CardContent className="flex-1 overflow-y-auto">
+                        <div className="space-y-3 pr-2">
+                          {/* Success Alert */}
+                          {showSuccessAlert && (
+                            <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between animate-in fade-in duration-300">
+                              <p className="text-sm text-green-800 font-medium">
+                                Highlight successfully added!
+                              </p>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowSuccessAlert(false)}
+                                className="h-6 w-6 p-0"
+                              >
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          )}
 
-                {/* Right Column: Scrollable Highlights List */}
-                <div>
-                  <Card className="lg:max-h-[calc(100vh-12rem)] lg:overflow-hidden flex flex-col">
-                    <CardHeader className="flex-shrink-0">
-                      <CardTitle className="flex items-center">
-                        <Zap className="w-5 h-5 mr-2 text-orange-500" />
-                        Highlight Segments ({highlightData.rawEvents.length})
-                      </CardTitle>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Click any highlight to play, or expand to edit details and timestamps
-                      </p>
-                    </CardHeader>
-                    <CardContent className="flex-1 overflow-y-auto">
-                      <div className="space-y-3 pr-2">
-                        {highlightData.rawEvents.map((event, index) => {
-                          const currentEvent = getEvent(index);
-                          const currentRange = getRange(index);
-                          const isActive = currentHighlightIndex === index;
+                          {highlightData.rawEvents.map((event, index) => {
+                            const currentEvent = getEvent(index);
+                            const currentRange = getRange(index);
+                            const isActive = currentHighlightIndex === index;
 
-                          return (
+                            return (
+                              <ClipDropdownPanel
+                                key={event.id || index}
+                                index={index}
+                                event={currentEvent}
+                                range={currentRange}
+                                isActive={isActive}
+                                isPlaying={isPlaying}
+                                onPlayClick={handleHighlightClick}
+                                onPreviewClick={handlePreviewClick}
+                                onEventUpdate={handleEventUpdate}
+                                onDelete={handleDeleteHighlight}
+                              />
+                            );
+                          })}
+
+                          {/* New Highlight Panel */}
+                          {isAddingNewHighlight && newHighlight && (
                             <ClipDropdownPanel
-                              key={event.id || index}
-                              index={index}
-                              event={currentEvent}
-                              range={currentRange}
-                              isActive={isActive}
-                              isPlaying={isPlaying}
-                              onPlayClick={handleHighlightClick}
+                              key="new-highlight"
+                              index={-1}
+                              event={{
+                                id: "new",
+                                timestamp_start: newHighlight.range[0].toString(),
+                                timestamp_end: newHighlight.range[1].toString(),
+                                outcome: newHighlight.event.outcome || "Make",
+                                subject: newHighlight.event.subject || "",
+                                shot_type: newHighlight.event.shot_type || "Layup",
+                                shot_location: newHighlight.event.shot_location || "Paint",
+                              }}
+                              range={newHighlight.range}
+                              isActive={false}
+                              isPlaying={false}
+                              onPlayClick={() => {}}
                               onPreviewClick={handlePreviewClick}
-                              onEventUpdate={handleEventUpdate}
+                              onEventUpdate={handleNewHighlightUpdate}
+                              isNewHighlight={true}
+                              onSave={handleSaveNewHighlight}
+                              onCancel={handleCancelNewHighlight}
                             />
-                          );
-                        })}
+                          )}
+
+                          {/* Add Highlight Button */}
+                          {!isAddingNewHighlight && (
+                            <Button
+                              onClick={handleAddNewHighlight}
+                              variant="outline"
+                              className="w-full border-dashed border-2 border-gray-300 hover:border-orange-400 hover:bg-orange-50 py-6"
+                            >
+                              <Plus className="w-5 h-5 mr-2" />
+                              Add New Highlight
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Panel>
+                </PanelGroup>
+              </div>
+
+              {/* Mobile Layout: Vertical Panels */}
+              <div className="lg:hidden">
+                <PanelGroup direction="vertical" className="min-h-screen">
+                  {/* Top Panel: Video Player */}
+                  <Panel defaultSize={50} minSize={30}>
+                    <Card className="overflow-hidden mb-2">
+                      <div className="bg-black relative aspect-video">
+                        <video
+                          ref={videoRef}
+                          className="w-full h-full"
+                          src={highlightData.sourceVideoUrl}
+                          controls
+                          muted={true}
+                          playsInline
+                          onPlay={() => setIsPlaying(true)}
+                          onPause={() => setIsPlaying(false)}
+                        />
+
+                        {/* Overlay badge showing current highlight */}
+                        {currentHighlightIndex !== null && isSequencePlaying && (
+                          <div className="absolute top-4 right-4 animate-in fade-in duration-300">
+                            <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white px-3 py-1 shadow-lg backdrop-blur-sm">
+                              Playing Highlight {currentHighlightIndex + 1} of {highlightData.ranges.length}
+                            </Badge>
+                          </div>
+                        )}
                       </div>
-                    </CardContent>
-                  </Card>
-                </div>
+
+                      <CardContent className="py-4">
+                        <div className="flex flex-col gap-4">
+                          <Button
+                            onClick={handlePlayAll}
+                            size="lg"
+                            className={`w-full ${
+                              isSequencePlaying ? "bg-red-500 hover:bg-red-600" : "bg-orange-500 hover:bg-orange-600"
+                            } transition-all`}
+                          >
+                            {isSequencePlaying && isPlaying ? (
+                              <>
+                                <Pause className="w-5 h-5 mr-2" /> Stop Sequence
+                              </>
+                            ) : (
+                              <>
+                                <FastForward className="w-5 h-5 mr-2" /> Play Full Highlight Reel
+                              </>
+                            )}
+                          </Button>
+
+                          <p className="text-sm text-gray-500 text-center">
+                            {isSequencePlaying
+                              ? "Auto-skipping non-highlight segments..."
+                              : "Watch highlights sequentially"}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Panel>
+
+                  {/* Resize Handle - Vertical */}
+                  <PanelResizeHandle className="h-2 bg-gray-200 hover:bg-orange-300 transition-colors rounded-full cursor-row-resize my-2" />
+
+                  {/* Bottom Panel: Scrollable Highlights List */}
+                  <Panel defaultSize={50} minSize={30}>
+                    <Card className="flex flex-col h-full">
+                      <CardHeader className="flex-shrink-0">
+                        <CardTitle className="flex items-center">
+                          <Zap className="w-5 h-5 mr-2 text-orange-500" />
+                          Highlight Segments ({highlightData.rawEvents.length})
+                        </CardTitle>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Click any highlight to play, or expand to edit details and timestamps
+                        </p>
+                      </CardHeader>
+                      <CardContent className="flex-1 overflow-y-auto">
+                        <div className="space-y-3 pr-2">
+                          {/* Success Alert */}
+                          {showSuccessAlert && (
+                            <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between animate-in fade-in duration-300">
+                              <p className="text-sm text-green-800 font-medium">
+                                Highlight successfully added!
+                              </p>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowSuccessAlert(false)}
+                                className="h-6 w-6 p-0"
+                              >
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          )}
+
+                          {highlightData.rawEvents.map((event, index) => {
+                            const currentEvent = getEvent(index);
+                            const currentRange = getRange(index);
+                            const isActive = currentHighlightIndex === index;
+
+                            return (
+                              <ClipDropdownPanel
+                                key={event.id || index}
+                                index={index}
+                                event={currentEvent}
+                                range={currentRange}
+                                isActive={isActive}
+                                isPlaying={isPlaying}
+                                onPlayClick={handleHighlightClick}
+                                onPreviewClick={handlePreviewClick}
+                                onEventUpdate={handleEventUpdate}
+                                onDelete={handleDeleteHighlight}
+                              />
+                            );
+                          })}
+
+                          {/* New Highlight Panel */}
+                          {isAddingNewHighlight && newHighlight && (
+                            <ClipDropdownPanel
+                              key="new-highlight-mobile"
+                              index={-1}
+                              event={{
+                                id: "new",
+                                timestamp_start: newHighlight.range[0].toString(),
+                                timestamp_end: newHighlight.range[1].toString(),
+                                outcome: newHighlight.event.outcome || "Make",
+                                subject: newHighlight.event.subject || "",
+                                shot_type: newHighlight.event.shot_type || "Layup",
+                                shot_location: newHighlight.event.shot_location || "Paint",
+                              }}
+                              range={newHighlight.range}
+                              isActive={false}
+                              isPlaying={false}
+                              onPlayClick={() => {}}
+                              onPreviewClick={handlePreviewClick}
+                              onEventUpdate={handleNewHighlightUpdate}
+                              isNewHighlight={true}
+                              onSave={handleSaveNewHighlight}
+                              onCancel={handleCancelNewHighlight}
+                            />
+                          )}
+
+                          {/* Add Highlight Button */}
+                          {!isAddingNewHighlight && (
+                            <Button
+                              onClick={handleAddNewHighlight}
+                              variant="outline"
+                              className="w-full border-dashed border-2 border-gray-300 hover:border-orange-400 hover:bg-orange-50 py-6"
+                            >
+                              <Plus className="w-5 h-5 mr-2" />
+                              Add New Highlight
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Panel>
+                </PanelGroup>
               </div>
             </div>
           )}

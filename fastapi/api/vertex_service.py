@@ -13,7 +13,7 @@ from typing import Optional
 from google.cloud import storage, firestore
 from google.cloud import pubsub_v1
 
-from api.utils import (
+from utils import (
     _make_keys,
     _job_doc,
     _publish_job,
@@ -22,6 +22,7 @@ from api.utils import (
     _parse_gs_uri,
     ts_to_seconds,
 )
+from sheetsData import write_to_sheet
 
 # Environment
 PROJECT_ID = os.environ["GCP_PROJECT_ID"]
@@ -152,9 +153,11 @@ def vertex_result(job_id: str):
     video_uri = data.get("videoGcsUri")
     if not video_uri:
         raise HTTPException(status_code=404, detail="videoGcsUri missing")
-
     video_url = _sign_get_url(video_uri, minutes=60)
-
+    try:
+        write_to_sheet(job_id)
+    except Exception as e:
+        print("Sheet write error:", e)
     return {
         "ok": True,
         "jobId": job_id,
@@ -271,6 +274,8 @@ async def init_vertex_upload(
         "videoGcsUri": gcs_uri,
         "createdAt": firestore.SERVER_TIMESTAMP,
         "videoDurationSec": videoDurationSec or 0,
+        "show": True,
+        "deleted": False,
     })
     
     return {

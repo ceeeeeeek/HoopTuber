@@ -138,7 +138,7 @@ export class UploadPollingService {
         
         let statusMessage = 'Processing video...';
         if (currentProgress < 65) {
-          statusMessage = 'Analyzing video with Vertex AI...';
+          statusMessage = 'Analyzing video with HoopTuber AI...';
         } else if (currentProgress < 80) {
           statusMessage = 'Detecting basketball shots...';
         } else {
