@@ -24,7 +24,7 @@ import io
 import logging
 
 
-from api.utils import (_make_keys,
+from utils import (_make_keys,
                    _job_doc,_publish_job,
                    _upload_filelike_to_gcs,
                    _sign_get_url,
@@ -32,11 +32,11 @@ from api.utils import (_make_keys,
                    ts_to_seconds)
 
 # IMPORTING SERVICE ROUTERS
-from api.vertex_service import router as vertex_router
-from api.video_service import router as video_router
-from api.folders_router import router as folders_router
-from api.runs_service import router as runs_router
-
+from vertex_service import router as vertex_router
+from video_service import router as video_router
+from folders_router import router as folders_router
+from runs_service import router as runs_router
+from job_service import router as job_router
 
 from typing import Dict, Any, List
 from google.cloud.firestore import Query
@@ -70,9 +70,9 @@ publisher        = pubsub_v1.PublisherClient()
 topic_path       = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
 
 app = FastAPI(
-    #docs_url=None,
-    #redoc_url=None,
-    #openapi_url=None,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 # CORS setup
 origins = [
@@ -96,26 +96,7 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
-"""
-@app.options("/{path:path}")
-async def options_handler(path: str, request: Request):
-    # Handle CORS preflight requests
-    origin = request.headers.get("origin")
-    
-    if origin in origins:
-        return Response(
-            status_code=200,
-            headers={
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Credentials": "true",
-                "Access-Control-Max-Age": "3600",
-            }
-        )
-    
-    return Response(status_code=204)
-"""
+
 def user_or_ip_key(request: Request):
     user_id = request.query_params.get("userID")
     if user_id:
@@ -130,6 +111,8 @@ app.include_router(vertex_router)
 app.include_router(video_router)
 app.include_router(folders_router)
 app.include_router(runs_router)
+app.include_router(job_router)
+
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request, exc):
@@ -231,8 +214,7 @@ def publish_job(request: dict = Body(...)):
         raise HTTPException(status_code=502, detail=f"Publish failed: {e}")
     
 
-
-
+# for
 @app.post("/upload")
 @limiter.limit("1/minute")
 async def upload_video(
@@ -300,47 +282,6 @@ async def upload_video(
         import traceback
         print(f"Error: Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
-@app.get("/jobs/{job_id}")
-def job_status(job_id: str):
-    """
-    Fetch the Firestore record for this job.
-    Frontend can poll this until status becomes 'done' and outputGcsUri is present.
-    """
-    snap = _job_doc(job_id).get()
-    if not snap.exists:
-        raise HTTPException(status_code=404, detail="job not found")
-    return snap.to_dict()
-
-@app.get("/jobs/{job_id}/download")
-def job_download(job_id: str):
-    """
-    Return a signed URL for the output when ready.
-    Worker should set outputGcsUri on success:
-      { status: 'done', outputGcsUri: 'gs://<OUT_BUCKET>/<key>' }
-    """
-    snap = _job_doc(job_id).get()
-    if not snap.exists:
-        raise HTTPException(status_code=404, detail="job not found")
-    data = snap.to_dict()
-    if data.get("status") != "done" or not data.get("outputGcsUri"):
-        raise HTTPException(status_code=409, detail="job not finished")
-    try:
-        url = _sign_get_url(data["outputGcsUri"], minutes=30)
-        response =  {"ok": True, "url": url, "expiresInMinutes": 30}
-        if data.get("analysisGcsUri"):
-            bucket_name, blob_name = _parse_gs_uri(data["analysisGcsUri"])
-            blob = storage_client.bucket(bucket_name).blob(blob_name)
-            json_bytes = blob.download_as_bytes()
-            try:
-                shot_events = json.loads(json_bytes.decode("utf-8"))
-                response["shot_events"] = shot_events
-            except Exception as e:
-                print(f"Warning: failed to parse analysis JSON: {e}")
-        raw_url = _sign_get_url(data["videoGcsUri"], minutes=30)
-        response["sourceVideoUrl"] = raw_url
-        return response
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"signing failed: {e}")
 
 @app.get("/highlights")
 def list_highlights(
@@ -528,140 +469,6 @@ def stream_video(job_id: str):
     except Exception as e:
         print(f"Error signing URL for stream: {e}")
         raise HTTPException(status_code=500, detail="Could not generate stream URL")
-
-@app.get("/jobs/{job_id}/highlight-data")
-def highlight_data(job_id: str):
-    snap = _job_doc(job_id).get()
-    if not snap.exists:
-        raise HTTPException(status_code=404, detail="job not found")
-
-    data = snap.to_dict()
-
-    if data.get("status") != "done":
-        raise HTTPException(status_code=409, detail="analysis not ready")
-    if data.get("shotEvents"):
-        raw_events = data["shotEvents"]
-    elif data.get("analysisGcsUri"):
-        bucket_name, blob_name = _parse_gs_uri(data["analysisGcsUri"])
-        blob = storage_client.bucket(bucket_name).blob(blob_name)
-        raw_json = blob.download_as_bytes().decode("utf-8")
-        raw_events = json.loads(raw_json)
-    else:
-        raise HTTPException(status_code=404, detail="No analysis found")
-
-    # 2. Convert timestamps to seconds
-    if isinstance(raw_events, dict) and raw_events.get("ok") == False:
-        error_msg = raw_events.get("error", "Unknown error")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {error_msg}")
-    ranges = []
-    for event in raw_events:
-        start = ts_to_seconds(event.get("timestamp_start"))
-        end = ts_to_seconds(event.get("timestamp_end"))
-        ranges.append([start, end])
-
-    # 3. Generate a signed URL for the original video
-    video_url = _sign_get_url(data["videoGcsUri"], minutes=60)
-
-    return {
-        "ok": True,
-        "jobId": job_id,
-        "sourceVideoUrl": video_url,
-        "rawEvents": raw_events,
-        "ranges": ranges,
-    }
-
-# adding shot events to a job
-@app.post("/jobs/{job_id}/shot-events/add")
-async def add_shot_event(job_id: str, payload: dict):
-    job_ref = firestore_client.collection("jobs").document(job_id)
-    doc = job_ref.get()
-    if not doc.exists:
-        raise HTTPException(status_code=404, detail="Job not found")
-    # Basic validation
-    if "timestamp_start" not in payload or "timestamp_end" not in payload:
-        raise HTTPException(status_code=400, detail="Missing timestamps")
-    shot_event = {
-        # Use frontend ID if provided, otherwise generate one
-        "id": payload.get("id", str(uuid.uuid4())),
-        # Normalize outcome (Make -> make)
-        "outcome": payload.get("outcome", "other").lower(),
-        # Optional nullable fields
-        "shot_location": payload.get("shot_location"),
-        "shot_type": payload.get("shot_type"),
-        "subject": payload.get("subject"),
-        "timestamp_end": payload["timestamp_end"],
-        "timestamp_start": payload["timestamp_start"],
-        "deleted": False,
-        "show": True,
-    }
-    try: 
-        job_ref.update({
-            "shotEvents": firestore.ArrayUnion([shot_event])
-        })
-    except Exception as e:
-        print(f"Error upodating shot event: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    return {
-        "ok": True,
-        "shotEvent": shot_event
-    }
-
-# deleting shot events from a job
-@app.delete("/jobs/{job_id}/shot-events/delete")
-async def delete_shot_event(job_id: str, payload: dict = Body(...)):
-    event_id = payload.get("event_id")
-    if not event_id:
-        raise HTTPException(status_code=400, detail="Missing event_id")
-
-    job_ref = firestore_client.collection("jobs").document(job_id)
-    job_doc = job_ref.get()
-    
-    if not job_doc.exists:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    job_data = job_doc.to_dict()
-    shot_events = job_data.get("shotEvents", [])
-    # Create a new list excluding the one we want to delete
-    updated_events = [event for event in shot_events if event.get("id") != event_id]
-    # Update Firestore
-    job_ref.update({
-        "shotEvents": updated_events
-    })
-    return {"ok": True, "event_id": event_id}
-
-# updating shot events from a job
-@app.post("/jobs/{job_id}/shot-events/update")
-async def update_shot_event(job_id: str, payload: dict = Body(...)):
-    event_id = payload.get("event_id")
-    if not event_id:
-        raise HTTPException(status_code=400, detail="Missing event_id")
-    job_ref = firestore_client.collection("jobs").document(job_id)
-    job_doc = job_ref.get()
-    if not job_doc.exists:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-@app.post("/jobs/{job_id}/shot-events/mute")
-async def mute_shot_event(job_id: str, event_id: str):
-    job_ref = firestore_client.collection("jobs").document(job_id)
-    job_doc = job_ref.get()
-    if not job_doc.exists:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    job_data = job_doc.to_dict()
-    shot_events = job_data.get("shotEvents", [])
-    updated_events = []
-
-    for event in shot_events:
-        if event["id"] == event_id:
-            event["deleted"] = True
-        updated_events.append(event)
-
-    job_ref.update({
-        "shotEvents": updated_events
-    })
-
-    return {"ok": True, "event_id": event_id}
-
 
 @app.get("/healthz")
 def healthz():

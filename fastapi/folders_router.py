@@ -1,4 +1,4 @@
-# fastapi/api/folders_router.py
+# fastapi/folders_router.py
 # Handles all /folders-related endpoints
 
 from fastapi import APIRouter, Body, HTTPException

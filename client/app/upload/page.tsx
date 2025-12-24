@@ -79,6 +79,7 @@ export default function VideoDisplayPage() {
   // Edit states
   const [editedEvents, setEditedEvents] = useState<Map<number, Partial<GeminiShotEvent>>>(new Map());
   const [editedRanges, setEditedRanges] = useState<Map<number, [number, number]>>(new Map());
+  const [deletingIndex, setDeletingIndex] = useState<number | null>(null);
 
   // New highlight states
   const [isAddingNewHighlight, setIsAddingNewHighlight] = useState(false);
@@ -540,6 +541,9 @@ export default function VideoDisplayPage() {
     const eventToDelete = highlightData.rawEvents[index];
     if (!eventToDelete) return;
 
+    // Set deleting state to trigger fade-out animation
+    setDeletingIndex(index);
+
     try {
       const response = await fetch(`${API_BASE}/jobs/${jobId}/shot-events/delete`, {
         method: "DELETE",
@@ -553,47 +557,55 @@ export default function VideoDisplayPage() {
       });
 
       if (!response.ok) {
+        setDeletingIndex(null); // Reset on error
         throw new Error(`Failed to delete highlight: ${response.statusText}`);
       }
 
       const data = await response.json();
 
-      // Update highlight data with new shot events
-      if (data.shotEvents) {
-        setHighlightData((prev) => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            rawEvents: data.shotEvents,
-            ranges: data.shotEvents.map((event: GeminiShotEvent) => [
-              parseFloat(event.timestamp_start),
-              parseFloat(event.timestamp_end),
-            ]),
-          };
-        });
+      // Wait for animation to complete before updating data
+      setTimeout(() => {
+        // Update highlight data with new shot events
+        if (data.shotEvents) {
+          setHighlightData((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              rawEvents: data.shotEvents,
+              ranges: data.shotEvents.map((event: GeminiShotEvent) => [
+                parseFloat(event.timestamp_start),
+                parseFloat(event.timestamp_end),
+              ]),
+            };
+          });
 
-        // Clear any edits for deleted highlight
-        setEditedEvents((prev) => {
-          const newMap = new Map(prev);
-          newMap.delete(index);
-          return newMap;
-        });
+          // Clear any edits for deleted highlight
+          setEditedEvents((prev) => {
+            const newMap = new Map(prev);
+            newMap.delete(index);
+            return newMap;
+          });
 
-        setEditedRanges((prev) => {
-          const newMap = new Map(prev);
-          newMap.delete(index);
-          return newMap;
-        });
+          setEditedRanges((prev) => {
+            const newMap = new Map(prev);
+            newMap.delete(index);
+            return newMap;
+          });
 
-        // Reset current highlight if it was playing
-        if (currentHighlightIndex === index) {
-          setCurrentHighlightIndex(null);
-          setIsSequencePlaying(false);
+          // Reset current highlight if it was playing
+          if (currentHighlightIndex === index) {
+            setCurrentHighlightIndex(null);
+            setIsSequencePlaying(false);
+          }
         }
-      }
+
+        // Reset deleting state
+        setDeletingIndex(null);
+      }, 300); // Match animation duration
     } catch (err) {
       console.error("Error deleting highlight:", err);
       alert("Failed to delete highlight: " + (err as Error).message);
+      setDeletingIndex(null);
     }
   };
 
@@ -909,6 +921,7 @@ export default function VideoDisplayPage() {
                             const currentEvent = getEvent(index);
                             const currentRange = getRange(index);
                             const isActive = currentHighlightIndex === index;
+                            const isDeleting = deletingIndex === index;
 
                             return (
                               <ClipDropdownPanel
@@ -918,6 +931,7 @@ export default function VideoDisplayPage() {
                                 range={currentRange}
                                 isActive={isActive}
                                 isPlaying={isPlaying}
+                                isDeleting={isDeleting}
                                 onPlayClick={handleHighlightClick}
                                 onPreviewClick={handlePreviewClick}
                                 onEventUpdate={handleEventUpdate}
@@ -1066,6 +1080,7 @@ export default function VideoDisplayPage() {
                             const currentEvent = getEvent(index);
                             const currentRange = getRange(index);
                             const isActive = currentHighlightIndex === index;
+                            const isDeleting = deletingIndex === index;
 
                             return (
                               <ClipDropdownPanel
@@ -1075,6 +1090,7 @@ export default function VideoDisplayPage() {
                                 range={currentRange}
                                 isActive={isActive}
                                 isPlaying={isPlaying}
+                                isDeleting={isDeleting}
                                 onPlayClick={handleHighlightClick}
                                 onPreviewClick={handlePreviewClick}
                                 onEventUpdate={handleEventUpdate}

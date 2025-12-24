@@ -40,7 +40,7 @@ fastapi/.venv*/
 worker/.venv*/
 
 worker/.venv/
-fastapi/api/.env
+fastapi/.env
 
 # env files
 **/.env
@@ -54,8 +54,8 @@ fastapi/api/.env
 **/.venv
 worker/.venv/
 fastapi/.venv_fastapi
-fastapi/api/.venv_fastapi
-fastapi/api/.env
+fastapi/.venv_fastapi
+fastapi/.env
 worker/.venv/
 **.venv/
 **/.venv*
@@ -81,13 +81,13 @@ next-env.d.ts
 
 # py cache folder
 fastapi/__pycache__/
-fastapi/api/__pycache__/
+fastapi/__pycache__/
 worker/__pycache__/
 *__pycache__/
 # data folders
-fastapi/api/videoDataset
-fastapi/api/clips
-fastapi/api/combined
+fastapi/videoDataset
+fastapi/clips
+fastapi/combined
 worker/__pycache__/
 
 # json service accounts & secrets 
@@ -135,5 +135,5 @@ __pycache__
 worker/vertex_test.py
 hi.txt
 .claude/
-fastapi/api/christianMerge.py
+fastapi/christianMerge.py
 fastapi/hooptuber-sheets.json

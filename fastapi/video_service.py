@@ -1,4 +1,4 @@
-# fastapi/api/video_router.py
+# fastapi/video_router.py
 # Handles all /video-related endpoints
 
 """

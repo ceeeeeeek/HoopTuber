@@ -30,6 +30,7 @@ interface ClipDropdownPanelProps {
   range: [number, number]; // [start_seconds, end_seconds]
   isActive?: boolean;
   isPlaying?: boolean;
+  isDeleting?: boolean;
   onPlayClick: (index: number) => void;
   onPreviewClick: (index: number) => void;
   onEventUpdate: (index: number, updatedEvent: Partial<GeminiShotEvent>, updatedRange: [number, number]) => void;
@@ -70,6 +71,7 @@ export default function ClipDropdownPanel({
   range,
   isActive = false,
   isPlaying = false,
+  isDeleting = false,
   onPlayClick,
   onPreviewClick,
   onEventUpdate,
@@ -141,8 +143,13 @@ export default function ClipDropdownPanel({
   };
 
   return (
-    <div
-      className={`rounded-lg border-2 transition-all bg-white
+    <motion.div
+      layout
+      initial={{ opacity: 1, height: "auto" }}
+      animate={isDeleting ? { opacity: 0, height: 0, marginBottom: 0, overflow: "hidden" } : { opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ duration: 0.3, ease: "easeInOut" }}
+      className={`rounded-lg border-2 transition-all bg-white overflow-hidden
         ${isNewHighlight
           ? "border-green-500 bg-green-50 ring-1 ring-green-200"
           : isActive
@@ -443,6 +450,6 @@ export default function ClipDropdownPanel({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }

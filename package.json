@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "frontend": "cd client && npm run dev",
-    "backend": "cd fastapi/api && ../.venv_fastapi/bin/uvicorn main:app --reload",
+    "backend": "cd fastapi && ./.venv_fastapi/bin/uvicorn main:app --reload",
     "worker": "cd worker && ./.venv/bin/python main.py",
     "build": "next build",
     "dev": "concurrently -n frontend,backend,worker -c \"cyan,magenta,green\" \"npm run frontend\" \"npm run backend\" \"npm run worker\"",

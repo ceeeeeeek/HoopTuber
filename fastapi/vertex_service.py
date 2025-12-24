@@ -1,4 +1,4 @@
-# fastapi/api/vertex_service.py
+# fastapi/vertex_service.py
 # handles all vertex related endpoints
 
 from fastapi import Body, APIRouter, UploadFile, File, Request, HTTPException
@@ -13,7 +13,7 @@ from typing import Optional
 from google.cloud import storage, firestore
 from google.cloud import pubsub_v1
 
-from api.utils import (
+from utils import (
     _make_keys,
     _job_doc,
     _publish_job,
@@ -22,7 +22,7 @@ from api.utils import (
     _parse_gs_uri,
     ts_to_seconds,
 )
-from api.sheetsData import write_to_sheet
+from sheetsData import write_to_sheet
 
 # Environment
 PROJECT_ID = os.environ["GCP_PROJECT_ID"]

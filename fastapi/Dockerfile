@@ -15,5 +15,5 @@ COPY . .
 
 EXPOSE 8000
 
-# run uvicorn pointing to fastapi/api/main.py
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# run uvicorn pointing to fastapi/main.py
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
