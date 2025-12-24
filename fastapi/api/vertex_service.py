@@ -22,7 +22,7 @@ from api.utils import (
     _parse_gs_uri,
     ts_to_seconds,
 )
-from sheetsData import write_to_sheet
+from api.sheetsData import write_to_sheet
 
 # Environment
 PROJECT_ID = os.environ["GCP_PROJECT_ID"]
