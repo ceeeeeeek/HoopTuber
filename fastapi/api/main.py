@@ -24,7 +24,7 @@ import io
 import logging
 
 
-from utils import (_make_keys,
+from api.utils import (_make_keys,
                    _job_doc,_publish_job,
                    _upload_filelike_to_gcs,
                    _sign_get_url,
@@ -32,10 +32,10 @@ from utils import (_make_keys,
                    ts_to_seconds)
 
 # IMPORTING SERVICE ROUTERS
-from vertex_service import router as vertex_router
-from video_service import router as video_router
-from folders_router import router as folders_router
-from runs_service import router as runs_router
+from api.vertex_service import router as vertex_router
+from api.video_service import router as video_router
+from api.folders_router import router as folders_router
+from api.runs_service import router as runs_router
 
 
 from typing import Dict, Any, List

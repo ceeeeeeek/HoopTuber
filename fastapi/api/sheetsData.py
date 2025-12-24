@@ -4,7 +4,7 @@ import os
 from google.cloud import storage, firestore
 from google.cloud import pubsub_v1
 from zoneinfo import ZoneInfo
-from utils import _job_doc
+from fastapi.api.utils import _job_doc
 from dotenv import load_dotenv
 load_dotenv()
 COLLETION = os.getenv("FIRESTORE_COLLETION")
