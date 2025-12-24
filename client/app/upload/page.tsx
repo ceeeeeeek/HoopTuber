@@ -33,7 +33,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 // https://hooptuber-fastapi-devtest.onrender.com
 // https://hooptuber-fastapi-web-service-docker.onrender.com
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-devtest.onrender.com";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 
 interface GeminiShotEvent {
   id: string;
@@ -52,6 +52,22 @@ interface HighlightData {
   rawEvents: GeminiShotEvent[];
   ranges: [number, number][]; // [start_seconds, end_seconds]
 }
+
+// Helper to parse timestamp strings that may be in MM:SS format or plain seconds
+const parseTimestamp = (timestamp: string): number => {
+  if (!timestamp) return 0;
+
+  // If it contains a colon, it's in MM:SS format
+  if (timestamp.includes(':')) {
+    const parts = timestamp.split(':').map(Number);
+    if (parts.length === 2) {
+      return parts[0] * 60 + parts[1]; // minutes * 60 + seconds
+    }
+  }
+
+  // Otherwise, parse as plain seconds
+  return parseFloat(timestamp) || 0;
+};
 
 export default function VideoDisplayPage() {
   const router = useRouter();
@@ -86,10 +102,13 @@ export default function VideoDisplayPage() {
   const [newHighlight, setNewHighlight] = useState<{event: Partial<GeminiShotEvent>, range: [number, number]} | null>(null);
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
 
+  // Responsive layout state
+  const [layoutDirection, setLayoutDirection] = useState<"horizontal" | "vertical">("horizontal");
+
   // Helper function to fetch highlight data for a completed job
   const fetchHighlightDataForJob = useCallback(async (jobId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/vertex/jobs/${jobId}/result`);
+      const response = await fetch(`${API_BASE}/jobs/${jobId}/highlight-data`);
       
       if (!response.ok) {
       if (response.status === 500) {
@@ -159,6 +178,21 @@ export default function VideoDisplayPage() {
     };
     checkSession();
   }, [router]);
+
+  // Track screen size for responsive layout direction
+  useEffect(() => {
+    const updateLayoutDirection = () => {
+      // lg breakpoint is 1024px in Tailwind
+      setLayoutDirection(window.innerWidth >= 1024 ? "horizontal" : "vertical");
+    };
+
+    // Set initial direction
+    updateLayoutDirection();
+
+    // Listen for window resize
+    window.addEventListener("resize", updateLayoutDirection);
+    return () => window.removeEventListener("resize", updateLayoutDirection);
+  }, []);
 
   // Resume active upload on page load/reload
   useEffect(() => {
@@ -520,7 +554,11 @@ export default function VideoDisplayPage() {
 
       // Refresh highlight data
       if (jobId) {
-        await fetchHighlightDataForJob(jobId);
+        const refreshResponse = await fetch(`${API_BASE}/jobs/${jobId}/highlight-data`);
+        if (refreshResponse.ok) {
+          const data: HighlightData = await refreshResponse.json();
+          setHighlightData(data);
+        }
       }
     } catch (err) {
       console.error("Error saving new highlight:", err);
@@ -573,8 +611,8 @@ export default function VideoDisplayPage() {
               ...prev,
               rawEvents: data.shotEvents,
               ranges: data.shotEvents.map((event: GeminiShotEvent) => [
-                parseFloat(event.timestamp_start),
-                parseFloat(event.timestamp_end),
+                parseTimestamp(event.timestamp_start),
+                parseTimestamp(event.timestamp_end),
               ]),
             };
           });
@@ -696,7 +734,7 @@ export default function VideoDisplayPage() {
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </Link>
           <div className="flex items-center space-x-4">
-            <Badge variant="secondary">AI Analysis</Badge>
+            <Badge variant="secondary">Video Analysis</Badge>
             <ProfileDropdown />
           </div>
         </div>
@@ -705,8 +743,8 @@ export default function VideoDisplayPage() {
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">AI Video Analysis</h1>
-            <p className="text-gray-600">Upload your basketball footage for advanced AI-powered highlight detection</p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">HoopTuber Video Analysis</h1>
+            <p className="text-gray-600">Upload your basketball footage for advanced highlight detection</p>
           </div>
 
           {/* Upload Form */}
@@ -823,173 +861,15 @@ export default function VideoDisplayPage() {
                 </CardContent>
               </Card>
 
-              {/* Responsive Layout: Horizontal on desktop, Vertical on mobile */}
-              <div className="hidden lg:block">
-                <PanelGroup direction="horizontal" className="gap-6">
-                  {/* Left Panel: Video Player */}
-                  <Panel defaultSize={50} minSize={30}>
-                    <div className="lg:sticky lg:top-6 lg:self-start">
-                      <Card className="overflow-hidden">
-                        <div className="bg-black relative aspect-video">
-                          <video
-                            ref={videoRef}
-                            className="w-full h-full"
-                            src={highlightData.sourceVideoUrl}
-                            controls
-                            muted={true}
-                            playsInline
-                            onPlay={() => setIsPlaying(true)}
-                            onPause={() => setIsPlaying(false)}
-                          />
-
-                          {/* Overlay badge showing current highlight */}
-                          {currentHighlightIndex !== null && isSequencePlaying && (
-                            <div className="absolute top-4 right-4 animate-in fade-in duration-300">
-                              <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white px-3 py-1 shadow-lg backdrop-blur-sm">
-                                Playing Highlight {currentHighlightIndex + 1} of {highlightData.ranges.length}
-                              </Badge>
-                            </div>
-                          )}
-                        </div>
-
-                        <CardContent className="py-4">
-                          <div className="flex flex-col gap-4">
-                            <Button
-                              onClick={handlePlayAll}
-                              size="lg"
-                              className={`w-full ${
-                                isSequencePlaying ? "bg-red-500 hover:bg-red-600" : "bg-orange-500 hover:bg-orange-600"
-                              } transition-all`}
-                            >
-                              {isSequencePlaying && isPlaying ? (
-                                <>
-                                  <Pause className="w-5 h-5 mr-2" /> Stop Sequence
-                                </>
-                              ) : (
-                                <>
-                                  <FastForward className="w-5 h-5 mr-2" /> Play Full Highlight Reel
-                                </>
-                              )}
-                            </Button>
-
-                            <p className="text-sm text-gray-500 text-center">
-                              {isSequencePlaying
-                                ? "Auto-skipping non-highlight segments..."
-                                : "Watch highlights sequentially"}
-                            </p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-                  </Panel>
-
-                  {/* Resize Handle - Horizontal */}
-                  <PanelResizeHandle className="w-2 bg-gray-200 hover:bg-orange-300 transition-colors rounded-full cursor-col-resize" />
-
-                  {/* Right Panel: Scrollable Highlights List */}
-                  <Panel defaultSize={50} minSize={30}>
-                    <Card className="lg:max-h-[calc(100vh-12rem)] lg:overflow-hidden flex flex-col h-full">
-                      <CardHeader className="flex-shrink-0">
-                        <CardTitle className="flex items-center">
-                          <Zap className="w-5 h-5 mr-2 text-orange-500" />
-                          Highlight Segments ({highlightData.rawEvents.length})
-                        </CardTitle>
-                        <p className="text-sm text-gray-500 mt-1">
-                          Click any highlight to play, or expand to edit details and timestamps
-                        </p>
-                      </CardHeader>
-                      <CardContent className="flex-1 overflow-y-auto">
-                        <div className="space-y-3 pr-2">
-                          {/* Success Alert */}
-                          {showSuccessAlert && (
-                            <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between animate-in fade-in duration-300">
-                              <p className="text-sm text-green-800 font-medium">
-                                Highlight successfully added!
-                              </p>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setShowSuccessAlert(false)}
-                                className="h-6 w-6 p-0"
-                              >
-                                <X className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          )}
-
-                          {highlightData.rawEvents.map((event, index) => {
-                            const currentEvent = getEvent(index);
-                            const currentRange = getRange(index);
-                            const isActive = currentHighlightIndex === index;
-                            const isDeleting = deletingIndex === index;
-
-                            return (
-                              <ClipDropdownPanel
-                                key={event.id || index}
-                                index={index}
-                                event={currentEvent}
-                                range={currentRange}
-                                isActive={isActive}
-                                isPlaying={isPlaying}
-                                isDeleting={isDeleting}
-                                onPlayClick={handleHighlightClick}
-                                onPreviewClick={handlePreviewClick}
-                                onEventUpdate={handleEventUpdate}
-                                onDelete={handleDeleteHighlight}
-                              />
-                            );
-                          })}
-
-                          {/* New Highlight Panel */}
-                          {isAddingNewHighlight && newHighlight && (
-                            <ClipDropdownPanel
-                              key="new-highlight"
-                              index={-1}
-                              event={{
-                                id: "new",
-                                timestamp_start: newHighlight.range[0].toString(),
-                                timestamp_end: newHighlight.range[1].toString(),
-                                outcome: newHighlight.event.outcome || "Make",
-                                subject: newHighlight.event.subject || "",
-                                shot_type: newHighlight.event.shot_type || "Layup",
-                                shot_location: newHighlight.event.shot_location || "Paint",
-                              }}
-                              range={newHighlight.range}
-                              isActive={false}
-                              isPlaying={false}
-                              onPlayClick={() => {}}
-                              onPreviewClick={handlePreviewClick}
-                              onEventUpdate={handleNewHighlightUpdate}
-                              isNewHighlight={true}
-                              onSave={handleSaveNewHighlight}
-                              onCancel={handleCancelNewHighlight}
-                            />
-                          )}
-
-                          {/* Add Highlight Button */}
-                          {!isAddingNewHighlight && (
-                            <Button
-                              onClick={handleAddNewHighlight}
-                              variant="outline"
-                              className="w-full border-dashed border-2 border-gray-300 hover:border-orange-400 hover:bg-orange-50 py-6"
-                            >
-                              <Plus className="w-5 h-5 mr-2" />
-                              Add New Highlight
-                            </Button>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Panel>
-                </PanelGroup>
-              </div>
-
-              {/* Mobile Layout: Vertical Panels */}
-              <div className="lg:hidden">
-                <PanelGroup direction="vertical" className="min-h-screen">
-                  {/* Top Panel: Video Player */}
-                  <Panel defaultSize={50} minSize={30}>
-                    <Card className="overflow-hidden mb-2">
+              {/* Unified Responsive Layout - Single PanelGroup with Dynamic Direction */}
+              <PanelGroup
+                direction={layoutDirection}
+                className={layoutDirection === "horizontal" ? "gap-6" : "min-h-screen"}
+              >
+                {/* Video Player Panel */}
+                <Panel defaultSize={50} minSize={30}>
+                  <div className={layoutDirection === "horizontal" ? "lg:sticky lg:top-6 lg:self-start" : ""}>
+                    <Card className={`overflow-hidden ${layoutDirection === "vertical" ? "mb-2" : ""}`}>
                       <div className="bg-black relative aspect-video">
                         <video
                           ref={videoRef}
@@ -1040,108 +920,118 @@ export default function VideoDisplayPage() {
                         </div>
                       </CardContent>
                     </Card>
-                  </Panel>
+                  </div>
+                </Panel>
 
-                  {/* Resize Handle - Vertical */}
-                  <PanelResizeHandle className="h-2 bg-gray-200 hover:bg-orange-300 transition-colors rounded-full cursor-row-resize my-2" />
+                {/* Resize Handle - Dynamic based on direction */}
+                <PanelResizeHandle
+                  className={
+                    layoutDirection === "horizontal"
+                      ? "w-2 bg-gray-200 hover:bg-orange-300 transition-colors rounded-full cursor-col-resize"
+                      : "h-2 bg-gray-200 hover:bg-orange-300 transition-colors rounded-full cursor-row-resize my-2"
+                  }
+                />
 
-                  {/* Bottom Panel: Scrollable Highlights List */}
-                  <Panel defaultSize={50} minSize={30}>
-                    <Card className="flex flex-col h-full">
-                      <CardHeader className="flex-shrink-0">
-                        <CardTitle className="flex items-center">
-                          <Zap className="w-5 h-5 mr-2 text-orange-500" />
-                          Highlight Segments ({highlightData.rawEvents.length})
-                        </CardTitle>
-                        <p className="text-sm text-gray-500 mt-1">
-                          Click any highlight to play, or expand to edit details and timestamps
-                        </p>
-                      </CardHeader>
-                      <CardContent className="flex-1 overflow-y-auto">
-                        <div className="space-y-3 pr-2">
-                          {/* Success Alert */}
-                          {showSuccessAlert && (
-                            <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between animate-in fade-in duration-300">
-                              <p className="text-sm text-green-800 font-medium">
-                                Highlight successfully added!
-                              </p>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setShowSuccessAlert(false)}
-                                className="h-6 w-6 p-0"
-                              >
-                                <X className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          )}
-
-                          {highlightData.rawEvents.map((event, index) => {
-                            const currentEvent = getEvent(index);
-                            const currentRange = getRange(index);
-                            const isActive = currentHighlightIndex === index;
-                            const isDeleting = deletingIndex === index;
-
-                            return (
-                              <ClipDropdownPanel
-                                key={event.id || index}
-                                index={index}
-                                event={currentEvent}
-                                range={currentRange}
-                                isActive={isActive}
-                                isPlaying={isPlaying}
-                                isDeleting={isDeleting}
-                                onPlayClick={handleHighlightClick}
-                                onPreviewClick={handlePreviewClick}
-                                onEventUpdate={handleEventUpdate}
-                                onDelete={handleDeleteHighlight}
-                              />
-                            );
-                          })}
-
-                          {/* New Highlight Panel */}
-                          {isAddingNewHighlight && newHighlight && (
-                            <ClipDropdownPanel
-                              key="new-highlight-mobile"
-                              index={-1}
-                              event={{
-                                id: "new",
-                                timestamp_start: newHighlight.range[0].toString(),
-                                timestamp_end: newHighlight.range[1].toString(),
-                                outcome: newHighlight.event.outcome || "Make",
-                                subject: newHighlight.event.subject || "",
-                                shot_type: newHighlight.event.shot_type || "Layup",
-                                shot_location: newHighlight.event.shot_location || "Paint",
-                              }}
-                              range={newHighlight.range}
-                              isActive={false}
-                              isPlaying={false}
-                              onPlayClick={() => {}}
-                              onPreviewClick={handlePreviewClick}
-                              onEventUpdate={handleNewHighlightUpdate}
-                              isNewHighlight={true}
-                              onSave={handleSaveNewHighlight}
-                              onCancel={handleCancelNewHighlight}
-                            />
-                          )}
-
-                          {/* Add Highlight Button */}
-                          {!isAddingNewHighlight && (
+                {/* Highlights List Panel */}
+                <Panel defaultSize={50} minSize={30}>
+                  <Card className={
+                    layoutDirection === "horizontal"
+                      ? "lg:max-h-[calc(100vh-12rem)] lg:overflow-hidden flex flex-col h-full"
+                      : "flex flex-col h-full"
+                  }>
+                    <CardHeader className="flex-shrink-0">
+                      <CardTitle className="flex items-center">
+                        <Zap className="w-5 h-5 mr-2 text-orange-500" />
+                        Highlight Segments ({highlightData.rawEvents.length})
+                      </CardTitle>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Click any highlight to play, or expand to edit details and timestamps
+                      </p>
+                    </CardHeader>
+                    <CardContent className="flex-1 overflow-y-auto">
+                      <div className="space-y-3 pr-2">
+                        {/* Success Alert */}
+                        {showSuccessAlert && (
+                          <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between animate-in fade-in duration-300">
+                            <p className="text-sm text-green-800 font-medium">
+                              Highlight successfully added!
+                            </p>
                             <Button
-                              onClick={handleAddNewHighlight}
-                              variant="outline"
-                              className="w-full border-dashed border-2 border-gray-300 hover:border-orange-400 hover:bg-orange-50 py-6"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setShowSuccessAlert(false)}
+                              className="h-6 w-6 p-0"
                             >
-                              <Plus className="w-5 h-5 mr-2" />
-                              Add New Highlight
+                              <X className="w-4 h-4" />
                             </Button>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Panel>
-                </PanelGroup>
-              </div>
+                          </div>
+                        )}
+
+                        {highlightData.rawEvents.map((event, index) => {
+                          const currentEvent = getEvent(index);
+                          const currentRange = getRange(index);
+                          const isActive = currentHighlightIndex === index;
+                          const isDeleting = deletingIndex === index;
+
+                          return (
+                            <ClipDropdownPanel
+                              key={event.id || index}
+                              index={index}
+                              event={currentEvent}
+                              range={currentRange}
+                              isActive={isActive}
+                              isPlaying={isPlaying}
+                              isDeleting={isDeleting}
+                              onPlayClick={handleHighlightClick}
+                              onPreviewClick={handlePreviewClick}
+                              onEventUpdate={handleEventUpdate}
+                              onDelete={handleDeleteHighlight}
+                            />
+                          );
+                        })}
+
+                        {/* New Highlight Panel */}
+                        {isAddingNewHighlight && newHighlight && (
+                          <ClipDropdownPanel
+                            key="new-highlight"
+                            index={-1}
+                            event={{
+                              id: "new",
+                              timestamp_start: newHighlight.range[0].toString(),
+                              timestamp_end: newHighlight.range[1].toString(),
+                              outcome: newHighlight.event.outcome || "Make",
+                              subject: newHighlight.event.subject || "",
+                              shot_type: newHighlight.event.shot_type || "Layup",
+                              shot_location: newHighlight.event.shot_location || "Paint",
+                            }}
+                            range={newHighlight.range}
+                            isActive={false}
+                            isPlaying={false}
+                            onPlayClick={() => {}}
+                            onPreviewClick={handlePreviewClick}
+                            onEventUpdate={handleNewHighlightUpdate}
+                            isNewHighlight={true}
+                            onSave={handleSaveNewHighlight}
+                            onCancel={handleCancelNewHighlight}
+                          />
+                        )}
+
+                        {/* Add Highlight Button */}
+                        {!isAddingNewHighlight && (
+                          <Button
+                            onClick={handleAddNewHighlight}
+                            variant="outline"
+                            className="w-full border-dashed border-2 border-gray-300 hover:border-orange-400 hover:bg-orange-50 py-6"
+                          >
+                            <Plus className="w-5 h-5 mr-2" />
+                            Add New Highlight
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Panel>
+              </PanelGroup>
             </div>
           )}
 

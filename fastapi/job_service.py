@@ -10,7 +10,7 @@ from typing import Optional
 from datetime import datetime
 import os
 import uuid
-from utils import _job_doc, _parse_gs_uri, _sign_get_url, ts_to_seconds
+from utils import _job_doc, _parse_gs_uri, _sign_get_url, ts_to_seconds, seconds_to_ts
 import json
 from google.cloud import firestore, storage
 from google.cloud.firestore import Increment
@@ -122,6 +122,8 @@ async def add_shot_event(job_id: str, payload: dict):
     # Basic validation
     if "timestamp_start" not in payload or "timestamp_end" not in payload:
         raise HTTPException(status_code=400, detail="Missing timestamps")
+    fixed_timestamp_end = seconds_to_ts(int(payload["timestamp_end"]))
+    fixed_timestamp_start = seconds_to_ts(int(payload["timestamp_start"]))
     shot_event = {
         # Use frontend ID if provided, otherwise generate one
         "id": payload.get("id", str(uuid.uuid4())),
@@ -130,9 +132,9 @@ async def add_shot_event(job_id: str, payload: dict):
         # Optional nullable fields
         "shot_location": payload.get("shot_location"),
         "shot_type": payload.get("shot_type"),
-        "subject": payload.get("subject"),
-        "timestamp_end": payload["timestamp_end"],
-        "timestamp_start": payload["timestamp_start"],
+        "subject": payload.get("subject", None),
+        "timestamp_end": fixed_timestamp_end,
+        "timestamp_start": fixed_timestamp_start,
         "deleted": False,
         "show": True,
     }
@@ -183,7 +185,8 @@ async def update_shot_event(job_id: str, payload: dict = Body(...)):
     job_doc = job_ref.get()
     if not job_doc.exists:
         raise HTTPException(status_code=404, detail="Job not found")
-    
+    job_data = job_doc.to_dict()
+    shot_events = job_data.get("shotEvents", [])
 
 
     

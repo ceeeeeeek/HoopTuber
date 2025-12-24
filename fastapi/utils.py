@@ -124,3 +124,11 @@ def ts_to_seconds(ts):
             return int(parts[0])
         else:
             raise ValueError(f"invalid timestamp {ts}")
+def seconds_to_ts(seconds):
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    if h > 0:
+        return f"{h}:{m:02}:{s:02}"
+    else:
+        return f"00:{m:02}:{s:02}"
