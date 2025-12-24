@@ -26,6 +26,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+client/app/verify/page.tsx
+
+PERSISTENT_UPLOAD_IMPLEMENTATION.md
 
 # virtualenvs (anywhere)
 .venv/
@@ -50,6 +53,17 @@ backend/api/.env
 .env*
 env/
 *.env
+.env.*
+.venv/
+**/.venv
+worker/.venv/
+fastapi/.venv_fastapi
+fastapi/api/.venv_fastapi
+fastapi/api/.env
+worker/.venv/
+**.venv/
+**/.venv*
+worker/.venv*.env
 env/*.json
 
 # python bytecode
@@ -74,6 +88,7 @@ fastapi/__pycache__/
 fastapi/api/__pycache__/
 backend/__pycache__/
 backend/api/__pycache__/
+*__pycache__/
 # data folders
 fastapi/api/videoDataset
 fastapi/api/clips
@@ -85,6 +100,7 @@ backend/api/combined
 
 # json service accounts & secrets 
 # from #Google Cloud Services/GCS IAM & Admin Service Accounts
+cors.json
 fastapi/api-sa.json
 backend/backend-sa.json
 worker/worker-sa.json
@@ -98,6 +114,7 @@ hooptuberdev.json
 *.sa.json
 *.pem
 *.p12
+*videoDataset
 
 # video folders
 worker/videoDataset/
@@ -105,3 +122,30 @@ worker/combined
 worker/clips/
 *.mp4
 *.pyc
+
+worker/__pycache__/
+# json service accounts
+api-sa.json
+worker-sa.json
+*.key.json
+*.sa.json
+*.pem
+*.p12
+hooptuberdev.json
+# video folders
+worker/videoDataset/
+worker/combined
+worker/clips/
+secrets/
+/secrets
+secrets
+__pycache__
+
+*hoopuber-leads.json
+.DS_Store
+
+worker/vertex_test.py
+hi.txt
+.claude/
+fastapi/api/christianMerge.py
+fastapi/hooptuber-sheets.json
