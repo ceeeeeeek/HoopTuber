@@ -19,10 +19,11 @@
 // client/app/my-runs/page.tsx
 // Converted to client component to use Firebase auth
 
-export const dynamic = 'force-dynamic';
 "use client";
 
 import MyRunsClient from "./MyRunsClient";
+
+export const dynamic = 'force-dynamic';
 
 export default function MyRunsPage() {
   // MyRunsClient now handles auth internally with useAuth hook
