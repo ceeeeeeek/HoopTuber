@@ -23,7 +23,6 @@
 
 import MyRunsClient from "./MyRunsClient";
 
-export const dynamic = 'force-dynamic';
 
 export default function MyRunsPage() {
   // MyRunsClient now handles auth internally with useAuth hook

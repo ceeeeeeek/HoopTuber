@@ -25,7 +25,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/useAuth";
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 
 //12-07-25 Sunday 4pm Update - Prevent double-counting views on highlight videos with localStorage
 //Shared front-end helpers (views + likes in localStorage) between DashboardClient + [jobId]/page.tsx
