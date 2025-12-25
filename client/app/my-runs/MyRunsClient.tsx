@@ -19,9 +19,10 @@ import {
   ChevronRight,
   X,
 } from "lucide-react";
-import { cn } from "@/lib/utils";                  
+import Image from "next/image";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/lib/useAuth";
 import ProfileDropdown from "../app-components/ProfileDropdown";
 import CreateRunModal from "./CreateRunModal"; //12-11-25 Thursday 7:30pm - Better polished Create a Run button modal for my-runs page
 import InviteLinkModal from "./InviteLinkModal"; //12-11-25 Thursday 7:30pm - Better polished Invite Link button modal for my-runs page
@@ -170,16 +171,16 @@ async function apiListRuns(memberEmail: string): Promise<RunsSummary[]> {
 
 //11-22-25 Saturday 12am - For my runs page
 //===================== COMPONENT (START) ============================
-//Props come from server wrapper in app/my-runs/page.tsx         
+//Props come from server wrapper in app/my-runs/page.tsx
 //export default function MyRunsClient({ userEmail }: { userEmail: string }) {
 export default function MyRunsClient() {
-    const { data: session, status } = useSession();
+    const { user: currentUser, loading: authLoading } = useAuth();
     const router = useRouter();
-    const userEmail = session?.user?.email || "";
+    const userEmail = currentUser?.email || "";
 
     //Flag so we only hit the backend once we know:
     //1) auth is ready AND 2) we actually have a logged-in email.
-    const backendReady = status === "authenticated" && !!userEmail;
+    const backendReady = !authLoading && !!currentUser && !!userEmail;
 
     const [runs, setRuns] = useState<RunsSummary[]>([]);           
     const [loading, setLoading] = useState<boolean>(true);
@@ -496,9 +497,14 @@ return (
       <header className="border-b bg-white">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-              <Play className="w-4 h-4 text-white fill-white" />
-            </div>
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              width={32}
+              height={32}
+              className="object-contain"
+              priority
+            />
             <span className="text-xl font-bold text-gray-900">
               HoopTuber
             </span>

@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/lib/useAuth";
 import Link from "next/link";
 import { Play, Upload } from "lucide-react";
 import ProfileDropdown from "../app-components/ProfileDropdown";
 import { useRouter } from "next/navigation";
 import { DribbleIcon } from "@/components/icons/DribbleIcon";
 import { DribbleIcon2 } from "@/components/icons/DribbleIcon2";
+import Image from "next/image";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 
@@ -42,19 +43,19 @@ async function apiListPublicRuns(): Promise<PublicRunSummary[]> {
 }
 
 export default function JoinARunClient() {
-  const { data: session } = useSession();
+  const { user: currentUser } = useAuth();
   const router = useRouter();
-  const userEmail = (session?.user?.email || "").toLowerCase();
+  const userEmail = (currentUser?.email || "").toLowerCase();
 
   const [publicRuns, setPublicRuns] = useState<PublicRunSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  //which run we’re currently showing the "coming soon" modal for
+  //which run we're currently showing the "coming soon" modal for
   const [joinModalRun, setJoinModalRun] = useState<PublicRunSummary | null>(
     null
   );
-  //which run should show the small inline “you’re already a member” message
+  //which run should show the small inline "you're already a member" message
   const [ownerMessageFor, setOwnerMessageFor] = useState<string | null>(null);
 
   useEffect(() => {
@@ -92,9 +93,14 @@ export default function JoinARunClient() {
       <header className="border-b bg-white">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-              <Play className="w-4 h-4 text-white fill-white" />
-            </div>
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              width={32}
+              height={32}
+              className="object-contain"
+              priority
+            />
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </Link>
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useSession } from "next-auth/react"
+import { useAuth } from "@/lib/useAuth"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -25,9 +25,11 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import ProfileDropdown from "../app-components/ProfileDropdown"
+import Image from "next/image"
+
 
 export default function SettingsPage() {
-  const { data: session, status } = useSession()
+  const { user: currentUser, loading: authLoading } = useAuth()
   const router = useRouter()
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState("")
@@ -48,20 +50,15 @@ export default function SettingsPage() {
   const [showEmail, setShowEmail] = useState(false)
   const [allowTeamInvites, setAllowTeamInvites] = useState(true)
 
-  // Check authentication
+  // Handle auth and load user data
   useEffect(() => {
-    if (status === "unauthenticated") {
+    if (!authLoading && !currentUser) {
       router.push("/login?next=/settings")
+    } else if (currentUser) {
+      setName(currentUser.displayName || "")
+      setEmail(currentUser.email || "")
     }
-  }, [status, router])
-
-  // Load user data
-  useEffect(() => {
-    if (session?.user) {
-      setName(session.user.name || "")
-      setEmail(session.user.email || "")
-    }
-  }, [session])
+  }, [authLoading, currentUser, router])
 
   const handleSaveProfile = async () => {
     setSaving(true)
@@ -119,7 +116,7 @@ export default function SettingsPage() {
     }
   }
 
-  if (status === "loading") {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
@@ -135,9 +132,14 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <Link href="/dashboard" className="flex items-center space-x-2">
               <ArrowLeft className="w-5 h-5" />
-              <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                <Play className="w-4 h-4 text-white fill-white" />
-              </div>
+              <Image
+                src="/hooptubericon2.png"
+                alt="HoopTuber Logo"
+                width={32}
+                height={32}
+                className="object-contain"
+                priority
+              />
               <span className="text-xl font-bold text-gray-900">HoopTuber</span>
             </Link>
             <ProfileDropdown />
@@ -183,10 +185,10 @@ export default function SettingsPage() {
                   {/* Profile Picture */}
                   <div className="flex items-center space-x-4">
                     <div className="w-20 h-20 rounded-full bg-orange-500 flex items-center justify-center overflow-hidden border-2 border-gray-200">
-                      {session?.user?.image ? (
+                      {currentUser?.photoURL ? (
                         <img
-                          src={session.user.image}
-                          alt={session.user.name || "Profile"}
+                          src={currentUser.photoURL}
+                          alt={currentUser.displayName || "Profile"}
                           className="w-full h-full object-cover"
                         />
                       ) : (

@@ -5,8 +5,9 @@
 
 import {useEffect, useMemo, useState, useCallback, useRef} from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation"; //to read ?refresh=...
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/lib/useAuth";
 import {
   Play, Upload, UploadIcon, BarChart2, BarChart3, Clock3, Users,
   Edit3, Save, Trash2, Eye, Lock, Link as LinkIcon, ChevronDown, ChevronUp, Filter,
@@ -287,20 +288,22 @@ async function apiRemoveVideoFromFolder(folderId: string, videoIds: string[]) {
 //11-13-25 Thursday 2pm - For Move/"Move to Folder" folder support
 
 export default function DashboardClient() {
-  //auth/session
-  const { data: session, status } = useSession(); //include status; also grab `status` so we know when the session is ready
-  //const userName = session?.user?.name || ""; //not used but if you plan to show a greeting later (“Welcome back, Chris”), we can re-add it then
-  const userEmail = session?.user?.email || "";
+  //auth/session - Firebase via useAuth hook
+  const { user: currentUser, loading: authLoading } = useAuth();
+  const userEmail = currentUser?.email || "";
   //Backend is "ready" for this user once they're authenticated and we have an email
-  const backendReady = status === "authenticated" && !!userEmail;
+  const backendReady = !authLoading && !!currentUser && !!userEmail;
   //read the `refresh` query param from /dashboard?refresh=<jobId>
-  const searchParams = useSearchParams();             
+  const searchParams = useSearchParams();
   const refreshKey = searchParams?.get("refresh") ?? null;
 
-  if (typeof window !== "undefined") {
-    console.log("Dashboard session", session);
-    console.log("Dashboard userEmail", userEmail);
-  }
+  // Log user info for debugging
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      console.log("Dashboard Firebase user", currentUser);
+      console.log("Dashboard userEmail", currentUser?.email);
+    }
+  }, [currentUser]);
 
   //useState calls begin here
   //highlights state (but now typed for FastAPI items)
@@ -1148,9 +1151,14 @@ useEffect(() => {
       <header className="border-b bg-white">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-              <Play className="w-4 h-4 text-white fill-white" />
-            </div>
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              width={32}
+              height={32}
+              className="object-contain"
+              priority
+            />
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </Link>
           <div className="flex items-center gap-4">

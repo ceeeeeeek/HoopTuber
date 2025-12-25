@@ -2,6 +2,7 @@
 "use client"
 
 import Link from "next/link";
+import Image from "next/image";
 import { Play, Users, Target, Rocket, Trophy, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,9 +20,14 @@ export default function AboutPage() {
       <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-40">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-              <Play className="w-4 h-4 text-white fill-white" />
-            </div>
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              width={32}
+              height={32}
+              className="object-contain"
+              priority
+            />
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </Link>
           <nav className="hidden md:flex items-center space-x-6">

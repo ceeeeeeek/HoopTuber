@@ -1,14 +1,16 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { useSession, signOut } from "next-auth/react"
+import { signOut } from "firebase/auth"
+import { auth } from "@/lib/firebase"
+import { useAuth } from "@/lib/useAuth"
 import { User, Settings, LogOut, ChevronDown, Upload, Loader2, CheckCircle, XCircle } from "lucide-react"
 import Link from "next/link"
 import { useUploadStatus } from "@/contexts/UploadStatusContext"
 import { Progress } from "@/components/ui/progress"
 
 export default function ProfileDropdown() {
-  const { data: session, status } = useSession()
+  const { user: currentUser, loading: authLoading } = useAuth()
   const { activeJobs, jobs, removeJob, clearCompleted } = useUploadStatus()
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -31,23 +33,27 @@ export default function ProfileDropdown() {
   }, [isOpen])
 
   // Don't render if not authenticated
-  if (status === "loading") {
+  if (authLoading) {
     return (
       <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse" />
     )
   }
 
-  if (status === "unauthenticated" || !session?.user) {
+  if (!currentUser) {
     return null
   }
 
-  const user = session.user
-  const userName = user.name || user.email || "User"
-  const userEmail = user.email || ""
-  const userImage = user.image || null
+  const userName = currentUser.displayName || currentUser.email || "User"
+  const userEmail = currentUser.email || ""
+  const userImage = currentUser.photoURL || null
 
   const handleLogout = async () => {
-    await signOut({ callbackUrl: "/" })
+    try {
+      await signOut(auth)
+      window.location.href = "/"
+    } catch (error) {
+      console.error("Error signing out:", error)
+    }
   }
 const handleCheckIn = async () => {
   

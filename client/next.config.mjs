@@ -9,6 +9,14 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  async rewrites() {
+    return [
+      {
+        source: '/__/auth/action',
+        destination: '/verify',
+      },
+    ];
+  },
 }
 
 export default nextConfig

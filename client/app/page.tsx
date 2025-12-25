@@ -9,12 +9,11 @@ import { Play, Smartphone, Users, Zap, Star, Download, ArrowRight, X } from "luc
 import Link from "next/link"
 import TryFreeUploadButton from "./app-components/TryFreeUploadButton"
 import ProfileDropdown from "./app-components/ProfileDropdown"
-import { useSession } from "next-auth/react"
+import { useAuth } from "@/lib/useAuth"
 import Image from "next/image";
 
 export default function LandingPage() {
-  const { data: session, status } = useSession()
-
+  const { user: currentUser, loading: authLoading } = useAuth()
   // NEW: inline player state + ref
   const [playing, setPlaying] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -47,6 +46,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
       {/* Header */}
+
       <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -61,13 +61,20 @@ export default function LandingPage() {
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </div>
           <nav className="hidden md:flex items-center space-x-6">
-          <Link href="/about" className="text-gray-600 hover:text-orange-500">
+            <Link href="/about" className="text-gray-600 hover:text-orange-500">
               About Us
             </Link>            
             <Link href="#features" className="text-gray-600 hover:text-orange-500">
               Features
             </Link>
-            {status === "authenticated" && session ? (
+
+            {/* --- UPDATED AUTH CHECK --- */}
+            {authLoading ? (
+              // Optional: Render a placeholder or nothing while checking login status
+              // prevents the "Login" button from flashing briefly
+              <div className="w-20" /> 
+            ) : currentUser ? (
+              // LOGGED IN
               <>
                 <TryFreeUploadButton
                   size="sm"
@@ -80,6 +87,7 @@ export default function LandingPage() {
                 <ProfileDropdown />
               </>
             ) : (
+              // LOGGED OUT
               <>
                 <Link href="/login" className="text-gray-600 hover:text-orange-500">
                   Login
@@ -94,6 +102,8 @@ export default function LandingPage() {
                 </TryFreeUploadButton>
               </>
             )}
+            {/* --------------------------- */}
+            
           </nav>
         </div>
       </header>

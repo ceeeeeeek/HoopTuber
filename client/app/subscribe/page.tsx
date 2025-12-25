@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Check, Play, ArrowLeft, Users, Upload, BarChart3 } from "lucide-react"
 import Link from "next/link"
+import Image from "next/image"
 
 export default function SubscribePage() {
   const [isAnnual, setIsAnnual] = useState(false)
@@ -17,9 +18,14 @@ export default function SubscribePage() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
             <ArrowLeft className="w-5 h-5" />
-            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-              <Play className="w-4 h-4 text-white fill-white" />
-            </div>
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              width={32}
+              height={32}
+              className="object-contain"
+              priority
+            />
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </Link>
         </div>

@@ -7,7 +7,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/lib/useAuth";
 
 type HighlightItem = {
   jobId: string;
@@ -24,7 +24,7 @@ type HighlightItem = {
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 
 export default function HighlightsSection() {
-  const { data: session } = useSession();
+  const { user: currentUser, loading: authLoading } = useAuth();
 
   const [items, setItems]   = React.useState<HighlightItem[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -34,8 +34,9 @@ export default function HighlightsSection() {
   const [bump, setBump] = React.useState(0);
 
   React.useEffect(() => {
-    const email = session?.user?.email;
-    if (!email) return;
+    const email = currentUser?.email;
+    // Don't fetch if still loading auth or no email
+    if (authLoading || !email) return;
 
     const run = async () => {
       try {
@@ -68,7 +69,7 @@ export default function HighlightsSection() {
     };
 
     run();
-  }, [session?.user?.email, bump]); // PRESERVED + NEW bump
+  }, [currentUser?.email, authLoading, bump]); // Use Firebase user email
 
   //manual refresh
   const onRefresh = () => setBump((n) => n + 1);

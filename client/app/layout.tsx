@@ -3,7 +3,6 @@ import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import './globals.css'
 import RoutePrefetcher from "./app-components/RoutePrefetcher"
-import SessionProvider from "./app-components/SessionProvider"
 import { UploadStatusProvider } from "@/contexts/UploadStatusContext"
 
 export const metadata: Metadata = {
@@ -33,12 +32,11 @@ html {
         `}</style>
       </head>
       <body>
-        <SessionProvider>
+
           <UploadStatusProvider>
             <RoutePrefetcher />
             {children}
           </UploadStatusProvider>
-        </SessionProvider>
       </body>
     </html>
   );

@@ -32,11 +32,11 @@ from utils import (_make_keys,
                    ts_to_seconds)
 
 # IMPORTING SERVICE ROUTERS
-from vertex_service import router as vertex_router
-from video_service import router as video_router
-from folders_router import router as folders_router
-from runs_service import router as runs_router
-from job_service import router as job_router
+from routers.vertex_service import router as vertex_router
+from routers.video_service import router as video_router
+from routers.folders_router import router as folders_router
+from routers.runs_service import router as runs_router
+from routers.job_service import router as job_router
 
 from typing import Dict, Any, List
 from google.cloud.firestore import Query

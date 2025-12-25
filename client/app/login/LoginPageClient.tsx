@@ -1,17 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+// REMOVED: import { signIn } from "next-auth/react"; 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Play, ArrowLeft, Mail, Lock, User } from "lucide-react";
+import { ArrowLeft, Mail, Lock, User } from "lucide-react"; // Removed 'Play' as it wasn't used
 import Link from "next/link";
+import Image from "next/image";
 import { useSearchParams, useRouter } from "next/navigation";
+import {
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signInWithEmailAndPassword,
+  updateProfile,
+  signOut,
+  GoogleAuthProvider,
+  signInWithPopup
+} from "firebase/auth";
+import { auth } from "../../lib/firebase"; // Make sure this path is correct for your project
 
 export default function LoginPage() {
+  const API_BASE = process.env.NEXT_PUBLIC_DOMAIN; // Example usage to avoid unused variable warning
   const [isLogin, setIsLogin] = useState(true);
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -20,68 +32,105 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
+  const router = useRouter();
   const search = useSearchParams();
   const next = search.get("next") ?? "/dashboard";
 
+  // 1. Handle Google Login (Firebase Native)
+  async function handleGoogleSignIn() {
+    setLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      // Firebase handles the user creation automatically for Google
+      router.push(next);
+    } catch (err: any) {
+      console.error("Google login error:", err);
+      alert(err.message || "Google sign in failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // 2. Handle Email/Password Login & Signup
   async function handleCredentialsSignIn(e: React.FormEvent) {
     e.preventDefault();
-
     setMessage("");
     setLoading(true);
 
-    // --- LOGIN MODE ---
+    // --- LOGIN FLOW ---
     if (isLogin) {
-      const res = await signIn("credentials", {
-        redirect: false,
-        email,
-        password,
-        callbackUrl: next,
-      });
+      try {
+        const cred = await signInWithEmailAndPassword(auth, email, password);
+        const user = cred.user;
 
-      setLoading(false);
+        if (!user.emailVerified) {
+          alert("Please verify your email before logging in.");
+          await signOut(auth); // Force logout
+          setLoading(false);
+          return;
+        }
 
-      if (res?.ok) router.push(next);
-      else if (res?.error?.toLowerCase().includes("verify")) {
-        alert("Please verify your email before logging in.");
-      } else {
-        alert("Invalid email or password.");
+        router.push(next);
+      } catch (err: any) {
+        console.error("Login error:", err);
+        if (err.code === "auth/invalid-credential") {
+          alert("Invalid email or password.");
+        } else {
+          alert(err.message || "Login failed.");
+        }
       }
+      setLoading(false);
       return;
     }
 
-    // --- SIGNUP MODE ---
+    // --- SIGNUP FLOW ---
     if (password !== confirmPassword) {
       alert("Passwords do not match.");
       setLoading(false);
       return;
     }
 
-    const r = await fetch("/api/auth/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, username, email, password }),
-    });
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const user = cred.user;
 
-    setLoading(false);
+      // Update the Auth Profile with the Full Name
+      await updateProfile(user, {
+        displayName: name
+      });
+      
+      // NOTE: 'username' is not saved to Firebase Auth. 
+      // You must save 'username' to Firestore here if you want to keep it.
+      const actionCodeSettings = {
+        // `${API_BASE}/dashboard
+      url: `${API_BASE}/dashboard`, // or localhost:3000/dashboard for testing
+      handleCodeInApp: false,
+    };
+      await sendEmailVerification(cred.user);
 
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      alert(data?.error || "Signup failed");
-      return;
+      setMessage(
+        "✅ Account created! Please check your email to verify your account."
+      );
+
+      // Reset form
+      setIsLogin(true);
+      setName("");
+      setUsername("");
+      setEmail("");
+      setPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      console.error("Signup error:", err);
+      if (err.code === "auth/email-already-in-use") {
+        alert("Email is already in use.");
+      } else {
+        alert(err.message || "Signup failed");
+      }
     }
 
-    // ✅ Ask user to verify email instead of auto-login
-    setMessage(
-      "✅ Account created successfully! Please check your email to verify your account before signing in."
-    );
-    setIsLogin(true);
-    setName("");
-    setUsername("");
-    setEmail("");
-    setPassword("");
-    setConfirmPassword("");
+    setLoading(false);
   }
 
   return (
@@ -90,9 +139,14 @@ export default function LoginPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center space-x-2 mb-6">
-            <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
-              <Play className="w-5 h-5 text-white fill-white" />
-            </div>
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              width={40}
+              height={40}
+              className="object-contain"
+              priority
+            />
             <span className="text-2xl font-bold text-gray-900">HoopTuber</span>
           </Link>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
@@ -247,7 +301,7 @@ export default function LoginPage() {
             <Button
               variant="outline"
               className="w-full"
-              onClick={() => signIn("google", { callbackUrl: next })}
+              onClick={handleGoogleSignIn} 
               disabled={loading}
             >
               <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">

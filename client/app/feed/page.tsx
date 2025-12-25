@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Play, Heart, MessageCircle, Share, Bookmark, Users, Trophy, Plus } from "lucide-react"
 import Link from "next/link"
+import Image from "next/image"
 
 const mockClips = [
   {
@@ -62,9 +63,14 @@ export default function FeedPage() {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                <Play className="w-4 h-4 text-white fill-white" />
-              </div>
+              <Image
+                src="/hooptubericon2.png"
+                alt="HoopTuber Logo"
+                width={32}
+                height={32}
+                className="object-contain"
+                priority
+              />
               <span className="text-xl font-bold text-gray-900">HoopTuber</span>
             </Link>
             <div className="flex items-center space-x-4">

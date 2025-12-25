@@ -5,7 +5,8 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
-import { useSession } from "next-auth/react";                            
+import Image from "next/image";
+import { useAuth } from "@/lib/useAuth";                            
 import {
   Play, Upload, UploadIcon, BarChart2, BarChart3, Clock3, Users,
   Edit3, Save, Trash2, Eye, Lock, Link as LinkIcon, ChevronDown, ChevronUp
@@ -53,10 +54,10 @@ type HighlightItem = {
 
 
 export default function DashboardClient() {
-  //auth/session
-  const { data: session } = useSession();
-  const userName = session?.user?.name || "";
-  const userEmail = session?.user?.email || "";
+  //auth/session - Firebase via useAuth hook
+  const { user: currentUser, loading: authLoading } = useAuth();
+  const userName = currentUser?.displayName || "";
+  const userEmail = currentUser?.email || "";
 
   //highlights state (but now typed for FastAPI items)
   const [highlights, setHighlights] = useState<HighlightItem[]>([]);
@@ -169,9 +170,14 @@ export default function DashboardClient() {
       <header className="border-b bg-white">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-              <Play className="w-4 h-4 text-white fill-white" />
-            </div>
+            <Image
+              src="/hooptubericon2.png"
+              alt="HoopTuber Logo"
+              width={32}
+              height={32}
+              className="object-contain"
+              priority
+            />
             <span className="text-xl font-bold text-gray-900">HoopTuber</span>
           </Link>
           <div className="flex items-center gap-4">

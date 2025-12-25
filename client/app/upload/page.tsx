@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/lib/useAuth";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -71,7 +71,7 @@ const parseTimestamp = (timestamp: string): number => {
 
 export default function VideoDisplayPage() {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { user: currentUser, loading: authLoading } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const { jobs } = useUploadStatus();
 
@@ -164,20 +164,12 @@ export default function VideoDisplayPage() {
     }
   }, [currentUploadId]);
 
-  // Session check
+  // Redirect if not authenticated
   useEffect(() => {
-    const checkSession = async () => {
-      const res = await fetch("/api/auth/session", {
-        method: "GET",
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (!data?.user) {
-        router.push("/login?next=/upload");
-      }
-    };
-    checkSession();
-  }, [router]);
+    if (!authLoading && !currentUser) {
+      router.push("/login?next=/upload");
+    }
+  }, [authLoading, currentUser, router]);
 
   // Track screen size for responsive layout direction
   useEffect(() => {
@@ -284,7 +276,7 @@ export default function VideoDisplayPage() {
     const uploadJob = uploadQueue.createJob(
       selectedFile.name,
       selectedFile.size,
-      session?.user?.email
+      currentUser?.email || undefined
     );
     setCurrentUploadId(uploadJob.id);
 
@@ -304,12 +296,12 @@ export default function VideoDisplayPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-owner-email": session?.user?.email || "",
+          "x-owner-email": currentUser?.email || "",
         },
         body: JSON.stringify({
           filename: selectedFile.name,
           contentType: selectedFile.type || "video/mp4",
-          userId: session?.user?.email,
+          userId: currentUser?.email,
           videoDurationSec: Math.floor(videoDuration)
         }),
       });
@@ -354,11 +346,11 @@ export default function VideoDisplayPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-owner-email": session?.user?.email || "",
+          "x-owner-email": currentUser?.email || "",
         },
         body: JSON.stringify({
           jobId: newJobId,
-          userId: session?.user?.email,
+          userId: currentUser?.email,
         }),
       });
 
@@ -528,7 +520,7 @@ export default function VideoDisplayPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-owner-email": session?.user?.email || "",
+          "x-owner-email": currentUser?.email || "",
         },
         body: JSON.stringify({
           timestamp_start: newHighlight.range[0].toString(),
@@ -586,7 +578,7 @@ export default function VideoDisplayPage() {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
-          "x-owner-email": session?.user?.email || "",
+          "x-owner-email": currentUser?.email || "",
         },
         body: JSON.stringify({
           event_id: eventToDelete.id,
