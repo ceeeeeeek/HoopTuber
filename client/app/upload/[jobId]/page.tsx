@@ -24,7 +24,7 @@ import {
 import ClipDropdownPanel from "@/app/app-components/ClipDropdownPanel";
 import ProfileDropdown from "../../app-components/ProfileDropdown";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/lib/useAuth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://hooptuber-fastapi-web-service-docker.onrender.com";
 
@@ -50,7 +50,7 @@ interface HighlightData {
 export default function VideoDisplayPage() {
   const params = useParams();
   const jobId = params.jobId as string;
-  const { data: session } = useSession();
+  const { user: currentUser, loading: authLoading } = useAuth();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [highlightData, setHighlightData] = useState<HighlightData | null>(null);
@@ -181,7 +181,7 @@ export default function VideoDisplayPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-owner-email": session?.user?.email || "",
+          "x-owner-email": currentUser?.email || "",
         },
         body: JSON.stringify({
           timestamp_start: newHighlight.range[0].toString(),
@@ -252,7 +252,7 @@ const parseTimestamp = (timestamp: string): number => {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
-          "x-owner-email": session?.user?.email || "",
+          "x-owner-email": currentUser?.email || "",
         },
         body: JSON.stringify({
           event_id: eventToDelete.id,

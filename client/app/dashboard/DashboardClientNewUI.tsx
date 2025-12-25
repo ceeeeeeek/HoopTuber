@@ -3,7 +3,6 @@
 import {useEffect, useMemo, useState, useCallback, useRef} from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation"; //to read ?refresh=...
-import { useSession } from "next-auth/react";
 import {
   Play, Upload, UploadIcon, BarChart2, BarChart3, Clock3, Users,
   Edit3, Save, Trash2, Eye, Lock, Link as LinkIcon, ChevronDown, ChevronUp, Filter,

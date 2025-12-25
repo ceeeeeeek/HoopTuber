@@ -70,7 +70,7 @@ export default function LandingPage() {
 
             {/* --- UPDATED AUTH CHECK --- */}
             {authLoading ? (
-              // Optional: Render a placeholder or nothing while checking login status
+              // MAYBE: Render a placeholder or nothing while checking login status
               // prevents the "Login" button from flashing briefly
               <div className="w-20" /> 
             ) : currentUser ? (

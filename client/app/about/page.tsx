@@ -7,12 +7,12 @@ import { Play, Users, Target, Rocket, Trophy, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useSession } from "next-auth/react"
+import { useAuth } from "@/lib/useAuth";
 import TryFreeUploadButton from "../app-components/TryFreeUploadButton";
 import ProfileDropdown from "../app-components/ProfileDropdown";
 
 export default function AboutPage() {
-  const { data: session, status } = useSession() 
+  const { user: currentUser, loading: authLoading } = useAuth();
   // added dropown menu for profile when logged in 10/17
   return (
     <main className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
@@ -37,7 +37,12 @@ export default function AboutPage() {
             <Link href="/about" className="text-gray-900 font-medium">
               About Us
             </Link> 
-            {status === "authenticated" && session ? (
+            {authLoading ? (
+              // MAYBE: Render a placeholder or nothing while checking login status
+              // prevents the "Login" button from flashing briefly
+              <div className="w-20" /> 
+            ) : currentUser ? (
+              // LOGGED IN
               <>
               
               <ProfileDropdown />

@@ -21,8 +21,9 @@ import React, {
   FormEvent
 } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+
 import Link from "next/link";
+import { useAuth } from "@/lib/useAuth";
 
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
@@ -123,8 +124,8 @@ export default function VideoPage() {
     const jobId = params?.jobId;
     const router = useRouter();
 
-    const { data: session, status: sessionStatus } = useSession();
-    const userEmail = (session?.user as any)?.email as string | undefined;
+    const { user: currentUser, loading: authLoading } = useAuth();
+    const userEmail = currentUser?.email as string | undefined;
 
     //12-09-25 Tuesday 4pm - View standalone video player page without being logged in
     //Are we logged in? - isAuthed flag and requireAuth() that matches TryFree login flow
