@@ -6,11 +6,11 @@ WORKDIR /app
 
 # Copy package files first
 COPY package*.json ./
-
 RUN npm install
 
 # Copy the rest of the frontend code
 COPY . .
+
 
 
 RUN npm run build

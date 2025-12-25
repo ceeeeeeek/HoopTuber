@@ -6,11 +6,11 @@ import { getAuth } from "firebase/auth";
 
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTHDOMAIN,
-  projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGEBUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_SENDID,
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyD5nt8_v6w2Gg_IlxPTO-pLrrOAsp-IDdw",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTHDOMAIN || "hooptuber-dev-1234.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_PROJECT_ID || "hooptuber-dev-1234.firebasestorage.app",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGEBUCKET || "288020494852",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_SENDID || "1:288020494852:web:4f4e6c590a77c8b2df5351",
   appId: process.env.NEXT_PUBLIC_FIREBASE_APPID
 };
 
