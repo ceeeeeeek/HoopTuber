@@ -19,6 +19,7 @@
 // client/app/my-runs/page.tsx
 // Converted to client component to use Firebase auth
 
+export const dynamic = 'force-dynamic';
 "use client";
 
 import MyRunsClient from "./MyRunsClient";
