@@ -253,8 +253,8 @@ export default function MyRunsClient() {
         if (!backendReady) {
             //optional debug log
             console.log("MyRuns loadRuns skipped (backend not ready yet)", {
-                status,
-                userEmail,
+                authLoading,
+                userEmail
             });
             return;
         }
@@ -279,7 +279,7 @@ export default function MyRunsClient() {
         } finally {
         setLoading(false);
         }
-    }, [backendReady, status, userEmail]);
+    }, [backendReady, authLoading, userEmail]);
 
     //11-30-25 Sunday 1:30pm - Added polling useEffect - polling to keep in sync with uploads + assignments
     //Poll runs so /my-runs updates instantly after uploads or assignments
@@ -469,7 +469,7 @@ export default function MyRunsClient() {
       
 
       //Guard the whole main UI - If you want to avoid showing the “Failed to load runs” message while auth is still loading, you can gate the render.
-      if (status === "loading") {
+      if (authLoading) {
         return (
           <div className="min-h-screen flex items-center justify-center">
             <p className="text-gray-500 text-sm">Loading your runs…</p>
